@@ -92,7 +92,9 @@ async function loadRoots() {
   for (const r of data.roots) {
     const li = document.createElement('li');
     const b = document.createElement('button');
-    b.textContent = r.name + (r.perm === 'read' ? ' (ro)' : '');
+    const label = r.name + (r.perm === 'read' ? ' (ro)' : '');
+    b.textContent = label;
+    b.title = label;
     if (r.id === state.root) b.classList.add('active');
     b.onclick = async () => {
       state.root = r.id;
@@ -140,11 +142,12 @@ async function loadList() {
   for (const e of entries) {
     const tr = document.createElement('tr');
     const icon = e.kind === 'dir' ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
-    tr.innerHTML = `<td class="icon">${icon}</td><td></td><td>${e.isDir ? '—' : fmtSize(e.size)}</td><td>${new Date(e.modTime).toLocaleString()}</td><td class="row-actions"></td>`;
+    tr.innerHTML = `<td class="icon">${icon}</td><td class="name-cell"></td><td>${e.isDir ? '—' : fmtSize(e.size)}</td><td>${new Date(e.modTime).toLocaleString()}</td><td class="row-actions"></td>`;
     const nameCell = tr.children[1];
     const nameBtn = document.createElement('button');
-    nameBtn.className = 'ghost';
+    nameBtn.className = 'name-btn';
     nameBtn.textContent = e.name;
+    nameBtn.title = e.name;
     nameBtn.onclick = async () => {
       if (e.isDir) {
         state.path = e.path;

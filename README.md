@@ -10,7 +10,7 @@ Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shar
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
-- **File ops** — browse, upload (with per-file progress), download, mkdir, rename, delete
+- **File ops** — browse, upload (with per-file progress), download, mkdir, rename, delete; long names ellipsize in the list (mobile-friendly)
 - **Preview** — image preview and HTML5 video playback (client-side decode)
 - **Thumbnails** — optional ffmpeg thumbs (software by default; Unraid Intel VAAPI supported)
 - **Admin console**

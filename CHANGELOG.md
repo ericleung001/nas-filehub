@@ -11,6 +11,9 @@ where version tags are used.
 ### Added
 - Upload progress UI: per-file status with filename, transferred bytes / percent, and success or error after each finish (XHR `upload.onprogress`; no API change).
 
+### Fixed
+- Long file and root names no longer break the file list layout on mobile; names ellipsize on one line (full name in `title` tooltip). Size/Modified columns hide under 800px so icon, name, and actions stay aligned.
+
 ### Changed
 - Remove meta language note from README.
 
