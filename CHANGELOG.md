@@ -6,26 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where version tags are used.
 
-> **Maintainer habit:** after every feature or fix that lands on `main`, update this
-> changelog, commit, and push. Do not leave undocumented work on the remote.
-
-# Changelog
-
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-where version tags are used.
-
-> **Maintainer habit:** after every feature or fix that lands on `main`, update this
-> changelog, commit, and push. Do not leave undocumented work on the remote.
-
 ## [Unreleased]
 
 ### Changed
-- Remove meta language note from README (English-only docs, no house commentary).
-
-## [Unreleased]
+- Remove meta language note from README.
 
 ## [0.2.0] - 2026-11-06
 
