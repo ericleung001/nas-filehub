@@ -6,8 +6,6 @@ Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shar
 
 **License:** Apache-2.0
 
-> 短注：本 README 以英文為主。簡體／粵語說明可另外補；日常開發請跟 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
 ## Features
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
