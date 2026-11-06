@@ -216,17 +216,92 @@ $('#btn-mkdir').addEventListener('click', async () => {
   await loadList();
 });
 
-$('#file-input').addEventListener('change', async (ev) => {
-  const files = [...ev.target.files];
-  for (const f of files) {
+function ensureUploadPanel() {
+  const panel = $('#upload-status');
+  panel.hidden = false;
+  return panel;
+}
+
+function setUploadItem(li, { loaded, total, status, error }) {
+  const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+  const bar = li.querySelector('.bar > span');
+  const meta = li.querySelector('.meta');
+  bar.style.width = pct + '%';
+  li.classList.remove('done', 'err');
+  if (status === 'uploading') {
+    meta.textContent = total > 0
+      ? `${fmtSize(loaded)} / ${fmtSize(total)} (${pct}%)`
+      : `${fmtSize(loaded)}…`;
+  } else if (status === 'done') {
+    li.classList.add('done');
+    meta.textContent = total > 0 ? `Done · ${fmtSize(total)}` : 'Done';
+    bar.style.width = '100%';
+  } else if (status === 'error') {
+    li.classList.add('err');
+    meta.textContent = error || 'Upload failed';
+  }
+}
+
+function uploadFileWithProgress(file, onProgress) {
+  return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append('root', state.root);
     fd.append('path', state.path);
-    fd.append('file', f);
-    await api('/api/upload', { method: 'POST', body: fd });
-  }
+    fd.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => {
+      if (onProgress) onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+    };
+    xhr.onload = () => {
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = { raw: xhr.responseText }; }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error((data && data.error) || xhr.statusText || 'Upload failed'));
+    };
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.onabort = () => reject(new Error('Upload aborted'));
+    xhr.send(fd);
+  });
+}
+
+$('#btn-clear-uploads').addEventListener('click', () => {
+  $('#upload-list').innerHTML = '';
+  $('#upload-status').hidden = true;
+  $('#btn-clear-uploads').hidden = true;
+});
+
+$('#file-input').addEventListener('change', async (ev) => {
+  const files = [...ev.target.files];
   ev.target.value = '';
-  await loadList();
+  if (!files.length) return;
+  ensureUploadPanel();
+  const list = $('#upload-list');
+  $('#btn-clear-uploads').hidden = true;
+  let anyErr = false;
+  for (const f of files) {
+    const li = document.createElement('li');
+    li.className = 'upload-item';
+    li.innerHTML = `<div class="row"><span class="name"></span><span class="meta"></span></div><div class="bar"><span></span></div>`;
+    li.querySelector('.name').textContent = f.name;
+    list.appendChild(li);
+    setUploadItem(li, { loaded: 0, total: f.size, status: 'uploading' });
+    try {
+      await uploadFileWithProgress(f, (loaded, total) => {
+        setUploadItem(li, { loaded, total, status: 'uploading' });
+      });
+      setUploadItem(li, { loaded: f.size, total: f.size, status: 'done' });
+    } catch (err) {
+      anyErr = true;
+      setUploadItem(li, { loaded: 0, total: f.size, status: 'error', error: err.message });
+    }
+  }
+  $('#btn-clear-uploads').hidden = false;
+  if (!anyErr) await loadList();
+  else {
+    try { await loadList(); } catch { /* keep status visible */ }
+  }
 });
 
 $('#btn-refresh').addEventListener('click', loadList);
