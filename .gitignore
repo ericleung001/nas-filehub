@@ -2,11 +2,24 @@
 *.db
 *.exe
 /nas-filehub
+/nas-filehub.prev-bin
 /bin/
 /dist/
+/server
 .DS_Store
 .env
 .env.*
 !.env.example
 Thumbs.db
 *.log
+
+# Local deploy / agent secrets (never commit)
+.deploy.env
+.deploy-admin-pw
+.deploy-session-secret
+.agent-login.txt
+.agent-login-export.env
+.agent-login*
+
+# Screenshots and local capture artifacts
+/screenshots/

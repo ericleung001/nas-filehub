@@ -22,6 +22,8 @@ type User struct {
 	PasswordHash string    `json:"-"`
 	IsAdmin      bool      `json:"isAdmin"`
 	HomePath     string    `json:"homePath"` // relative to DATA_ROOT
+	QuotaBytes   int64     `json:"quotaBytes"` // 0 = unlimited
+	Disabled     bool      `json:"disabled"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -66,6 +68,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   is_admin INTEGER NOT NULL DEFAULT 0,
   home_path TEXT NOT NULL,
+  quota_bytes INTEGER NOT NULL DEFAULT 0,
+  disabled INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sessions (
@@ -89,8 +93,48 @@ CREATE TABLE IF NOT EXISTS share_grants (
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_grants_user ON share_grants(user_id);
 `
-	_, err := d.SQL.Exec(schema)
-	return err
+	if _, err := d.SQL.Exec(schema); err != nil {
+		return err
+	}
+	return d.ensureUserColumns()
+}
+
+func (d *DB) ensureUserColumns() error {
+	cols := map[string]bool{}
+	rows, err := d.SQL.Query(`PRAGMA table_info(users)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	alters := []struct {
+		name string
+		ddl  string
+	}{
+		{"quota_bytes", `ALTER TABLE users ADD COLUMN quota_bytes INTEGER NOT NULL DEFAULT 0`},
+		{"disabled", `ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`},
+	}
+	for _, a := range alters {
+		if cols[a.name] {
+			continue
+		}
+		if _, err := d.SQL.Exec(a.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func HashPassword(pw string) (string, error) {
@@ -127,77 +171,89 @@ func (d *DB) EnsureAdmin(username, password string) error {
 	return err
 }
 
-func (d *DB) GetUserByUsername(username string) (*User, error) {
+func scanUser(scanner interface {
+	Scan(dest ...any) error
+}) (*User, error) {
 	u := &User{}
-	var admin int
+	var admin, disabled int
 	var created string
-	err := d.SQL.QueryRow(
-		`SELECT id, username, password_hash, is_admin, home_path, created_at FROM users WHERE username=? COLLATE NOCASE`,
-		username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &created)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	err := scanner.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &created)
 	if err != nil {
 		return nil, err
 	}
 	u.IsAdmin = admin == 1
+	u.Disabled = disabled == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	return u, nil
+}
+
+const userSelectCols = `id, username, password_hash, is_admin, home_path, quota_bytes, disabled, created_at`
+
+func (d *DB) GetUserByUsername(username string) (*User, error) {
+	row := d.SQL.QueryRow(
+		`SELECT `+userSelectCols+` FROM users WHERE username=? COLLATE NOCASE`,
+		username,
+	)
+	u, err := scanUser(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return u, err
 }
 
 func (d *DB) GetUserByID(id int64) (*User, error) {
-	u := &User{}
-	var admin int
-	var created string
-	err := d.SQL.QueryRow(
-		`SELECT id, username, password_hash, is_admin, home_path, created_at FROM users WHERE id=?`,
-		id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &created)
+	row := d.SQL.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE id=?`, id)
+	u, err := scanUser(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	u.IsAdmin = admin == 1
-	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
-	return u, nil
+	return u, err
 }
 
 func (d *DB) ListUsers() ([]User, error) {
-	rows, err := d.SQL.Query(`SELECT id, username, password_hash, is_admin, home_path, created_at FROM users ORDER BY username`)
+	rows, err := d.SQL.Query(`SELECT ` + userSelectCols + ` FROM users ORDER BY username`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		var u User
-		var admin int
-		var created string
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &created); err != nil {
+		u, err := scanUser(rows)
+		if err != nil {
 			return nil, err
 		}
-		u.IsAdmin = admin == 1
-		u.CreatedAt, _ = time.Parse(time.RFC3339, created)
 		u.PasswordHash = ""
-		out = append(out, u)
+		out = append(out, *u)
 	}
 	return out, rows.Err()
 }
 
-func (d *DB) CreateUser(username, password, homePath string, isAdmin bool) (*User, error) {
-	username = strings.TrimSpace(username)
-	if username == "" || password == "" {
-		return nil, fmt.Errorf("username and password required")
-	}
+func sanitizeHomePath(homePath, username string) (string, error) {
 	if homePath == "" {
 		homePath = filepath.ToSlash(filepath.Join("homes", username))
 	}
 	homePath = filepath.ToSlash(filepath.Clean(homePath))
-	if strings.HasPrefix(homePath, "..") || homePath == "." {
-		return nil, fmt.Errorf("invalid home path")
+	if homePath == "" || homePath == "." || strings.HasPrefix(homePath, "..") || strings.Contains(homePath, "../") {
+		return "", fmt.Errorf("invalid home path")
+	}
+	if strings.HasPrefix(homePath, "/") {
+		return "", fmt.Errorf("home path must be relative to DATA_ROOT")
+	}
+	return homePath, nil
+}
+
+func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quotaBytes int64) (*User, error) {
+	username = strings.TrimSpace(username)
+	if username == "" || password == "" {
+		return nil, fmt.Errorf("username and password required")
+	}
+	if quotaBytes < 0 {
+		return nil, fmt.Errorf("quotaBytes must be >= 0")
+	}
+	var err error
+	homePath, err = sanitizeHomePath(homePath, username)
+	if err != nil {
+		return nil, err
 	}
 	hash, err := HashPassword(password)
 	if err != nil {
@@ -209,14 +265,112 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool) (*Use
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := d.SQL.Exec(
-		`INSERT INTO users(username, password_hash, is_admin, home_path, created_at) VALUES(?,?,?,?,?)`,
-		username, hash, admin, homePath, now,
+		`INSERT INTO users(username, password_hash, is_admin, home_path, quota_bytes, disabled, created_at) VALUES(?,?,?,?,?,0,?)`,
+		username, hash, admin, homePath, quotaBytes, now,
 	)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
-	return &User{ID: id, Username: username, IsAdmin: isAdmin, HomePath: homePath, CreatedAt: time.Now().UTC()}, nil
+	return &User{
+		ID: id, Username: username, IsAdmin: isAdmin, HomePath: homePath,
+		QuotaBytes: quotaBytes, CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+// UpdateUser patches admin-managed fields. Empty username keeps current; empty homePath keeps current.
+// Pass clearDisabled/setDisabled via disabled pointer; nil means leave unchanged for optional fields
+// that use pointers in the API layer — here we take concrete values with "set" flags.
+type UserUpdate struct {
+	Username   *string
+	IsAdmin    *bool
+	HomePath   *string
+	QuotaBytes *int64
+	Disabled   *bool
+}
+
+func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
+	cur, err := d.GetUserByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if cur == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	username := cur.Username
+	if upd.Username != nil {
+		username = strings.TrimSpace(*upd.Username)
+		if username == "" {
+			return nil, fmt.Errorf("username required")
+		}
+	}
+	isAdmin := cur.IsAdmin
+	if upd.IsAdmin != nil {
+		isAdmin = *upd.IsAdmin
+	}
+	homePath := cur.HomePath
+	if upd.HomePath != nil {
+		homePath, err = sanitizeHomePath(*upd.HomePath, username)
+		if err != nil {
+			return nil, err
+		}
+	}
+	quota := cur.QuotaBytes
+	if upd.QuotaBytes != nil {
+		if *upd.QuotaBytes < 0 {
+			return nil, fmt.Errorf("quotaBytes must be >= 0")
+		}
+		quota = *upd.QuotaBytes
+	}
+	disabled := cur.Disabled
+	if upd.Disabled != nil {
+		disabled = *upd.Disabled
+	}
+	admin := 0
+	if isAdmin {
+		admin = 1
+	}
+	dis := 0
+	if disabled {
+		dis = 1
+	}
+	_, err = d.SQL.Exec(
+		`UPDATE users SET username=?, is_admin=?, home_path=?, quota_bytes=?, disabled=? WHERE id=?`,
+		username, admin, homePath, quota, dis, id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if disabled && !cur.Disabled {
+		_ = d.DeleteUserSessions(id)
+	}
+	return d.GetUserByID(id)
+}
+
+func (d *DB) SetUserPassword(id int64, password string) error {
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("password required")
+	}
+	u, err := d.GetUserByID(id)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return fmt.Errorf("user not found")
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return err
+	}
+	if _, err := d.SQL.Exec(`UPDATE users SET password_hash=? WHERE id=?`, hash, id); err != nil {
+		return err
+	}
+	return d.DeleteUserSessions(id)
+}
+
+func (d *DB) DeleteUserSessions(userID int64) error {
+	_, err := d.SQL.Exec(`DELETE FROM sessions WHERE user_id=?`, userID)
+	return err
 }
 
 func (d *DB) DeleteUser(id int64) error {

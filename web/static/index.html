@@ -57,14 +57,38 @@
       <div class="admin-grid">
         <div>
           <h3>Users</h3>
-          <form id="create-user">
+          <form id="create-user" class="admin-form">
             <input name="username" placeholder="username" required />
             <input name="password" type="password" placeholder="password" required />
             <input name="homePath" placeholder="home path (optional)" />
+            <input name="quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
             <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
             <button type="submit">Create user</button>
           </form>
           <ul id="user-list"></ul>
+
+          <dialog id="user-edit-dialog">
+            <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
+            <h3>Edit user</h3>
+            <form id="edit-user" class="admin-form">
+              <input type="hidden" name="id" />
+              <label>Username<input name="username" required /></label>
+              <label>Home path<input name="homePath" required /></label>
+              <label>Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
+              <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
+              <label class="check"><input name="disabled" type="checkbox" /> disabled</label>
+              <button type="submit">Save</button>
+              <p id="edit-user-error" class="error" hidden></p>
+            </form>
+            <hr class="sep" />
+            <h3>Set password</h3>
+            <form id="set-password" class="admin-form">
+              <input type="hidden" name="id" />
+              <label>New password<input name="password" type="password" required minlength="4" /></label>
+              <button type="submit">Update password</button>
+              <p id="set-password-msg" class="muted" hidden></p>
+            </form>
+          </dialog>
         </div>
         <div>
           <h3>Shared folders</h3>

@@ -190,3 +190,47 @@ func Open(root, rel string) (*os.File, fs.FileInfo, error) {
 	}
 	return f, st, nil
 }
+
+// DirSize returns total size of regular files under root/rel (symlink-safe via SafeJoin root only).
+// Symlinks are not followed into (filepath.WalkDir does not follow dir symlinks by default for the walk root children... actually WalkDir does not follow symlinks).
+func DirSize(root, rel string) (int64, error) {
+	full, err := SafeJoin(root, rel)
+	if err != nil {
+		return 0, err
+	}
+	st, err := os.Stat(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if !st.IsDir() {
+		return st.Size(), nil
+	}
+	var total int64
+	err = filepath.WalkDir(full, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// skip unreadable entries
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// skip symlinks to avoid escaping / double-count
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
+}
+

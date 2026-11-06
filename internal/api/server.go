@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -118,8 +119,13 @@ func (s *Server) currentUser(r *http.Request) *db.User {
 
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.currentUser(r) == nil {
+		u := s.currentUser(r)
+		if u == nil {
 			writeErr(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if u.Disabled {
+			writeErr(w, http.StatusUnauthorized, "account disabled")
 			return
 		}
 		next(w, r)
@@ -188,6 +194,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "invalid credentials")
 		return
 	}
+	if u.Disabled {
+		writeErr(w, 401, "account disabled")
+		return
+	}
 	token, err := auth.NewToken()
 	if err != nil {
 		writeErr(w, 500, "session error")
@@ -199,12 +209,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSessionCookie(w, token, exp)
-	writeJSON(w, 200, map[string]any{
-		"user": map[string]any{
-			"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
-		},
-	})
+	writeJSON(w, 200, map[string]any{"user": s.userPublic(u)})
 }
+
+
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -218,13 +226,35 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
+func (s *Server) userPublic(u *db.User) map[string]any {
+	return map[string]any{
+		"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
+		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled,
+	}
+}
+
+func (s *Server) homeUsedBytes(u *db.User) int64 {
+	used, err := files.DirSize(s.Cfg.DataRoot, u.HomePath)
+	if err != nil {
+		return 0
+	}
+	return used
+}
+
+func (s *Server) checkHomeQuota(u *db.User, extra int64) error {
+	if u == nil || u.QuotaBytes <= 0 {
+		return nil
+	}
+	used := s.homeUsedBytes(u)
+	if used+extra > u.QuotaBytes {
+		return fmt.Errorf("quota exceeded: used %d + %d > limit %d bytes", used, extra, u.QuotaBytes)
+	}
+	return nil
+}
+
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u := s.currentUser(r)
-	writeJSON(w, 200, map[string]any{
-		"user": map[string]any{
-			"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
-		},
-	})
+	writeJSON(w, 200, map[string]any{"user": s.userPublic(u)})
 }
 
 func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
@@ -324,6 +354,12 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
+	if sc.Kind == "home" {
+		if err := s.checkHomeQuota(u, 0); err != nil {
+			writeErr(w, 403, err.Error())
+			return
+		}
+	}
 	if err := files.Mkdir(sc.Root, sc.Rel); err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -409,6 +445,16 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	if sc.Kind == "home" {
+		extra := hdr.Size
+		if extra < 0 {
+			extra = 0
+		}
+		if err := s.checkHomeQuota(u, extra); err != nil {
+			writeErr(w, 403, err.Error())
+			return
+		}
+	}
 	saved, err := files.SaveUpload(sc.Root, sc.Rel, hdr.Filename, file)
 	if err != nil {
 		writeErr(w, 400, err.Error())
@@ -479,19 +525,28 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 500, "db error")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"users": users})
+		out := make([]map[string]any, 0, len(users))
+		for i := range users {
+			u := &users[i]
+			m := s.userPublic(u)
+			m["usedBytes"] = s.homeUsedBytes(u)
+			m["createdAt"] = u.CreatedAt
+			out = append(out, m)
+		}
+		writeJSON(w, 200, map[string]any{"users": out})
 	case http.MethodPost:
 		var body struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-			HomePath string `json:"homePath"`
-			IsAdmin  bool   `json:"isAdmin"`
+			Username   string `json:"username"`
+			Password   string `json:"password"`
+			HomePath   string `json:"homePath"`
+			IsAdmin    bool   `json:"isAdmin"`
+			QuotaBytes int64  `json:"quotaBytes"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
 			return
 		}
-		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin)
+		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin, body.QuotaBytes)
 		if err != nil {
 			writeErr(w, 400, err.Error())
 			return
@@ -500,33 +555,106 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			_ = files.EnsureDir(abs)
 		}
-		writeJSON(w, 201, map[string]any{"user": u})
+		m := s.userPublic(u)
+		m["usedBytes"] = int64(0)
+		m["createdAt"] = u.CreatedAt
+		writeJSON(w, 201, map[string]any{"user": m})
 	default:
 		writeErr(w, 405, "method not allowed")
 	}
 }
 
 func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	parts := strings.Split(rest, "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || parts[0] == "" {
 		writeErr(w, 400, "bad id")
 		return
 	}
-	if r.Method != http.MethodDelete {
-		writeErr(w, 405, "method not allowed")
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			u, err := s.DB.GetUserByID(id)
+			if err != nil || u == nil {
+				writeErr(w, 404, "not found")
+				return
+			}
+			u.PasswordHash = ""
+			m := s.userPublic(u)
+			m["usedBytes"] = s.homeUsedBytes(u)
+			m["createdAt"] = u.CreatedAt
+			writeJSON(w, 200, map[string]any{"user": m})
+		case http.MethodPatch, http.MethodPut:
+			var body struct {
+				Username   *string `json:"username"`
+				IsAdmin    *bool   `json:"isAdmin"`
+				HomePath   *string `json:"homePath"`
+				QuotaBytes *int64  `json:"quotaBytes"`
+				Disabled   *bool   `json:"disabled"`
+			}
+			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+				writeErr(w, 400, "bad json")
+				return
+			}
+			me := s.currentUser(r)
+			if body.Disabled != nil && *body.Disabled && me.ID == id {
+				writeErr(w, 400, "cannot disable yourself")
+				return
+			}
+			if body.IsAdmin != nil && !*body.IsAdmin && me.ID == id {
+				writeErr(w, 400, "cannot remove your own admin flag")
+				return
+			}
+			u, err := s.DB.UpdateUser(id, db.UserUpdate{
+				Username: body.Username, IsAdmin: body.IsAdmin, HomePath: body.HomePath,
+				QuotaBytes: body.QuotaBytes, Disabled: body.Disabled,
+			})
+			if err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			u.PasswordHash = ""
+			m := s.userPublic(u)
+			m["usedBytes"] = s.homeUsedBytes(u)
+			m["createdAt"] = u.CreatedAt
+			writeJSON(w, 200, map[string]any{"user": m})
+		case http.MethodDelete:
+			me := s.currentUser(r)
+			if me.ID == id {
+				writeErr(w, 400, "cannot delete yourself")
+				return
+			}
+			if err := s.DB.DeleteUser(id); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			writeJSON(w, 200, map[string]string{"ok": "1"})
+		default:
+			writeErr(w, 405, "method not allowed")
+		}
 		return
 	}
-	me := s.currentUser(r)
-	if me.ID == id {
-		writeErr(w, 400, "cannot delete yourself")
+	if parts[1] == "password" && len(parts) == 2 {
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "method not allowed")
+			return
+		}
+		var body struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+			writeErr(w, 400, "bad json")
+			return
+		}
+		if err := s.DB.SetUserPassword(id, body.Password); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]string{"ok": "1"})
 		return
 	}
-	if err := s.DB.DeleteUser(id); err != nil {
-		writeErr(w, 400, err.Error())
-		return
-	}
-	writeJSON(w, 200, map[string]string{"ok": "1"})
+	writeErr(w, 404, "not found")
 }
 
 func (s *Server) handleAdminShares(w http.ResponseWriter, r *http.Request) {

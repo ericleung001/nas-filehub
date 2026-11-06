@@ -231,13 +231,64 @@ $('#file-input').addEventListener('change', async (ev) => {
 
 $('#btn-refresh').addEventListener('click', loadList);
 
+function parseQuotaInput(s) {
+  s = (s || '').trim();
+  if (!s || s === '0' || /^unlim/i.test(s)) return 0;
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb)?$/i);
+  if (!m) throw new Error('invalid quota: use e.g. 5GB, 500MB, or 0');
+  const n = parseFloat(m[1]);
+  const unit = (m[2] || 'b').toLowerCase();
+  const mul = { b: 1, kb: 1024, mb: 1024**2, gb: 1024**3, tb: 1024**4 }[unit];
+  return Math.round(n * mul);
+}
+
+function fmtQuota(q) {
+  if (!q) return 'unlimited';
+  return fmtSize(q);
+}
+
+function openUserEdit(u) {
+  const dlg = $('#user-edit-dialog');
+  const form = $('#edit-user');
+  form.id.value = u.id;
+  form.username.value = u.username;
+  form.homePath.value = u.homePath;
+  form.quota.value = u.quotaBytes ? fmtQuota(u.quotaBytes).replace(' ', '') : '0';
+  form.isAdmin.checked = !!u.isAdmin;
+  form.disabled.checked = !!u.disabled;
+  $('#edit-user-error').hidden = true;
+  $('#set-password').id.value = u.id;
+  $('#set-password').password.value = '';
+  $('#set-password-msg').hidden = true;
+  dlg.showModal();
+}
+
 async function refreshAdmin() {
   const users = await api('/api/admin/users');
   const ul = $('#user-list');
   ul.innerHTML = '';
   for (const u of users.users) {
     const li = document.createElement('li');
-    li.innerHTML = `<strong>${u.username}</strong> · home: <code>${u.homePath}</code> ${u.isAdmin ? '· admin' : ''}`;
+    li.className = 'user-card';
+    const used = u.usedBytes || 0;
+    const quota = u.quotaBytes || 0;
+    const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
+    const badges = [];
+    if (u.isAdmin) badges.push('<span class="badge admin">admin</span>');
+    if (u.disabled) badges.push('<span class="badge disabled">disabled</span>');
+    li.innerHTML = `
+      <div><strong>${u.username}</strong> ${badges.join(' ')} <span class="muted">#${u.id}</span></div>
+      <div class="meta">home: <code>${u.homePath}</code></div>
+      <div class="meta">used ${fmtSize(used)} / ${fmtQuota(quota)}${quota ? ` (${pct}%)` : ''}</div>
+      ${quota ? `<div class="quota-bar${used > quota ? ' over' : ''}"><span style="width:${pct}%"></span></div>` : ''}
+    `;
+    const btns = document.createElement('div');
+    btns.className = 'row-btns';
+    const edit = document.createElement('button');
+    edit.textContent = 'Edit';
+    edit.className = 'ghost';
+    edit.onclick = () => openUserEdit(u);
+    btns.appendChild(edit);
     if (u.id !== state.user.id) {
       const b = document.createElement('button');
       b.textContent = 'Delete';
@@ -247,8 +298,9 @@ async function refreshAdmin() {
         await api('/api/admin/users/' + u.id, { method: 'DELETE' });
         await refreshAdmin();
       };
-      li.appendChild(b);
+      btns.appendChild(b);
     }
+    li.appendChild(btns);
     ul.appendChild(li);
   }
 
@@ -289,6 +341,9 @@ async function refreshAdmin() {
 $('#create-user').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
+  let quotaBytes = 0;
+  try { quotaBytes = parseQuotaInput(fd.get('quota')); }
+  catch (err) { alert(err.message); return; }
   await api('/api/admin/users', {
     method: 'POST',
     body: JSON.stringify({
@@ -296,10 +351,57 @@ $('#create-user').addEventListener('submit', async (e) => {
       password: fd.get('password'),
       homePath: fd.get('homePath') || '',
       isAdmin: !!fd.get('isAdmin'),
+      quotaBytes,
     }),
   });
   e.target.reset();
   await refreshAdmin();
+});
+
+$('#edit-user').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const errEl = $('#edit-user-error');
+  errEl.hidden = true;
+  let quotaBytes = 0;
+  try { quotaBytes = parseQuotaInput(fd.get('quota')); }
+  catch (err) { errEl.textContent = err.message; errEl.hidden = false; return; }
+  try {
+    await api('/api/admin/users/' + fd.get('id'), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        username: fd.get('username'),
+        homePath: fd.get('homePath'),
+        isAdmin: !!fd.get('isAdmin'),
+        disabled: !!fd.get('disabled'),
+        quotaBytes,
+      }),
+    });
+    $('#user-edit-dialog').close();
+    await refreshAdmin();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
+
+$('#set-password').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = $('#set-password-msg');
+  msg.hidden = true;
+  try {
+    await api('/api/admin/users/' + fd.get('id') + '/password', {
+      method: 'POST',
+      body: JSON.stringify({ password: fd.get('password') }),
+    });
+    msg.textContent = 'Password updated (sessions cleared)';
+    msg.hidden = false;
+    e.target.password.value = '';
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.hidden = false;
+  }
 });
 
 $('#create-share').addEventListener('submit', async (e) => {

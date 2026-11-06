@@ -1,34 +1,45 @@
 # NAS FileHub
 
-輕量多用戶檔案瀏覽器（似 File Browser，多用戶似 Nextcloud）。  
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
-**Apache-2.0**
+Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shared folders.
 
-## 功能 Features
+**License:** Apache-2.0
 
-- 多用戶，每人獨立 home（`DATA_ROOT/homes/<user>`）
-- Shared folders：`read` / `write` 權限
-- 瀏覽、上傳、下載、新建資料夾、重新命名、刪除
-- 圖片預覽、HTML5 影片播放（瀏覽器端解碼）
-- 可選 ffmpeg 縮圖（軟件；Unraid J4125 可開 VAAPI）
-- **無** command / shell 執行入口
-- bcrypt 密碼、HttpOnly session cookie、登入 rate limit
+> 短注：本 README 以英文為主。簡體／粵語說明可另外補；日常開發請跟 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## 快速開始 Quick start
+## Features
 
-### Docker Compose（建議）
+- **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
+- **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
+- **File ops** — browse, upload, download, mkdir, rename, delete
+- **Preview** — image preview and HTML5 video playback (client-side decode)
+- **Thumbnails** — optional ffmpeg thumbs (software by default; Unraid Intel VAAPI supported)
+- **Admin console**
+  - Create / edit / delete users
+  - Set storage **quota** per user (e.g. `5GB`; `0` = unlimited)
+  - See **home usage** vs quota in the user list
+  - **Reset passwords** (invalidates that user’s sessions)
+  - Disable accounts (blocked at login)
+  - Manage shares and grants
+- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login rate limit; path-traversal guards; non-root container user
+
+Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
+
+## Quick start
+
+### Docker Compose (recommended)
 
 ```bash
-cp .env.example .env   # 改 ADMIN_PASSWORD / SESSION_SECRET
+cp .env.example .env   # set ADMIN_PASSWORD and SESSION_SECRET
 mkdir -p data/files data/db
 docker compose up -d --build
 ```
 
-瀏覽器開：<http://127.0.0.1:8088>  
-預設只綁 `127.0.0.1`（畀 Nginx Proxy Manager 反代）。
+Open <http://127.0.0.1:8088>.  
+Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reverse proxy) in front.
 
-### 本機跑（開發）
+### Local development
 
 ```bash
 export DATA_ROOT=./data/files
@@ -40,37 +51,52 @@ export LISTEN_ADDR=:8080
 go run ./cmd/server
 ```
 
-## 環境變數 Env
+Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 
-| Var | Default | 說明 |
-|-----|---------|------|
-| `LISTEN_ADDR` | `:8080` | HTTP listen |
-| `DATA_ROOT` | `/data/files` | 檔案根目錄 |
-| `DB_PATH` | `/data/filehub.db` | SQLite |
-| `ADMIN_USER` / `ADMIN_PASSWORD` | admin / (必填首次) | 首次開機 seed admin |
-| `SESSION_SECRET` | — | 建議設定（token 本身隨機存 DB） |
-| `SECURE_COOKIES` | `false` | 經 HTTPS／NPM 時設 `true` |
-| `THUMB_ENABLE` | `true` | ffmpeg 縮圖 |
-| `THUMB_VAAPI` | `false` | Intel VAAPI 硬解縮圖 |
-| `THUMB_CACHE_DIR` | `/data/thumbs` | 縮圖快取 |
-| `LOGIN_RATE_LIMIT` | `10` | 每 IP 每分鐘登入次數 |
-| `MAX_UPLOAD_MB` | `2048` | 上傳上限 |
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LISTEN_ADDR` | `:8080` | HTTP listen address |
+| `DATA_ROOT` | `/data/files` | File storage root |
+| `DB_PATH` | `/data/filehub.db` | SQLite database path |
+| `ADMIN_USER` | `admin` | Seed admin username (first boot) |
+| `ADMIN_PASSWORD` | _(required first boot)_ | Seed admin password |
+| `SESSION_SECRET` | — | Recommended; session tokens are random and stored in DB |
+| `SECURE_COOKIES` | `false` | Set `true` behind HTTPS / NPM |
+| `THUMB_ENABLE` | `true` | Generate thumbs with ffmpeg |
+| `THUMB_VAAPI` | `false` | Use Intel VAAPI for thumbs when `/dev/dri` is available |
+| `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory |
+| `LOGIN_RATE_LIMIT` | `10` | Max login attempts per IP per minute |
+| `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
+
+## Admin usage
+
+Sign in as an admin → **Admin**:
+
+1. **Create user** — home is created automatically; optional quota (e.g. `5GB`, `500MB`, or `0` for unlimited)
+2. **Edit user** — username, admin flag, home path, quota, disabled
+3. **Set password** — resets password and clears that user’s sessions
+4. **Create share** — path relative to `DATA_ROOT` (e.g. `shared/family`)
+5. **Grant** — assign `read` or `write` to a user id
+
+Disabled users cannot log in. Uploads / mkdir that would exceed home quota are rejected.
 
 ## Nginx Proxy Manager
 
-1. FileHub 只聽內網／`127.0.0.1:8088`
-2. NPM 新增 Proxy Host → 你的 domain → forward `http://<unraid-ip>:8088`（或 Docker network 內 hostname）
-3. 開 SSL（Let's Encrypt）
-4. 建議加 Access List 或 Authelia／Cloudflare Access
-5. 設 `SECURE_COOKIES=true`
+1. Keep FileHub on loopback / LAN only (`127.0.0.1:8088`)
+2. Add a Proxy Host → your domain → forward to `http://<host>:8088` (or the Docker network hostname)
+3. Enable SSL (Let’s Encrypt)
+4. Prefer an Access List, Authelia, or Cloudflare Access in front
+5. Set `SECURE_COOKIES=true`
 
-**唔好** 將 `:8080` 直接 port-forward 出公網。
+**Do not** port-forward the app port directly to the public internet.
 
-## Unraid + J4125 硬解縮圖
+## Unraid + Intel VAAPI (e.g. J4125)
 
-瀏覽器播片／睇圖多數用**客戶端**硬解；NAS 端硬解主要幫 **ffmpeg 產生縮圖／預覽**，減 CPU。
+Browser playback uses **client** decode. Server-side VAAPI mainly speeds **ffmpeg thumbnail** generation.
 
-`docker-compose.yml` 取消註解：
+In `docker-compose.yml`, uncomment:
 
 ```yaml
 devices:
@@ -79,37 +105,50 @@ environment:
   THUMB_VAAPI: "true"
 ```
 
-Unraid 確認 `/dev/dri/renderD128` 存在。VAAPI 失敗會自動 fallback 軟件 ffmpeg；再失敗則直接用原圖。
+Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls back to software; if that fails, the original image is used.
 
-（真正「轉碼串流」屬 Jellyfin 類產品；本專案刻意保持輕量。）
+(Full transcode streaming belongs in products like Jellyfin; FileHub stays intentionally light.)
 
-## Admin 用法
+## Security defaults
 
-登入 admin → **Admin**：
+- No remote command / shell execution surface
+- bcrypt password hashes
+- Session cookie: `HttpOnly`, `SameSite=Lax`, optional `Secure`
+- Login rate limiting
+- All file ops confined under the resolved scope root (path traversal protected)
+- Container runs as non-root `filehub` (uid 1000)
 
-1. Create user（自動建 home）
-2. Create share（路徑相對 `DATA_ROOT`，例如 `shared/family`）
-3. Grant → 填 user id + `read`/`write`
+## API summary
 
-User A **睇唔到** User B 嘅 home；只見到自己 home + 被授權嘅 shares。
+Auth / session:
 
-## 保安預設
+- `POST /api/login` · `POST /api/logout` · `GET /api/me` · `GET /api/health`
 
-- 無 remote command execution
-- bcrypt passwords
-- Session cookie：`HttpOnly`、`SameSite=Lax`、可開 `Secure`
-- Login rate limit
-- Path traversal 防護（所有檔案操作限於 scope root）
-- 容器以非 root `filehub` (uid 1000) 跑
+Files:
 
-## API 摘要
+- `GET /api/roots` · `GET /api/list`
+- `POST /api/mkdir` · `POST /api/rename` · `POST /api/delete` · `POST /api/upload`
+- `GET /api/download` · `GET /api/raw` · `GET /api/thumb`
 
-- `POST /api/login` `POST /api/logout` `GET /api/me`
-- `GET /api/roots` `GET /api/list`
-- `POST /api/mkdir|rename|delete|upload`
-- `GET /api/download` `GET /api/raw` `GET /api/thumb`
-- Admin: `/api/admin/users` `/api/admin/shares`
+Admin (requires admin session):
 
-## 授權 License
+- `GET|POST /api/admin/users`
+- `PATCH|DELETE /api/admin/users/{id}`
+- `POST /api/admin/users/{id}/password`
+- `GET|POST /api/admin/shares`
+- `DELETE /api/admin/shares/{id}`
+- Share grants under `/api/admin/shares/{id}/grants`
+
+## Contributing / release habit
+
+After every intentional change:
+
+1. Update [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog)
+2. Commit with a clear English message
+3. Push to `origin` `main`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files, binaries, or screenshots.
+
+## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
