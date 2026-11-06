@@ -1,0 +1,12 @@
+/data/
+*.db
+*.exe
+/nas-filehub
+/bin/
+/dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+Thumbs.db
+*.log

@@ -1,0 +1,25 @@
+# NAS FileHub — bind to loopback only; put Nginx Proxy Manager in front.
+services:
+  filehub:
+    build: .
+    container_name: nas-filehub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8080"
+    environment:
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme-please}
+      SESSION_SECRET: ${SESSION_SECRET:-replace-with-long-random}
+      SECURE_COOKIES: "true"
+      DATA_ROOT: /data/files
+      DB_PATH: /data/filehub.db
+      THUMB_CACHE_DIR: /data/thumbs
+      THUMB_ENABLE: "true"
+      THUMB_VAAPI: "false"
+      LOGIN_RATE_LIMIT: "10"
+      MAX_UPLOAD_MB: "4096"
+    volumes:
+      - ./data:/data
+    # Unraid Intel Quick Sync (J4125) — uncomment when deploying:
+    # devices:
+    #   - /dev/dri:/dev/dri

@@ -1,0 +1,624 @@
+package api
+
+import (
+	"encoding/json"
+	"io"
+	"io/fs"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/eric/nas-filehub/internal/auth"
+	"github.com/eric/nas-filehub/internal/config"
+	"github.com/eric/nas-filehub/internal/db"
+	"github.com/eric/nas-filehub/internal/files"
+	"github.com/eric/nas-filehub/internal/thumb"
+)
+
+type Server struct {
+	Cfg     config.Config
+	DB      *db.DB
+	Thumbs  *thumb.Generator
+	Limiter *auth.LoginLimiter
+	Static  fs.FS
+}
+
+type scope struct {
+	Root string // absolute filesystem root for this scope
+	Rel  string // relative path inside that root (requested)
+	Perm string // read|write
+	Kind string // home|share
+	ID   int64  // share id if share
+}
+
+func (s *Server) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/logout", s.requireAuth(s.handleLogout))
+	mux.HandleFunc("/api/me", s.requireAuth(s.handleMe))
+	mux.HandleFunc("/api/roots", s.requireAuth(s.handleRoots))
+	mux.HandleFunc("/api/list", s.requireAuth(s.handleList))
+	mux.HandleFunc("/api/mkdir", s.requireAuth(s.handleMkdir))
+	mux.HandleFunc("/api/rename", s.requireAuth(s.handleRename))
+	mux.HandleFunc("/api/delete", s.requireAuth(s.handleDelete))
+	mux.HandleFunc("/api/upload", s.requireAuth(s.handleUpload))
+	mux.HandleFunc("/api/download", s.requireAuth(s.handleDownload))
+	mux.HandleFunc("/api/raw", s.requireAuth(s.handleRaw))
+	mux.HandleFunc("/api/thumb", s.requireAuth(s.handleThumb))
+	mux.HandleFunc("/api/admin/users", s.requireAdmin(s.handleAdminUsers))
+	mux.HandleFunc("/api/admin/users/", s.requireAdmin(s.handleAdminUserID))
+	mux.HandleFunc("/api/admin/shares", s.requireAdmin(s.handleAdminShares))
+	mux.HandleFunc("/api/admin/shares/", s.requireAdmin(s.handleAdminShareID))
+
+	mux.Handle("/", s.spaHandler())
+	return s.securityHeaders(mux)
+}
+
+func (s *Server) Handler() http.Handler { return s.routes() }
+
+func (s *Server) spaHandler() http.Handler {
+	fileServer := http.FileServer(http.FS(s.Static))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+		if f, err := s.Static.Open(path); err != nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/index.html"
+			fileServer.ServeHTTP(w, r2)
+			return
+		} else {
+			_ = f.Close()
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-XSS-Protection", "0")
+		// No command execution endpoint exists by design.
+		next.ServeHTTP(w, r)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func (s *Server) currentUser(r *http.Request) *db.User {
+	c, err := r.Cookie(auth.CookieName)
+	if err != nil || c.Value == "" {
+		return nil
+	}
+	u, err := s.DB.GetSessionUser(c.Value)
+	if err != nil || u == nil {
+		return nil
+	}
+	return u
+}
+
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.currentUser(r) == nil {
+			writeErr(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		u := s.currentUser(r)
+		if u == nil || !u.IsAdmin {
+			writeErr(w, http.StatusForbidden, "admin only")
+			return
+		}
+		next(w, r)
+	})
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     auth.CookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.Cfg.SecureCookies,
+		Expires:  expires,
+	})
+}
+
+func (s *Server) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     auth.CookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.Cfg.SecureCookies,
+		MaxAge:   -1,
+	})
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{"ok": true, "service": "nas-filehub"})
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	ip := auth.ClientIP(r)
+	if !s.Limiter.Allow(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many login attempts")
+		return
+	}
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeErr(w, 400, "bad json")
+		return
+	}
+	u, err := s.DB.GetUserByUsername(body.Username)
+	if err != nil || u == nil || !db.CheckPassword(u.PasswordHash, body.Password) {
+		writeErr(w, 401, "invalid credentials")
+		return
+	}
+	token, err := auth.NewToken()
+	if err != nil {
+		writeErr(w, 500, "session error")
+		return
+	}
+	exp := time.Now().Add(s.Cfg.SessionTTL())
+	if err := s.DB.CreateSession(token, u.ID, exp); err != nil {
+		writeErr(w, 500, "session error")
+		return
+	}
+	s.setSessionCookie(w, token, exp)
+	writeJSON(w, 200, map[string]any{
+		"user": map[string]any{
+			"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
+		},
+	})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	if c, err := r.Cookie(auth.CookieName); err == nil {
+		_ = s.DB.DeleteSession(c.Value)
+	}
+	s.clearSessionCookie(w)
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	writeJSON(w, 200, map[string]any{
+		"user": map[string]any{
+			"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
+		},
+	})
+}
+
+func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	type root struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Kind string `json:"kind"`
+		Perm string `json:"perm"`
+	}
+	out := []root{{ID: "home", Name: "My Files", Kind: "home", Perm: "write"}}
+	shares, err := s.DB.SharesForUser(u.ID, u.IsAdmin)
+	if err != nil {
+		writeErr(w, 500, "db error")
+		return
+	}
+	for _, sa := range shares {
+		out = append(out, root{
+			ID:   "share:" + strconv.FormatInt(sa.Share.ID, 10),
+			Name: sa.Share.Name,
+			Kind: "share",
+			Perm: sa.Perm,
+		})
+	}
+	writeJSON(w, 200, map[string]any{"roots": out})
+}
+
+func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
+	rel = strings.TrimPrefix(rel, "/")
+	if rootID == "" || rootID == "home" {
+		abs, err := files.SafeJoin(s.Cfg.DataRoot, u.HomePath)
+		if err != nil {
+			return nil, err
+		}
+		return &scope{Root: abs, Rel: rel, Perm: "write", Kind: "home"}, nil
+	}
+	if strings.HasPrefix(rootID, "share:") {
+		idStr := strings.TrimPrefix(rootID, "share:")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		share, err := s.DB.GetShare(id)
+		if err != nil || share == nil {
+			return nil, os.ErrNotExist
+		}
+		perm := "write"
+		if !u.IsAdmin {
+			p, err := s.DB.GrantPerm(id, u.ID)
+			if err != nil || p == "" {
+				return nil, os.ErrPermission
+			}
+			perm = p
+		}
+		abs, err := files.SafeJoin(s.Cfg.DataRoot, share.Path)
+		if err != nil {
+			return nil, err
+		}
+		return &scope{Root: abs, Rel: rel, Perm: perm, Kind: "share", ID: id}, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	rootID := r.URL.Query().Get("root")
+	rel := r.URL.Query().Get("path")
+	sc, err := s.resolveScope(u, rootID, rel)
+	if err != nil {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	entries, err := files.List(sc.Root, sc.Rel)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"path": sc.Rel, "perm": sc.Perm, "entries": entries})
+}
+
+func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	u := s.currentUser(r)
+	var body struct {
+		Root string `json:"root"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 400, "bad json")
+		return
+	}
+	sc, err := s.resolveScope(u, body.Root, body.Path)
+	if err != nil || sc.Perm != "write" {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	if err := files.Mkdir(sc.Root, sc.Rel); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	u := s.currentUser(r)
+	var body struct {
+		Root string `json:"root"`
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 400, "bad json")
+		return
+	}
+	sc, err := s.resolveScope(u, body.Root, body.From)
+	if err != nil || sc.Perm != "write" {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	if err := files.Rename(sc.Root, body.From, body.To); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	u := s.currentUser(r)
+	var body struct {
+		Root string `json:"root"`
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 400, "bad json")
+		return
+	}
+	sc, err := s.resolveScope(u, body.Root, body.Path)
+	if err != nil || sc.Perm != "write" {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	if err := files.Delete(sc.Root, sc.Rel); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	u := s.currentUser(r)
+	max := s.Cfg.MaxUploadMB << 20
+	r.Body = http.MaxBytesReader(w, r.Body, max+1<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeErr(w, 400, "upload too large or bad multipart")
+		return
+	}
+	rootID := r.FormValue("root")
+	dir := r.FormValue("path")
+	sc, err := s.resolveScope(u, rootID, dir)
+	if err != nil || sc.Perm != "write" {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	file, hdr, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, 400, "file required")
+		return
+	}
+	defer file.Close()
+	saved, err := files.SaveUpload(sc.Root, sc.Rel, hdr.Filename, file)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"path": saved})
+}
+
+func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	sc, err := s.resolveScope(u, r.URL.Query().Get("root"), r.URL.Query().Get("path"))
+	if err != nil {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	f, st, err := files.Open(sc.Root, sc.Rel)
+	if err != nil {
+		writeErr(w, 404, "not found")
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(st.Name())+`"`)
+	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
+}
+
+func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	sc, err := s.resolveScope(u, r.URL.Query().Get("root"), r.URL.Query().Get("path"))
+	if err != nil {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	f, st, err := files.Open(sc.Root, sc.Rel)
+	if err != nil {
+		writeErr(w, 404, "not found")
+		return
+	}
+	defer f.Close()
+	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
+}
+
+func (s *Server) handleThumb(w http.ResponseWriter, r *http.Request) {
+	u := s.currentUser(r)
+	sc, err := s.resolveScope(u, r.URL.Query().Get("root"), r.URL.Query().Get("path"))
+	if err != nil {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	full, err := files.SafeJoin(sc.Root, sc.Rel)
+	if err != nil {
+		writeErr(w, 400, "bad path")
+		return
+	}
+	out, err := s.Thumbs.Get(full)
+	if err != nil {
+		// graceful fallback: redirect to raw for images
+		http.Redirect(w, r, "/api/raw?root="+r.URL.Query().Get("root")+"&path="+r.URL.Query().Get("path"), http.StatusFound)
+		return
+	}
+	http.ServeFile(w, r, out)
+}
+
+func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		users, err := s.DB.ListUsers()
+		if err != nil {
+			writeErr(w, 500, "db error")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"users": users})
+	case http.MethodPost:
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			HomePath string `json:"homePath"`
+			IsAdmin  bool   `json:"isAdmin"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, "bad json")
+			return
+		}
+		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		abs, err := files.SafeJoin(s.Cfg.DataRoot, u.HomePath)
+		if err == nil {
+			_ = files.EnsureDir(abs)
+		}
+		writeJSON(w, 201, map[string]any{"user": u})
+	default:
+		writeErr(w, 405, "method not allowed")
+	}
+}
+
+func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeErr(w, 400, "bad id")
+		return
+	}
+	if r.Method != http.MethodDelete {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	me := s.currentUser(r)
+	if me.ID == id {
+		writeErr(w, 400, "cannot delete yourself")
+		return
+	}
+	if err := s.DB.DeleteUser(id); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+func (s *Server) handleAdminShares(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		shares, err := s.DB.ListShares()
+		if err != nil {
+			writeErr(w, 500, "db error")
+			return
+		}
+		type shareOut struct {
+			db.Share
+			Grants []db.ShareGrant `json:"grants"`
+		}
+		out := make([]shareOut, 0, len(shares))
+		for _, sh := range shares {
+			grants, _ := s.DB.ListGrants(sh.ID)
+			out = append(out, shareOut{Share: sh, Grants: grants})
+		}
+		writeJSON(w, 200, map[string]any{"shares": out})
+	case http.MethodPost:
+		var body struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, "bad json")
+			return
+		}
+		me := s.currentUser(r)
+		sh, err := s.DB.CreateShare(body.Name, body.Path, me.ID)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		abs, err := files.SafeJoin(s.Cfg.DataRoot, sh.Path)
+		if err == nil {
+			_ = files.EnsureDir(abs)
+		}
+		writeJSON(w, 201, map[string]any{"share": sh})
+	default:
+		writeErr(w, 405, "method not allowed")
+	}
+}
+
+func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/admin/shares/")
+	parts := strings.Split(rest, "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		writeErr(w, 400, "bad id")
+		return
+	}
+	if len(parts) == 1 {
+		if r.Method == http.MethodDelete {
+			if err := s.DB.DeleteShare(id); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			writeJSON(w, 200, map[string]string{"ok": "1"})
+			return
+		}
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	if parts[1] == "grants" {
+		switch r.Method {
+		case http.MethodPost:
+			var body struct {
+				UserID int64  `json:"userId"`
+				Perm   string `json:"perm"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				writeErr(w, 400, "bad json")
+				return
+			}
+			if err := s.DB.SetShareGrant(id, body.UserID, body.Perm); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			writeJSON(w, 200, map[string]string{"ok": "1"})
+		case http.MethodDelete:
+			uid, _ := strconv.ParseInt(r.URL.Query().Get("userId"), 10, 64)
+			if err := s.DB.RemoveShareGrant(id, uid); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			writeJSON(w, 200, map[string]string{"ok": "1"})
+		default:
+			writeErr(w, 405, "method not allowed")
+		}
+		return
+	}
+	writeErr(w, 404, "not found")
+}

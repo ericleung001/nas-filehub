@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NAS FileHub</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="login-view" class="panel center">
+      <h1>NAS FileHub</h1>
+      <p class="muted">多用戶檔案瀏覽器 · Multi-user file manager</p>
+      <form id="login-form">
+        <label>Username<input name="username" autocomplete="username" required /></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit">登入 Login</button>
+        <p id="login-error" class="error" hidden></p>
+      </form>
+    </section>
+
+    <section id="main-view" hidden>
+      <header class="topbar">
+        <div class="brand">NAS FileHub</div>
+        <div class="spacer"></div>
+        <span id="whoami" class="muted"></span>
+        <button id="btn-admin" class="ghost" hidden>Admin</button>
+        <button id="btn-logout" class="ghost">Logout</button>
+      </header>
+      <div class="layout">
+        <aside id="sidebar">
+          <h3>Roots</h3>
+          <ul id="root-list"></ul>
+        </aside>
+        <main>
+          <div class="toolbar">
+            <nav id="breadcrumbs"></nav>
+            <div class="actions">
+              <button id="btn-mkdir" title="New folder">+ Folder</button>
+              <label class="btn file-btn">Upload<input id="file-input" type="file" multiple hidden /></label>
+              <button id="btn-refresh" class="ghost">Refresh</button>
+            </div>
+          </div>
+          <table class="files">
+            <thead><tr><th></th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+            <tbody id="file-body"></tbody>
+          </table>
+        </main>
+      </div>
+    </section>
+
+    <section id="admin-view" class="panel" hidden>
+      <header class="topbar">
+        <div class="brand">Admin</div>
+        <button id="btn-back" class="ghost">← Back</button>
+      </header>
+      <div class="admin-grid">
+        <div>
+          <h3>Users</h3>
+          <form id="create-user">
+            <input name="username" placeholder="username" required />
+            <input name="password" type="password" placeholder="password" required />
+            <input name="homePath" placeholder="home path (optional)" />
+            <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
+            <button type="submit">Create user</button>
+          </form>
+          <ul id="user-list"></ul>
+        </div>
+        <div>
+          <h3>Shared folders</h3>
+          <form id="create-share">
+            <input name="name" placeholder="display name" required />
+            <input name="path" placeholder="path under DATA_ROOT e.g. shared/team" required />
+            <button type="submit">Create share</button>
+          </form>
+          <ul id="share-list"></ul>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="preview">
+    <form method="dialog"><button class="close">✕</button></form>
+    <div id="preview-body"></div>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
