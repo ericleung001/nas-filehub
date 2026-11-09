@@ -6,13 +6,24 @@ Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shar
 
 **License:** Apache-2.0
 
+## Where it runs
+
+Filehub is **not** Unraid-only. It runs on any host that can run **Docker** or a **Go binary**:
+
+- Linux VPS / bare metal
+- Synology / QNAP / TrueNAS / Unraid (or any NAS with Docker)
+- Windows or macOS with Docker Desktop
+- Local development via `go run` / a built binary (Linux, Windows, macOS)
+
+Use **Docker Compose** (recommended) or the single binary from Quick start below. The [Unraid + Intel VAAPI](#unraid--intel-vaapi-optional) section is **optional** — it only enables hardware-accelerated ffmpeg thumbnails when `/dev/dri` is present. Software ffmpeg works everywhere by default.
+
 ## Features
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
 - **File ops** — browse, upload (with per-file progress), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; list or icons view; fixed-column list keeps Name/Size/Modified/actions aligned; long names ellipsize; compact action icons keep Delete visible
 - **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
-- **Thumbnails** — optional ffmpeg thumbs (software by default; Unraid Intel VAAPI supported)
+- **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
 - **Settings** — one top-bar entry for everyone
   - **Account** — quota used/limit, change own password (`POST /api/me/password`)
   - **Users / Shares / System** tabs (admins only) — create/edit users, quotas, password reset, disable accounts, manage shares and grants; Users and Shares shown as list tables
@@ -88,9 +99,11 @@ Disabled users cannot log in. Uploads / mkdir that would exceed home quota are r
 
 **Do not** port-forward the app port directly to the public internet.
 
-## Unraid + Intel VAAPI (e.g. J4125)
+## Unraid + Intel VAAPI (optional)
 
-Browser playback uses **client** decode. Server-side VAAPI mainly speeds **ffmpeg thumbnail** generation.
+This section is **optional hardware acceleration** for thumbnail generation only. Filehub itself does not require Unraid or a GPU.
+
+Browser playback uses **client** decode. Server-side VAAPI mainly speeds **ffmpeg thumbnail** generation on hosts with Intel iGPU (e.g. Unraid on a J4125) when `/dev/dri` is available. Leave `THUMB_VAAPI` unset/`false` on any other platform.
 
 In `docker-compose.yml`, uncomment:
 

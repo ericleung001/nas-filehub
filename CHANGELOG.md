@@ -25,6 +25,7 @@ where version tags are used.
 - Closing the media preview (X, Escape, or backdrop) now pauses video, clears `src`, calls `load()`, and removes the element so audio cannot keep playing.
 
 ### Changed
+- README clarifies Filehub runs on any Docker / Linux host (VPS, Synology, Windows/macOS with Docker, bare Go binary); Unraid + VAAPI docs marked as optional hardware accel only.
 - Product display name is **Filehub** (UI title/header/login; repository path remains `nas-filehub`).
 - Settings **Users** and **Shares** admin tabs render as dark-theme tables (columns + row actions) instead of stacked cards.
 - Top bar exposes a single **Settings** entry; admin user/share management moved into Settings tabs.
