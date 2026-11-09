@@ -82,13 +82,18 @@ func (s *Server) spaHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// Never hand FileServer a path of "/index.html": it 301-redirects that
+		// to "./", which under /s/{token} resolves to /s/ and loops forever.
 		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path == "" {
-			path = "index.html"
+		if path == "" || path == "index.html" {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = "/"
+			fileServer.ServeHTTP(w, r2)
+			return
 		}
 		if f, err := s.Static.Open(path); err != nil {
 			r2 := r.Clone(r.Context())
-			r2.URL.Path = "/index.html"
+			r2.URL.Path = "/"
 			fileServer.ServeHTTP(w, r2)
 			return
 		} else {
@@ -573,6 +578,11 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	rootID := body.Root
+	if rootID == "" {
+		rootID = "home"
+	}
+	_, _ = s.DB.DeleteLinkSharesForPath(rootID, sc.Rel)
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 

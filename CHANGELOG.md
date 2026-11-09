@@ -8,6 +8,15 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-09
+
+### Fixed
+- Public share URLs (`/s/{token}`) no longer hit `ERR_TOO_MANY_REDIRECTS`. SPA fallback served `/index.html` through `http.FileServer`, which 301-redirects to `./`; under `/s/...` that resolves to `/s/` and loops. Fallback now serves `/` so index.html is returned without a redirect.
+- Settings → Link shares table: separate Label / Target / URL / Status columns with ellipsis so long URLs no longer overlap.
+
+### Changed
+- Deleting a file or folder (single or bulk) also removes matching `link_shares` rows (exact path and links nested under a deleted folder) so the Link shares page does not keep dead links.
+
 ## [0.3.0] - 2026-11-09
 
 ### Added

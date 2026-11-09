@@ -337,7 +337,27 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .admin-table col.col-share-name { width: 9.5rem; }
 .admin-table col.col-share-path { width: auto; }
 .admin-table col.col-share-grants { width: 14rem; }
+.admin-table col.col-link-label { width: 8.5rem; }
+.admin-table col.col-link-target { width: 18%; }
+.admin-table col.col-link-url { width: auto; }
+.admin-table col.col-link-status { width: 9.5rem; }
 .admin-table col.col-actions { width: 7.5rem; }
+.admin-table .link-label-cell,
+.admin-table .link-target-cell,
+.admin-table .link-url-cell,
+.admin-table .link-url-cell a,
+.admin-table .path-cell code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.admin-table .link-url-cell a {
+  color: var(--accent, #6cb6ff);
+  text-decoration: none;
+}
+.admin-table .link-url-cell a:hover { text-decoration: underline; }
 .admin-table th, .admin-table td {
   text-align: left;
   padding: .55rem .55rem;
@@ -409,7 +429,9 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 @media (max-width: 900px) {
   .admin-table col.col-home,
   .admin-table col.col-share-path,
-  .admin-table td.home-cell { display: none; }
+  .admin-table col.col-link-target,
+  .admin-table td.home-cell,
+  .admin-table td.link-target-cell { display: none; }
   .admin-table thead th.home-h,
   .admin-table thead th.path-h { display: none; }
 }

@@ -1727,7 +1727,7 @@ async function refreshLinks() {
   const links = data.links || [];
   if (!links.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="4" class="muted">No link shares yet. Use the share button on a file or folder.</td>';
+    tr.innerHTML = '<td colspan="5" class="muted empty-row">No link shares yet. Use the share button on a file or folder.</td>';
     body.appendChild(tr);
     return;
   }
@@ -1741,10 +1741,12 @@ async function refreshLinks() {
     if (l.isDir) status.push('folder');
     else status.push('file');
     const url = location.origin + '/s/' + l.token;
+    const label = l.label || (l.isDir ? 'Folder' : 'File');
     tr.innerHTML =
-      '<td><strong>' + escapeHtml(l.label || '') + '</strong><div class="meta"><a href="' + url + '" target="_blank" rel="noopener">' + escapeHtml(url) + '</a></div></td>' +
-      '<td class="path-cell"><code>' + escapeHtml(l.rootId + ':' + l.path) + '</code></td>' +
-      '<td>' + status.map((s) => '<span class="badge">' + s + '</span>').join(' ') + '</td>' +
+      '<td class="link-label-cell" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</td>' +
+      '<td class="path-cell link-target-cell" title="' + escapeHtml(l.rootId + ':' + l.path) + '"><code>' + escapeHtml(l.rootId + ':' + l.path) + '</code></td>' +
+      '<td class="link-url-cell" title="' + escapeHtml(url) + '"><a href="' + url + '" target="_blank" rel="noopener">' + escapeHtml(url) + '</a></td>' +
+      '<td class="status-cell">' + status.map((s) => '<span class="badge">' + s + '</span>').join(' ') + '</td>' +
       '<td class="row-actions"></td>';
     const btns = tr.querySelector('.row-actions');
     const copy = document.createElement('button');

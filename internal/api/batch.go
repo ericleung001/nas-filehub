@@ -90,6 +90,11 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 			failed = append(failed, map[string]string{"path": p, "error": err.Error()})
 			continue
 		}
+		rootID := body.Root
+		if rootID == "" {
+			rootID = "home"
+		}
+		_, _ = s.DB.DeleteLinkSharesForPath(rootID, p)
 		ok++
 	}
 	writeJSON(w, 200, map[string]any{"ok": ok, "failed": failed})

@@ -163,6 +163,25 @@ func (d *DB) DeleteLinkShare(id int64) error {
 	return err
 }
 
+// DeleteLinkSharesForPath removes public links for an exact path and, when the
+// deleted item was a folder (or any parent path), any links nested under it.
+func (d *DB) DeleteLinkSharesForPath(rootID, path string) (int64, error) {
+	rootID = strings.TrimSpace(rootID)
+	path = strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if rootID == "" || path == "" {
+		return 0, nil
+	}
+	res, err := d.SQL.Exec(
+		`DELETE FROM link_shares WHERE root_id=? AND (path=? OR path LIKE ?)`,
+		rootID, path, path+"/%",
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func (l *LinkShare) IsExpired() bool {
 	if l == nil {
 		return true
