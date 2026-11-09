@@ -24,3 +24,7 @@ Thumbs.db
 # Screenshots and local capture artifacts
 /screenshots/
 _deploy/
+
+# First-boot credentials (never commit)
+admin-credentials.txt
+**/admin-credentials.txt

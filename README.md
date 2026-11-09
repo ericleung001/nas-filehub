@@ -42,46 +42,52 @@ Quota enforcement currently counts only the user’s **home** directory (shared 
 
 ## Quick start
 
-### First boot — admin password (required)
+### First boot — admin password (read this)
 
-There is **no emailed or printed default password**. On first start the seed admin is created from env:
+On **first install**, Filehub creates the seed admin from `ADMIN_USER` / `ADMIN_PASSWORD`. There is **no emailed default password**.
 
-| Item | Value |
-|------|--------|
-| Username | `ADMIN_USER` (default **`admin`**) |
-| Password | **`ADMIN_PASSWORD`** — **you must set this yourself** before first run |
+**Docker (recommended):** if you leave `ADMIN_PASSWORD` unset, the container **entrypoint auto-generates** a random `ADMIN_PASSWORD` and `SESSION_SECRET` **once** and writes them to:
 
-1. Copy `.env.example` → `.env` and set a strong `ADMIN_PASSWORD` (and preferably `SESSION_SECRET`) **before** `docker compose up` / the first binary start.
-2. Sign in with that username and password.
-3. Change the password later under **Settings → Change password** (or reset another user from **Settings → Users**).
+| Path inside container | Host path (with default compose `./data:/data`) |
+|----------------------|--------------------------------------------------|
+| `/data/admin-credentials.txt` | **`./data/admin-credentials.txt`** ← **read this for the password** |
+| `/data/.env` | `./data/.env` |
 
-`ADMIN_PASSWORD` is only used to **seed** the admin on an empty database. Changing `.env` later does **not** update an existing admin hash — use Settings (or recreate the DB if you are still in initial setup). Compose falls back to a weak placeholder if the variable is unset; always set `.env` yourself and never leave the placeholder in production.
+Those files are **never overwritten** on later starts. Open the credentials file, sign in as `admin`, then change the password under **Settings → Change password**.
+
+Optional host helper (project-root `.env` + the same credentials file, also once-only):
+
+```bash
+./scripts/gen-env.sh
+```
+
+You may still set your own `ADMIN_PASSWORD` / `SESSION_SECRET` in a project `.env` or compose environment before first start; if you do, first boot will use your values (and still write the credentials file once when it is missing).
+
+`ADMIN_PASSWORD` only **seeds** an empty database. Editing env later does **not** change an existing admin hash — use Settings (or recreate the DB during initial setup).
 
 ### Docker Compose (recommended)
 
 ```bash
-cp .env.example .env   # REQUIRED: set ADMIN_PASSWORD (and SESSION_SECRET) before first start
-# edit .env — replace ADMIN_PASSWORD=replace-me with your own strong password
 mkdir -p data/files data/db
+# Optional: ./scripts/gen-env.sh   # writes ./.env + ./data/admin-credentials.txt once
 docker compose up -d --build
+# Read the generated password (first boot only):
+cat ./data/admin-credentials.txt
 ```
 
-Open <http://127.0.0.1:8088> and sign in as `admin` with the password you put in `.env`.  
+Open <http://127.0.0.1:8088> and sign in as `admin` with the password from `./data/admin-credentials.txt`.  
 Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reverse proxy) in front.
 
 ### Local development
 
 ```bash
-export DATA_ROOT=./data/files
-export DB_PATH=./data/filehub.db
-export THUMB_CACHE_DIR=./data/thumbs
-export ADMIN_USER=admin
-export ADMIN_PASSWORD='your-strong-password'
-export LISTEN_ADDR=:8080
+./scripts/gen-env.sh   # once — creates ./.env and ./data/admin-credentials.txt
+set -a && source .env && set +a
+export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/thumbs LISTEN_ADDR=:8080
 go run ./cmd/server
 ```
 
-Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
+Or set `ADMIN_PASSWORD` yourself and run `make run` / `make smoke`.
 
 ## Environment variables
 
@@ -91,8 +97,10 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 | `DATA_ROOT` | `/data/files` | File storage root |
 | `DB_PATH` | `/data/filehub.db` | SQLite database path |
 | `ADMIN_USER` | `admin` | Seed admin **username** on first boot only |
-| `ADMIN_PASSWORD` | _(required first boot)_ | Seed admin **password** — set in `.env` before first run; **not** emailed or shown; ignored after the admin already exists |
-| `SESSION_SECRET` | — | Recommended; session tokens are random and stored in DB |
+| `ADMIN_PASSWORD` | _(auto on first Docker boot if unset)_ | Seed admin **password** — auto-written once to `./data/admin-credentials.txt` + `./data/.env` when unset; ignored after the admin already exists |
+| `SESSION_SECRET` | _(auto on first Docker boot if unset)_ | Auto-generated with the credentials file when unset; session tokens are also random in DB |
+| `CREDENTIALS_FILE` | `/data/admin-credentials.txt` | Path for the one-time admin credentials file (Docker entrypoint) |
+| `DOTENV_FILE` | `/data/.env` | Path for the one-time generated env copy (Docker entrypoint) |
 | `SECURE_COOKIES` | `false` | Set `true` behind HTTPS / NPM |
 | `THUMB_ENABLE` | `true` | Generate thumbs with ffmpeg |
 | `THUMB_VAAPI` | `false` | Use Intel VAAPI for thumbs when `/dev/dri` is available |
@@ -146,13 +154,14 @@ Each release includes:
 ```bash
 # example: Linux amd64 from the latest release assets
 chmod +x nas-filehub-linux-amd64
-export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/thumbs
-# REQUIRED on first boot: choose your own password (nothing is emailed)
-export ADMIN_USER=admin ADMIN_PASSWORD='your-strong-password' LISTEN_ADDR=:8080
+# Once: write ./.env + ./data/admin-credentials.txt (or export ADMIN_PASSWORD yourself)
+./scripts/gen-env.sh   # from a full clone; or: export ADMIN_USER=admin ADMIN_PASSWORD='your-strong-password'
+set -a && source .env && set +a
+export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/thumbs LISTEN_ADDR=:8080
 ./nas-filehub-linux-amd64
 ```
 
-Sign in as `admin` with that password, then change it under **Settings → Change password**. Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front).
+Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the one you exported), then change it under **Settings → Change password**. Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front) — first `docker compose up` auto-writes that credentials file when `ADMIN_PASSWORD` is unset.
 
 ## Unraid + Intel VAAPI (optional)
 

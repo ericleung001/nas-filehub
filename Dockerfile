@@ -13,9 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /out/nas-filehub /app/nas-filehub
+COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN mkdir -p /data/files /data/thumbs \
  && useradd -r -u 1000 -d /data filehub \
- && chown -R filehub:filehub /data /app
+ && chown -R filehub:filehub /data /app \
+ && chmod 755 /app/docker-entrypoint.sh
 USER filehub
 ENV LISTEN_ADDR=:8080 \
     DATA_ROOT=/data/files \
@@ -24,7 +26,9 @@ ENV LISTEN_ADDR=:8080 \
     THUMB_ENABLE=true \
     THUMB_VAAPI=false \
     SECURE_COOKIES=false \
-    LOGIN_RATE_LIMIT=10
+    LOGIN_RATE_LIMIT=10 \
+    CREDENTIALS_FILE=/data/admin-credentials.txt \
+    DOTENV_FILE=/data/.env
 EXPOSE 8080
 VOLUME ["/data"]
-ENTRYPOINT ["/app/nas-filehub"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

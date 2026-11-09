@@ -1,4 +1,9 @@
 # Filehub — bind to loopback only; put Nginx Proxy Manager in front.
+# First boot: if ADMIN_PASSWORD is unset, the entrypoint writes random
+# ADMIN_PASSWORD + SESSION_SECRET once to:
+#   ./data/admin-credentials.txt  (read this for the password)
+#   ./data/.env
+# Existing files are never overwritten.
 services:
   filehub:
     build: .
@@ -7,9 +12,10 @@ services:
     ports:
       - "127.0.0.1:8088:8080"
     environment:
-      ADMIN_USER: admin
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme-please}
-      SESSION_SECRET: ${SESSION_SECRET:-replace-with-long-random}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      # Optional — leave unset on first install to auto-generate into ./data/
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
       SECURE_COOKIES: "true"
       DATA_ROOT: /data/files
       DB_PATH: /data/filehub.db
@@ -18,6 +24,8 @@ services:
       THUMB_VAAPI: "false"
       LOGIN_RATE_LIMIT: "10"
       MAX_UPLOAD_MB: "4096"
+      CREDENTIALS_FILE: /data/admin-credentials.txt
+      DOTENV_FILE: /data/.env
     volumes:
       - ./data:/data
     # Unraid Intel Quick Sync (J4125) — uncomment when deploying:

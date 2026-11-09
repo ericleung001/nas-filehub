@@ -8,6 +8,15 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-11-09
+
+### Added
+- **First-boot auto credentials** — Docker entrypoint (`scripts/docker-entrypoint.sh`) generates a random `ADMIN_PASSWORD` and `SESSION_SECRET` when both `/data/admin-credentials.txt` and `/data/.env` are missing and env values are unset/placeholders. Writes them **once** to those paths (mode `0600`); **never overwrites** existing files. Compose mounts `./data:/data`, so read **`./data/admin-credentials.txt`** on the host after first `docker compose up`.
+- **`scripts/gen-env.sh`** — host helper that creates project-root `.env` (from `.env.example` when present) and `./data/admin-credentials.txt` once; safe to re-run (no overwrite).
+
+### Changed
+- README first-boot section documents the credentials file paths prominently; compose no longer injects weak default passwords; `.env.example` leaves `ADMIN_PASSWORD` / `SESSION_SECRET` empty for auto-generation.
+
 ## [0.3.7] - 2026-11-09
 
 ### Changed

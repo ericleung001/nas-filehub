@@ -8,3 +8,7 @@ smoke:
 	./scripts/smoke.sh
 tidy:
 	go mod tidy
+
+.PHONY: gen-env
+gen-env:
+	./scripts/gen-env.sh
