@@ -15,7 +15,16 @@
         <label>Username<input name="username" autocomplete="username" required /></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
         <button type="submit">登入 Login</button>
+        <p class="login-links"><button type="button" id="btn-forgot" class="linkish" hidden>Forgot password?</button></p>
         <p id="login-error" class="error" hidden></p>
+      </form>
+      <form id="forgot-form" hidden>
+        <p class="muted">Enter your username or email. If an account exists and mail is configured, we will send a reset link.</p>
+        <label>Username or email<input name="usernameOrEmail" autocomplete="username" required /></label>
+        <button type="submit">Send reset link</button>
+        <button type="button" id="btn-forgot-back" class="ghost">Back</button>
+        <p id="forgot-msg" class="muted" hidden></p>
+        <p id="forgot-error" class="error" hidden></p>
       </form>
       <form id="totp-form" hidden>
         <p class="muted">Enter the 6-digit code from your authenticator app (or a backup code).</p>
@@ -86,13 +95,6 @@
             <button type="button" id="btn-bulk-copy" class="ghost">Copy…</button>
             <button type="button" id="btn-bulk-share" class="ghost">Share link…</button>
             <button type="button" id="btn-bulk-clear" class="ghost">Clear</button>
-          </div>
-          <div id="upload-status" class="upload-status" hidden>
-            <div class="upload-status-head">
-              <strong>Uploads</strong>
-              <button type="button" id="btn-clear-uploads" class="ghost" hidden>Clear</button>
-            </div>
-            <ul id="upload-list"></ul>
           </div>
           <div id="files-dropzone" class="files-wrap" tabindex="-1">
             <div id="drop-hint" class="drop-hint" hidden>Drop files to upload here</div>
@@ -222,6 +224,7 @@
               <h3>Users</h3>
               <form id="create-user" class="admin-form">
                 <input name="username" placeholder="username" required />
+                <input name="email" type="email" placeholder="email (optional, for password reset)" />
                 <input name="password" type="password" placeholder="password" required />
                 <input name="homePath" placeholder="home path (optional)" />
                 <input name="quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
@@ -255,6 +258,7 @@
                 <form id="edit-user" class="admin-form">
                   <input type="hidden" name="id" />
                   <label>Username<input name="username" required /></label>
+                  <label>Email<input name="email" type="email" placeholder="optional" /></label>
                   <label>Home path<input name="homePath" required /></label>
                   <label>Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
                   <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
@@ -331,6 +335,22 @@
                 <p id="password-policy-msg" class="muted" hidden></p>
                 <p id="password-policy-version" class="meta"></p>
               </form>
+              <hr class="sep" />
+              <h3>Email (SMTP)</h3>
+              <p class="muted">Used for forgot-password reset links. SMTP password is stored in settings and never shown again; leave blank to keep the current password. Env <code>SMTP_*</code> / <code>PUBLIC_BASE_URL</code> override UI when set.</p>
+              <form id="smtp-form" class="admin-form policy-form">
+                <label class="check"><input name="smtpEnabled" type="checkbox" /> Enable email</label>
+                <label>SMTP host<input name="smtpHost" placeholder="smtp.example.com" /></label>
+                <label>Port<input name="smtpPort" type="number" min="1" max="65535" value="587" /></label>
+                <label>Username<input name="smtpUsername" autocomplete="off" /></label>
+                <label>Password<input name="smtpPassword" type="password" autocomplete="new-password" placeholder="leave blank to keep" /></label>
+                <p id="smtp-password-set" class="meta" hidden></p>
+                <label>From address<input name="smtpFrom" type="email" placeholder="noreply@example.com" /></label>
+                <button type="submit">Save SMTP</button>
+                <button type="button" id="btn-smtp-test" class="ghost">Send test email</button>
+                <p id="smtp-msg" class="muted" hidden></p>
+                <p id="smtp-ready" class="meta"></p>
+              </form>
             </div>
           </div>
         </div>
@@ -395,6 +415,29 @@
       <nav id="public-breadcrumbs" class="public-crumbs"></nav>
       <ul id="public-file-list" class="public-file-list"></ul>
     </div>
+  </section>
+
+  <aside id="upload-status" class="upload-status upload-float" hidden>
+    <div class="upload-status-head">
+      <strong>Uploads <span id="upload-progress-label" class="upload-progress-label"></span></strong>
+      <button type="button" id="btn-clear-uploads" class="ghost" hidden>Clear</button>
+    </div>
+    <ul id="upload-list"></ul>
+  </aside>
+
+  <section id="reset-view" class="panel center" hidden>
+    <h1>Filehub</h1>
+    <p class="muted">Set a new password</p>
+    <p id="reset-user" class="meta"></p>
+    <form id="reset-form">
+      <label>New password<input name="newPassword" type="password" autocomplete="new-password" required /></label>
+      <label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" required /></label>
+      <p id="reset-policy-hint" class="muted"></p>
+      <button type="submit">Update password</button>
+      <p id="reset-error" class="error" hidden></p>
+      <p id="reset-msg" class="muted" hidden></p>
+    </form>
+    <p class="login-links"><a href="/">Back to login</a></p>
   </section>
 
   <script src="/app.js"></script>

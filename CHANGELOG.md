@@ -8,6 +8,17 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-09
+
+### Added
+- **Email / SMTP** — Settings → System → Email (SMTP): enable, host, port, username, password, from. Password stored in SQLite settings and never returned to the UI (`passwordSet` flag only). Optional env overrides: `SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`. Optional `PUBLIC_BASE_URL` for reset links behind a reverse proxy.
+- **User email** — admin set on create/edit; shown on Account.
+- **Forgot password** — login link when SMTP is ready; `POST /api/forgot-password` sends a 1-hour reset link; `/reset?token=` page sets a new password under the current password policy. Rate-limited (5/min/IP). Responses avoid account enumeration.
+- Admin **Send test email** (`POST /api/admin/smtp/test`).
+
+### Changed
+- Uploads panel is a **bottom-right floating** card with header progress `(done/total)`, scrollable list, and Clear.
+
 ## [0.3.1] - 2026-11-09
 
 ### Fixed
@@ -69,7 +80,9 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/ericleung001/nas-filehub/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/ericleung001/nas-filehub/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ericleung001/nas-filehub/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ericleung001/nas-filehub/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ericleung001/nas-filehub/releases/tag/v0.1.0

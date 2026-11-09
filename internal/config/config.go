@@ -21,6 +21,14 @@ type Config struct {
 	MaxUploadMB     int64
 	RateLimitPerMin int
 	Force2FAAll     bool // env FORCE_2FA_ALL; OR with DB setting force_2fa_all
+	PublicBaseURL   string // PUBLIC_BASE_URL for password-reset links (optional)
+	// Optional SMTP env overrides (take precedence over DB settings when host set)
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPEnabled  bool // SMTP_ENABLED; if env host set, may force enable
 }
 
 func getenv(k, def string) string {
@@ -67,6 +75,13 @@ func Load() Config {
 		MaxUploadMB:     int64(getenvInt("MAX_UPLOAD_MB", 2048)),
 		RateLimitPerMin: getenvInt("LOGIN_RATE_LIMIT", 10),
 		Force2FAAll:     getenvBool("FORCE_2FA_ALL", false),
+		PublicBaseURL:   strings.TrimRight(getenv("PUBLIC_BASE_URL", ""), "/"),
+		SMTPHost:        getenv("SMTP_HOST", ""),
+		SMTPPort:        getenvInt("SMTP_PORT", 0),
+		SMTPUsername:    getenv("SMTP_USERNAME", ""),
+		SMTPPassword:    getenv("SMTP_PASSWORD", ""),
+		SMTPFrom:        getenv("SMTP_FROM", ""),
+		SMTPEnabled:     getenvBool("SMTP_ENABLED", false),
 	}
 }
 

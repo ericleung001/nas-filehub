@@ -22,7 +22,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
 - **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password; recipients browse/download without an account; revoke anytime from Settings → Link shares
-- **File ops** — browse, upload (with per-file progress), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
+- **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
 - **Settings** — one top-bar entry; left vertical menu, right content panel
@@ -30,11 +30,12 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list and revoke public links you created (admins see all)
-  - **Users / Shares / System** (admins only) — user/share tables; System includes Force 2FA and **password policy** (min length, letters/digits/symbols)
+  - **Users / Shares / System** (admins only) — user/share tables; System includes Force 2FA, **password policy** (min length, letters/digits/symbols), and **Email (SMTP)** for forgot-password
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
-- **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, and self-service change; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
-- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login rate limit; path-traversal guards; non-root container user
+- **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
+- **Forgot password** — admin configures SMTP; users with an email can request a reset link from the login page (rate-limited; generic responses)
+- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
 
@@ -82,18 +83,21 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 | `LOGIN_RATE_LIMIT` | `10` | Max login attempts per IP per minute |
 | `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
 | `FORCE_2FA_ALL` | `false` | If true, every user must enroll TOTP (overrides UI off) |
+| `PUBLIC_BASE_URL` | — | Absolute site URL for password-reset emails (e.g. `https://filehub.example.com`) |
+| `SMTP_ENABLED` | `false` | Env override: enable SMTP |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | — | Env overrides for SMTP (password never logged) |
 
 ## Settings
 
 Sign in → **Settings** (single top-bar button):
 
-1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota
+1. **Account** (everyone) — username, email, admin badge (if any), home path, storage used / quota
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke public file/folder links
-5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts; per-user require 2FA
+5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota; reset passwords; disable accounts; per-user require 2FA
 6. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
-7. **System** (admins) — `DATA_ROOT` notes; **Force 2FA for all users**; **Password policy** (minimum length, require letters / digits / symbols). Saving a tighter policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
+7. **System** (admins) — `DATA_ROOT` notes; **Force 2FA for all users**; **Password policy**; **Email (SMTP)** for forgot-password. Saving a tighter password policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -165,7 +169,8 @@ Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls b
 Auth / session:
 
 - `POST /api/login` · `POST /api/logout` · `GET /api/me` · `POST /api/me/password` · `GET /api/health`
-- `GET /api/me` includes `usedBytes` (home usage) alongside `quotaBytes`
+- `GET /api/me` includes `usedBytes` (home usage) alongside `quotaBytes` and `email`
+- `GET /api/auth/features` · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
 
 Files:
 
@@ -175,9 +180,11 @@ Files:
 
 Admin (requires admin session):
 
-- `GET|POST /api/admin/users`
-- `PATCH|DELETE /api/admin/users/{id}`
+- `GET|POST /api/admin/users` (email on create)
+- `PATCH|DELETE /api/admin/users/{id}` (email on patch)
 - `POST /api/admin/users/{id}/password`
+- `GET|PUT /api/admin/settings` (force2faAll, password policy, SMTP — password write-only)
+- `POST /api/admin/smtp/test`
 - `GET|POST /api/admin/shares`
 - `DELETE /api/admin/shares/{id}`
 - Share grants under `/api/admin/shares/{id}/grants`
@@ -191,6 +198,16 @@ After every intentional change:
 3. Push to `origin` `main`
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files, binaries, or screenshots.
+
+
+## Email and forgot password
+
+1. Admin → Settings → **System** → **Email (SMTP)**: enable, host, port, username, password, from address. Save. Optionally **Send test email**.
+2. Set each user’s **email** under Users → Create / Edit (required for that user to receive reset mail).
+3. Prefer setting `PUBLIC_BASE_URL` to your public HTTPS origin so reset links are correct behind Nginx Proxy Manager.
+4. On the login page, **Forgot password?** appears when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
+
+SMTP credentials can also be supplied via env (`SMTP_*`); env values override the DB for the running process. The API never returns the SMTP password — only `passwordSet: true|false`.
 
 ## License
 

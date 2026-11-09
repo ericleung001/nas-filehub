@@ -20,11 +20,12 @@ import (
 )
 
 type Server struct {
-	Cfg     config.Config
-	DB      *db.DB
-	Thumbs  *thumb.Generator
-	Limiter *auth.LoginLimiter
-	Static  fs.FS
+	Cfg          config.Config
+	DB           *db.DB
+	Thumbs       *thumb.Generator
+	Limiter      *auth.LoginLimiter
+	ResetLimiter *auth.LoginLimiter
+	Static       fs.FS
 }
 
 type scope struct {
@@ -42,6 +43,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/login/totp", s.handleLoginTotp)
 	mux.HandleFunc("/api/login/totp/setup", s.handleLoginTotpSetup)
 	mux.HandleFunc("/api/login/totp/enable", s.handleLoginTotpEnable)
+	mux.HandleFunc("/api/auth/features", s.handleAuthFeatures)
+	mux.HandleFunc("/api/forgot-password", s.handleForgotPassword)
+	mux.HandleFunc("/api/reset-password", s.handleResetPassword)
+	mux.HandleFunc("/api/reset-password/meta", s.handleResetPasswordMeta)
 	mux.HandleFunc("/api/logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("/api/me", s.requireAuth(s.handleMe))
 	mux.HandleFunc("/api/me/password", s.requireAuth(s.handleMePassword))
@@ -68,6 +73,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/admin/shares", s.requireAdmin(s.handleAdminShares))
 	mux.HandleFunc("/api/admin/shares/", s.requireAdmin(s.handleAdminShareID))
 	mux.HandleFunc("/api/admin/settings", s.requireAdmin(s.handleAdminSettings))
+	mux.HandleFunc("/api/admin/smtp/test", s.requireAdmin(s.handleAdminSMTPTest))
 
 	mux.Handle("/", s.spaHandler())
 	return s.securityHeaders(mux)
@@ -307,7 +313,7 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 	mustEnroll := required && !u.TotpEnabled
 	// Password gate takes priority over 2FA enroll for the flag the UI reads first.
 	return map[string]any{
-		"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
+		"id": u.ID, "username": u.Username, "email": u.Email, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
 		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled,
 		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
 		"force2faAll": forceAll, "mustEnrollTotp": mustEnroll && !mustChange,
@@ -707,6 +713,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			HomePath   string `json:"homePath"`
 			IsAdmin    bool   `json:"isAdmin"`
 			QuotaBytes int64  `json:"quotaBytes"`
+			Email      string `json:"email"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
@@ -716,7 +723,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin, body.QuotaBytes)
+		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin, body.QuotaBytes, body.Email)
 		if err != nil {
 			writeErr(w, 400, err.Error())
 			return
@@ -758,6 +765,7 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPatch, http.MethodPut:
 			var body struct {
 				Username     *string `json:"username"`
+				Email        *string `json:"email"`
 				IsAdmin      *bool   `json:"isAdmin"`
 				HomePath     *string `json:"homePath"`
 				QuotaBytes   *int64  `json:"quotaBytes"`
@@ -778,7 +786,7 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			u, err := s.DB.UpdateUser(id, db.UserUpdate{
-				Username: body.Username, IsAdmin: body.IsAdmin, HomePath: body.HomePath,
+				Username: body.Username, Email: body.Email, IsAdmin: body.IsAdmin, HomePath: body.HomePath,
 				QuotaBytes: body.QuotaBytes, Disabled: body.Disabled, TotpRequired: body.TotpRequired,
 			})
 			if err != nil {

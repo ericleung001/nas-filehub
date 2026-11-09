@@ -65,11 +65,12 @@ func main() {
 	}
 
 	srv := &api.Server{
-		Cfg:     cfg,
-		DB:      database,
-		Thumbs:  &thumb.Generator{CacheDir: cfg.ThumbCacheDir, Enable: cfg.ThumbEnable, VAAPI: cfg.ThumbVAAPI},
-		Limiter: auth.NewLoginLimiter(cfg.RateLimitPerMin),
-		Static:  staticRoot,
+		Cfg:          cfg,
+		DB:           database,
+		Thumbs:       &thumb.Generator{CacheDir: cfg.ThumbCacheDir, Enable: cfg.ThumbEnable, VAAPI: cfg.ThumbVAAPI},
+		Limiter:      auth.NewLoginLimiter(cfg.RateLimitPerMin),
+		ResetLimiter: auth.NewLoginLimiter(5), // password-reset requests per IP per minute
+		Static:       staticRoot,
 	}
 
 	log.Printf("nas-filehub listening on %s (data=%s)", cfg.ListenAddr, cfg.DataRoot)

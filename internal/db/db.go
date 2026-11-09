@@ -19,6 +19,7 @@ type DB struct {
 type User struct {
 	ID                    int64     `json:"id"`
 	Username              string    `json:"username"`
+	Email                 string    `json:"email"`
 	PasswordHash          string    `json:"-"`
 	IsAdmin               bool      `json:"isAdmin"`
 	HomePath              string    `json:"homePath"` // relative to DATA_ROOT
@@ -125,7 +126,10 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensurePendingLoginColumns(); err != nil {
 		return err
 	}
-	return d.ensureLinkShareTables()
+	if err := d.ensureLinkShareTables(); err != nil {
+		return err
+	}
+	return d.ensurePasswordResetTable()
 }
 
 func (d *DB) ensureUserColumns() error {
@@ -159,6 +163,7 @@ func (d *DB) ensureUserColumns() error {
 		{"totp_required", `ALTER TABLE users ADD COLUMN totp_required INTEGER NOT NULL DEFAULT 0`},
 		{"password_changed_at", `ALTER TABLE users ADD COLUMN password_changed_at TEXT NOT NULL DEFAULT ''`},
 		{"password_policy_version", `ALTER TABLE users ADD COLUMN password_policy_version INTEGER NOT NULL DEFAULT 0`},
+		{"email", `ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, a := range alters {
 		if cols[a.name] {
@@ -240,7 +245,7 @@ func scanUser(scanner interface {
 	u := &User{}
 	var admin, disabled, totpEnabled, totpRequired int
 	var created, pwChanged string
-	err := scanner.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &created)
+	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &created)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +260,7 @@ func scanUser(scanner interface {
 	return u, nil
 }
 
-const userSelectCols = `id, username, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, created_at`
+const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, created_at`
 
 func (d *DB) GetUserByUsername(username string) (*User, error) {
 	row := d.SQL.QueryRow(
@@ -310,13 +315,17 @@ func sanitizeHomePath(homePath, username string) (string, error) {
 	return homePath, nil
 }
 
-func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quotaBytes int64) (*User, error) {
+func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quotaBytes int64, email string) (*User, error) {
 	username = strings.TrimSpace(username)
+	email = normalizeEmail(email)
 	if username == "" || password == "" {
 		return nil, fmt.Errorf("username and password required")
 	}
 	if quotaBytes < 0 {
 		return nil, fmt.Errorf("quotaBytes must be >= 0")
+	}
+	if err := validateEmailOptional(email); err != nil {
+		return nil, err
 	}
 	var err error
 	homePath, err = sanitizeHomePath(homePath, username)
@@ -334,15 +343,15 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	now := time.Now().UTC().Format(time.RFC3339)
 	pol, _ := d.GetPasswordPolicy()
 	res, err := d.SQL.Exec(
-		`INSERT INTO users(username, password_hash, is_admin, home_path, quota_bytes, disabled, password_changed_at, password_policy_version, created_at) VALUES(?,?,?,?,?,0,?,?,?)`,
-		username, hash, admin, homePath, quotaBytes, now, pol.Version, now,
+		`INSERT INTO users(username, email, password_hash, is_admin, home_path, quota_bytes, disabled, password_changed_at, password_policy_version, created_at) VALUES(?,?,?,?,?,?,0,?,?,?)`,
+		username, email, hash, admin, homePath, quotaBytes, now, pol.Version, now,
 	)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
 	return &User{
-		ID: id, Username: username, IsAdmin: isAdmin, HomePath: homePath,
+		ID: id, Username: username, Email: email, IsAdmin: isAdmin, HomePath: homePath,
 		QuotaBytes: quotaBytes, PasswordChangedAt: time.Now().UTC(),
 		PasswordPolicyVersion: pol.Version, CreatedAt: time.Now().UTC(),
 	}, nil
@@ -353,6 +362,7 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 // that use pointers in the API layer — here we take concrete values with "set" flags.
 type UserUpdate struct {
 	Username     *string
+	Email        *string
 	IsAdmin      *bool
 	HomePath     *string
 	QuotaBytes   *int64
@@ -373,6 +383,13 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 		username = strings.TrimSpace(*upd.Username)
 		if username == "" {
 			return nil, fmt.Errorf("username required")
+		}
+	}
+	email := cur.Email
+	if upd.Email != nil {
+		email = normalizeEmail(*upd.Email)
+		if err := validateEmailOptional(email); err != nil {
+			return nil, err
 		}
 	}
 	isAdmin := cur.IsAdmin
@@ -414,8 +431,8 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 		req = 1
 	}
 	_, err = d.SQL.Exec(
-		`UPDATE users SET username=?, is_admin=?, home_path=?, quota_bytes=?, disabled=?, totp_required=? WHERE id=?`,
-		username, admin, homePath, quota, dis, req, id,
+		`UPDATE users SET username=?, email=?, is_admin=?, home_path=?, quota_bytes=?, disabled=?, totp_required=? WHERE id=?`,
+		username, email, admin, homePath, quota, dis, req, id,
 	)
 	if err != nil {
 		return nil, err
@@ -452,6 +469,7 @@ func (d *DB) SetUserPassword(id int64, password string) error {
 	); err != nil {
 		return err
 	}
+	_ = d.DeletePasswordResetsForUser(id)
 	return d.DeleteUserSessions(id)
 }
 
@@ -540,6 +558,7 @@ func (d *DB) CleanupSessions() {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, _ = d.SQL.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now)
 	_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE expires_at < ?`, now)
+	d.CleanupPasswordResets()
 	d.CleanupLinkUnlocks()
 }
 
@@ -861,4 +880,22 @@ func (d *DB) ConsumeBackupCode(userID int64, plainCode string) (bool, error) {
 		}
 	}
 	return false, rows.Err()
+}
+
+func normalizeEmail(email string) string {
+	return strings.TrimSpace(strings.ToLower(email))
+}
+
+func validateEmailOptional(email string) error {
+	if email == "" {
+		return nil
+	}
+	if len(email) > 254 {
+		return fmt.Errorf("email too long")
+	}
+	at := strings.IndexByte(email, '@')
+	if at < 1 || at == len(email)-1 || strings.Contains(email, " ") {
+		return fmt.Errorf("invalid email")
+	}
+	return nil
 }

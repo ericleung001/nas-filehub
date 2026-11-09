@@ -38,6 +38,8 @@ const state = {
   /** public link token when on /s/:token */
   publicToken: null,
   publicPath: '',
+  /** password reset token */
+  resetToken: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -69,6 +71,8 @@ function show(view) {
   $('#login-view').hidden = view !== 'login';
   $('#main-view').hidden = view !== 'main';
   $('#settings-view').hidden = view !== 'settings';
+  const reset = $('#reset-view');
+  if (reset) reset.hidden = view !== 'reset';
   const pub = $('#public-share-view');
   if (pub) pub.hidden = view !== 'public';
   if (view !== 'settings') stopPreviewMedia();
@@ -82,12 +86,19 @@ async function bootstrap() {
     await loadPublicShare();
     return;
   }
+  if (location.pathname === '/reset' || location.pathname === '/reset/') {
+    const token = new URLSearchParams(location.search).get('token') || '';
+    show('reset');
+    await initResetPage(token);
+    return;
+  }
   try {
     const me = await api('/api/me');
     state.user = me.user;
     await enterApp();
   } catch {
     show('login');
+    await refreshForgotLink();
   }
 }
 
@@ -154,6 +165,19 @@ function showLoginStep(step) {
   $('#login-form').hidden = step !== 'password';
   $('#totp-form').hidden = step !== 'totp';
   $('#totp-enroll-login').hidden = step !== 'enroll';
+  const forgot = $('#forgot-form');
+  if (forgot) forgot.hidden = step !== 'forgot';
+}
+
+async function refreshForgotLink() {
+  const btn = $('#btn-forgot');
+  if (!btn) return;
+  try {
+    const data = await api('/api/auth/features');
+    btn.hidden = !data.forgotPassword;
+  } catch {
+    btn.hidden = true;
+  }
 }
 
 async function startLoginEnroll(pendingToken) {
@@ -374,6 +398,7 @@ async function openSettings() {
   const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
   acc.innerHTML = `
     <div><strong>${u.username}</strong> ${badges.join(' ')}</div>
+    <div class="meta">Email: ${u.email ? `<code>${u.email}</code>` : '<span class="muted">not set (ask admin)</span>'}</div>
     <div class="meta">Home: <code>${u.homePath || ''}</code></div>
     <div class="meta">Storage: ${fmtSize(used)} / ${fmtQuota(quota)}${quota ? ` (${pct}%)` : ''}</div>
   `;
@@ -938,6 +963,13 @@ function ensureUploadPanel() {
   return panel;
 }
 
+function setUploadProgressLabel(done, total) {
+  const el = $('#upload-progress-label');
+  if (!el) return;
+  if (!total) { el.textContent = ''; return; }
+  el.textContent = `(${done}/${total})`;
+}
+
 function setUploadItem(li, { loaded, total, status, error }) {
   const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
   const bar = li.querySelector('.bar > span');
@@ -986,6 +1018,7 @@ $('#btn-clear-uploads').addEventListener('click', () => {
   $('#upload-list').innerHTML = '';
   $('#upload-status').hidden = true;
   $('#btn-clear-uploads').hidden = true;
+  setUploadProgressLabel(0, 0);
 });
 
 async function uploadFiles(files, destPath) {
@@ -999,6 +1032,9 @@ async function uploadFiles(files, destPath) {
   ensureUploadPanel();
   const list = $('#upload-list');
   $('#btn-clear-uploads').hidden = true;
+  const batchTotal = listFiles.length;
+  let batchDone = 0;
+  setUploadProgressLabel(batchDone, batchTotal);
   let anyErr = false;
   for (const f of listFiles) {
     const li = document.createElement('li');
@@ -1018,6 +1054,8 @@ async function uploadFiles(files, destPath) {
       anyErr = true;
       setUploadItem(li, { loaded: 0, total: f.size, status: 'error', error: err.message });
     }
+    batchDone += 1;
+    setUploadProgressLabel(batchDone, batchTotal);
   }
   $('#btn-clear-uploads').hidden = false;
   invalidateTreeCache(state.root);
@@ -1156,6 +1194,7 @@ function openUserEdit(u) {
   const form = $('#edit-user');
   form.id.value = u.id;
   form.username.value = u.username;
+  if (form.email) form.email.value = u.email || '';
   form.homePath.value = u.homePath;
   form.quota.value = u.quotaBytes ? fmtQuota(u.quotaBytes).replace(' ', '') : '0';
   form.isAdmin.checked = !!u.isAdmin;
@@ -1303,6 +1342,39 @@ async function loadSystemSettings() {
   $('#password-policy-msg').hidden = true;
   $('#password-policy-msg').classList.remove('error');
   updatePasswordPolicyHints({ passwordPolicy: pol, passwordPolicyHint: data.passwordPolicyHint });
+  const smtp = data.smtp || {};
+  const sf = $('#smtp-form');
+  if (sf) {
+    sf.smtpEnabled.checked = !!smtp.enabled;
+    sf.smtpHost.value = smtp.host || '';
+    sf.smtpPort.value = smtp.port || 587;
+    sf.smtpUsername.value = smtp.username || '';
+    sf.smtpPassword.value = '';
+    sf.smtpFrom.value = smtp.from || '';
+    const locked = !!smtp.envOverride;
+    ['smtpEnabled','smtpHost','smtpPort','smtpUsername','smtpPassword','smtpFrom'].forEach((n) => {
+      if (sf[n]) sf[n].disabled = locked && n !== 'smtpPassword' ? locked : false;
+    });
+    // Keep editable in UI even with env override so admin can still save DB values,
+    // but note override in meta.
+    ['smtpEnabled','smtpHost','smtpPort','smtpUsername','smtpPassword','smtpFrom'].forEach((n) => {
+      if (sf[n]) sf[n].disabled = false;
+    });
+    const setNote = $('#smtp-password-set');
+    if (setNote) {
+      setNote.textContent = smtp.passwordSet ? 'A password is saved (leave field blank to keep it).' : 'No password saved yet.';
+      setNote.hidden = false;
+    }
+    const ready = $('#smtp-ready');
+    if (ready) {
+      let t = smtp.ready ? 'SMTP ready for forgot-password emails.' : 'SMTP not ready (need enable + host + from).';
+      if (smtp.envOverride) t += ' Env SMTP_* overrides apply on top of saved settings.';
+      if (data.publicBaseURL) t += ' PUBLIC_BASE_URL=' + data.publicBaseURL;
+      ready.textContent = t;
+    }
+  }
+  $('#smtp-msg').hidden = true;
+  $('#smtp-msg').classList.remove('error');
 }
 
 $('#force-2fa-all').addEventListener('change', async (e) => {
@@ -1478,6 +1550,7 @@ $('#create-user').addEventListener('submit', async (e) => {
     method: 'POST',
     body: JSON.stringify({
       username: fd.get('username'),
+      email: fd.get('email') || '',
       password: fd.get('password'),
       homePath: fd.get('homePath') || '',
       isAdmin: !!fd.get('isAdmin'),
@@ -1501,6 +1574,7 @@ $('#edit-user').addEventListener('submit', async (e) => {
       method: 'PATCH',
       body: JSON.stringify({
         username: fd.get('username'),
+        email: fd.get('email') || '',
         homePath: fd.get('homePath'),
         isAdmin: !!fd.get('isAdmin'),
         disabled: !!fd.get('disabled'),
@@ -1877,4 +1951,146 @@ $('#public-share-unlock')?.addEventListener('submit', async (e) => {
   }
 });
 
+
+$('#btn-forgot')?.addEventListener('click', () => {
+  $('#forgot-error').hidden = true;
+  $('#forgot-msg').hidden = true;
+  $('#forgot-form').reset();
+  showLoginStep('forgot');
+});
+$('#btn-forgot-back')?.addEventListener('click', () => {
+  showLoginStep('password');
+});
+$('#forgot-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const errEl = $('#forgot-error');
+  const msgEl = $('#forgot-msg');
+  errEl.hidden = true;
+  msgEl.hidden = true;
+  try {
+    const data = await api('/api/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ usernameOrEmail: fd.get('usernameOrEmail') }),
+    });
+    msgEl.textContent = data.message || 'If an account exists, a reset link has been sent.';
+    msgEl.hidden = false;
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
+
+async function initResetPage(token) {
+  const errEl = $('#reset-error');
+  const msgEl = $('#reset-msg');
+  errEl.hidden = true;
+  msgEl.hidden = true;
+  state.resetToken = token;
+  if (!token) {
+    errEl.textContent = 'Missing reset token';
+    errEl.hidden = false;
+    $('#reset-form').hidden = true;
+    return;
+  }
+  try {
+    const data = await api('/api/reset-password/meta?token=' + encodeURIComponent(token));
+    $('#reset-user').textContent = 'Account: ' + (data.username || '');
+    $('#reset-policy-hint').textContent = 'Requirements: ' + (data.passwordPolicyHint || 'min 4 characters');
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+    $('#reset-form').hidden = true;
+  }
+}
+
+$('#reset-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const errEl = $('#reset-error');
+  const msgEl = $('#reset-msg');
+  errEl.hidden = true;
+  msgEl.hidden = true;
+  if (fd.get('newPassword') !== fd.get('confirmPassword')) {
+    errEl.textContent = 'Passwords do not match';
+    errEl.hidden = false;
+    return;
+  }
+  try {
+    const data = await api('/api/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: state.resetToken, newPassword: fd.get('newPassword') }),
+    });
+    msgEl.textContent = data.message || 'Password updated.';
+    msgEl.hidden = false;
+    e.target.hidden = true;
+    setTimeout(() => { location.href = '/'; }, 1500);
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
+
+$('#smtp-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = $('#smtp-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  const body = {
+    smtpEnabled: !!e.target.smtpEnabled.checked,
+    smtpHost: fd.get('smtpHost') || '',
+    smtpPort: Number(fd.get('smtpPort') || 587),
+    smtpUsername: fd.get('smtpUsername') || '',
+    smtpFrom: fd.get('smtpFrom') || '',
+  };
+  const pw = fd.get('smtpPassword');
+  if (pw) body.smtpPassword = pw;
+  try {
+    const data = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) });
+    msg.textContent = 'SMTP settings saved';
+    msg.hidden = false;
+    // reuse loader
+    const smtp = data.smtp || {};
+    e.target.smtpEnabled.checked = !!smtp.enabled;
+    e.target.smtpHost.value = smtp.host || '';
+    e.target.smtpPort.value = smtp.port || 587;
+    e.target.smtpUsername.value = smtp.username || '';
+    e.target.smtpPassword.value = '';
+    e.target.smtpFrom.value = smtp.from || '';
+    const setNote = $('#smtp-password-set');
+    if (setNote) {
+      setNote.textContent = smtp.passwordSet ? 'A password is saved (leave field blank to keep it).' : 'No password saved yet.';
+      setNote.hidden = false;
+    }
+    const ready = $('#smtp-ready');
+    if (ready) ready.textContent = smtp.ready ? 'SMTP ready for forgot-password emails.' : 'SMTP not ready (need enable + host + from).';
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+$('#btn-smtp-test')?.addEventListener('click', async () => {
+  const msg = $('#smtp-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  const to = prompt('Send test email to (blank = your account email):', state.user?.email || '') || '';
+  try {
+    const data = await api('/api/admin/smtp/test', {
+      method: 'POST',
+      body: JSON.stringify({ to }),
+    });
+    msg.textContent = data.message || 'Test email sent';
+    msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+
 bootstrap();
+

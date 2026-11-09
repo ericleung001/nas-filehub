@@ -350,11 +350,14 @@ func (s *Server) handleMeTotpDisable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	settingsPayload := func() map[string]any {
 		pol := s.passwordPolicy()
+		smtpCfg, _ := s.effectiveSMTP()
 		return map[string]any{
-			"force2faAll":       s.force2FAAll(),
-			"force2faAllEnv":    s.Cfg.Force2FAAll,
-			"passwordPolicy":    pol,
+			"force2faAll":        s.force2FAAll(),
+			"force2faAllEnv":     s.Cfg.Force2FAAll,
+			"passwordPolicy":     pol,
 			"passwordPolicyHint": db.PasswordPolicySummary(pol),
+			"smtp":               s.smtpPublic(smtpCfg),
+			"publicBaseURL":      s.Cfg.PublicBaseURL,
 		}
 	}
 	switch r.Method {
@@ -362,11 +365,17 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, settingsPayload())
 	case http.MethodPut, http.MethodPatch, http.MethodPost:
 		var body struct {
-			Force2FAAll      *bool `json:"force2faAll"`
-			PasswordMinLength *int  `json:"passwordMinLength"`
-			RequireLetters   *bool `json:"passwordRequireLetters"`
-			RequireDigits    *bool `json:"passwordRequireDigits"`
-			RequireSymbols   *bool `json:"passwordRequireSymbols"`
+			Force2FAAll       *bool   `json:"force2faAll"`
+			PasswordMinLength *int    `json:"passwordMinLength"`
+			RequireLetters    *bool   `json:"passwordRequireLetters"`
+			RequireDigits     *bool   `json:"passwordRequireDigits"`
+			RequireSymbols    *bool   `json:"passwordRequireSymbols"`
+			SMTPEnabled       *bool   `json:"smtpEnabled"`
+			SMTPHost          *string `json:"smtpHost"`
+			SMTPPort          *int    `json:"smtpPort"`
+			SMTPUsername      *string `json:"smtpUsername"`
+			SMTPPassword      *string `json:"smtpPassword"`
+			SMTPFrom          *string `json:"smtpFrom"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
@@ -398,6 +407,39 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			}
 			if _, err := s.DB.SetPasswordPolicy(cur); err != nil {
 				writeErr(w, 500, "db error")
+				return
+			}
+			touched = true
+		}
+		smtpTouch := body.SMTPEnabled != nil || body.SMTPHost != nil || body.SMTPPort != nil ||
+			body.SMTPUsername != nil || body.SMTPPassword != nil || body.SMTPFrom != nil
+		if smtpTouch {
+			cur, err := s.DB.GetSMTPSettings()
+			if err != nil {
+				writeErr(w, 500, "db error")
+				return
+			}
+			if body.SMTPEnabled != nil {
+				cur.Enabled = *body.SMTPEnabled
+			}
+			if body.SMTPHost != nil {
+				cur.Host = *body.SMTPHost
+			}
+			if body.SMTPPort != nil {
+				cur.Port = *body.SMTPPort
+			}
+			if body.SMTPUsername != nil {
+				cur.Username = *body.SMTPUsername
+			}
+			if body.SMTPFrom != nil {
+				cur.From = *body.SMTPFrom
+			}
+			var pw *string
+			if body.SMTPPassword != nil {
+				pw = body.SMTPPassword
+			}
+			if _, err := s.DB.SetSMTPSettings(cur, pw); err != nil {
+				writeErr(w, 400, err.Error())
 				return
 			}
 			touched = true
