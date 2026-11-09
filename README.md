@@ -21,9 +21,9 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
-- **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / play videos** inline; revoke anytime from Settings → Link shares
-- **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
-- **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
+- **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke anytime from Settings → Link shares
+- **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
+- **Preview** — image, **PDF** (inline iframe), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
 - **Settings** — one top-bar entry; left vertical menu, right content panel
   - **Account** — username, home, quota used/limit

@@ -615,6 +615,7 @@ function setSort(by, dir) {
   if (dir === 'asc' || dir === 'desc') state.sortDir = dir;
   persistSort();
   applySortControls();
+syncUploadPanelVisibility();
   if (state.entries) {
     renderEntries(sortEntries(state.entries), state.perm === 'write');
   }
@@ -680,7 +681,24 @@ document.querySelectorAll('.th-sort').forEach((el) => {
 applySortControls();
 
 function entryIcon(e) {
-  return e.kind === 'dir' ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
+  if (e.kind === 'dir') return '📁';
+  if (e.kind === 'image') return '🖼️';
+  if (e.kind === 'video') return '🎬';
+  if (e.kind === 'pdf') return '📕';
+  return '📄';
+}
+
+function isPreviewable(e) {
+  return !e.isDir && (e.kind === 'image' || e.kind === 'video' || e.kind === 'pdf');
+}
+
+function appendPdfFrame(container, url, title) {
+  const frame = document.createElement('iframe');
+  frame.className = 'pdf-frame';
+  frame.src = url;
+  frame.title = title || 'PDF';
+  frame.setAttribute('loading', 'lazy');
+  container.appendChild(frame);
 }
 
 function joinPath(base, name) {
@@ -700,7 +718,7 @@ async function openEntry(e) {
     invalidateTreeCache(state.root);
     await loadRoots();
     await loadList();
-  } else if (e.kind === 'image' || e.kind === 'video') {
+  } else if (isPreviewable(e)) {
     openPreview(e);
   } else {
     window.open(`/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`, '_blank');
@@ -919,6 +937,7 @@ function stopPreviewMedia() {
     } catch { /* ignore */ }
     el.remove();
   });
+  body.classList.remove('pdf-mode');
   body.innerHTML = '';
 }
 
@@ -931,6 +950,9 @@ function openPreview(e) {
     img.src = url;
     img.alt = e.name;
     body.appendChild(img);
+  } else if (e.kind === 'pdf') {
+    body.classList.add('pdf-mode');
+    appendPdfFrame(body, url, e.name);
   } else {
     const v = document.createElement('video');
     v.controls = true;
@@ -958,6 +980,17 @@ $('#btn-mkdir').addEventListener('click', async () => {
   await loadList();
   try { await refreshMe(); } catch { /* ignore */ }
 });
+
+function syncUploadPanelVisibility() {
+  const panel = $('#upload-status');
+  const list = $('#upload-list');
+  if (!panel || !list) return;
+  const hasItems = list.children.length > 0;
+  panel.hidden = !hasItems;
+  const clearBtn = $('#btn-clear-uploads');
+  if (clearBtn) clearBtn.hidden = !hasItems;
+  if (!hasItems) setUploadProgressLabel(0, 0);
+}
 
 function ensureUploadPanel() {
   const panel = $('#upload-status');
@@ -1018,9 +1051,7 @@ function uploadFileWithProgress(file, destPath, onProgress) {
 
 $('#btn-clear-uploads').addEventListener('click', () => {
   $('#upload-list').innerHTML = '';
-  $('#upload-status').hidden = true;
-  $('#btn-clear-uploads').hidden = true;
-  setUploadProgressLabel(0, 0);
+  syncUploadPanelVisibility();
 });
 
 async function uploadFiles(files, destPath) {
@@ -1866,6 +1897,7 @@ function clearPublicInlinePreview() {
   box.querySelectorAll('video, audio').forEach((el) => {
     try { el.pause(); el.removeAttribute('src'); el.src = ''; el.load(); } catch { /* ignore */ }
   });
+  box.classList.remove('pdf-mode');
   box.innerHTML = '';
   box.hidden = true;
 }
@@ -1880,6 +1912,9 @@ function openPublicPreview(e) {
     img.src = url;
     img.alt = e.name || '';
     body.appendChild(img);
+  } else if (e.kind === 'pdf') {
+    body.classList.add('pdf-mode');
+    appendPdfFrame(body, url, e.name || 'PDF');
   } else {
     const v = document.createElement('video');
     v.controls = true;
@@ -1900,7 +1935,7 @@ function renderPublicInlineMedia(e) {
   const box = $('#public-single-preview');
   clearPublicInlinePreview();
   if (!box || !e || e.isDir) return;
-  if (e.kind !== 'image' && e.kind !== 'video') return;
+  if (!isPreviewable(e)) return;
   const url = publicRawURL(e.path || '');
   if (e.kind === 'image') {
     const img = document.createElement('img');
@@ -1909,6 +1944,9 @@ function renderPublicInlineMedia(e) {
     img.style.cursor = 'zoom-in';
     img.onclick = () => openPublicPreview(e);
     box.appendChild(img);
+  } else if (e.kind === 'pdf') {
+    box.classList.add('pdf-mode');
+    appendPdfFrame(box, url, e.name || 'PDF');
   } else {
     const v = document.createElement('video');
     v.controls = true;
@@ -1922,7 +1960,7 @@ function renderPublicInlineMedia(e) {
   dl.textContent = 'Download';
   dl.className = 'ghost';
   actions.appendChild(dl);
-  if (e.kind === 'image') {
+  if (e.kind === 'image' || e.kind === 'pdf') {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'ghost';
@@ -1999,7 +2037,7 @@ async function loadPublicList() {
   // Single-file share (or one media file at this path): show inline preview.
   if (!data.isDir && entries.length === 1 && !entries[0].isDir) {
     const e = entries[0];
-    if (e.kind === 'image' || e.kind === 'video') {
+    if (isPreviewable(e)) {
       renderPublicInlineMedia(e);
       ul.hidden = true;
       return;
@@ -2008,7 +2046,7 @@ async function loadPublicList() {
   ul.hidden = false;
   for (const e of entries) {
     const li = document.createElement('li');
-    const icon = e.isDir ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
+    const icon = entryIcon(e);
     const name = document.createElement('button');
     name.type = 'button';
     name.className = 'ghost name-btn';
@@ -2017,7 +2055,7 @@ async function loadPublicList() {
       if (e.isDir) {
         state.publicPath = e.path;
         await loadPublicList();
-      } else if (e.kind === 'image' || e.kind === 'video') {
+      } else if (isPreviewable(e)) {
         openPublicPreview(e);
       } else {
         window.location = publicDownloadURL(e.path);
@@ -2028,7 +2066,7 @@ async function loadPublicList() {
       const actions = document.createElement('span');
       actions.style.display = 'flex';
       actions.style.gap = '.35rem';
-      if (e.kind === 'image' || e.kind === 'video') {
+      if (isPreviewable(e)) {
         const prev = document.createElement('button');
         prev.type = 'button';
         prev.className = 'ghost';

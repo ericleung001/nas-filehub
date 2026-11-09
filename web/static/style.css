@@ -168,6 +168,12 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 #preview .close { position: absolute; right: .5rem; top: .5rem; z-index: 2; }
 #preview-body { padding: 1rem; display: flex; justify-content: center; align-items: center; min-width: 280px; min-height: 200px; }
 #preview-body img, #preview-body video { max-width: 90vw; max-height: 85vh; }
+#preview-body.pdf-mode { padding: 0; width: min(96vw, 1100px); height: min(90vh, 900px); min-height: 60vh; display: block; }
+#preview-body .pdf-frame, .public-single-preview .pdf-frame {
+  width: 100%; height: 100%; min-height: 60vh; border: 0; border-radius: 10px; background: #0b1220;
+}
+.public-single-preview.pdf-mode { text-align: left; }
+.public-single-preview.pdf-mode .pdf-frame { min-height: min(70vh, 720px); height: min(70vh, 720px); }
 
 .admin-form { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .75rem; }
 .admin-form input[type="text"], .admin-form input:not([type]), .admin-form input[type="password"] { width: 100%; }
@@ -189,6 +195,7 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   display: flex; flex-direction: column; min-height: 0;
   box-shadow: 0 12px 40px rgba(0,0,0,.45);
 }
+.upload-status[hidden] { display: none !important; }
 .upload-status.upload-float {
   position: fixed;
   right: 1rem;
@@ -692,6 +699,7 @@ tr.drop-folder-target td,
 .public-single-preview img, .public-single-preview video {
   max-width: 100%; max-height: min(70vh, 640px); border-radius: 10px; background: #0b1220;
 }
+.public-single-preview.pdf-mode .public-actions { margin-top: .75rem; }
 .public-single-preview .public-actions { margin-top: .75rem; display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }
 #transfer-dialog, #share-dialog {
   border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;

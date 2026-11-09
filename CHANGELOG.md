@@ -8,6 +8,14 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-09
+
+### Added
+- **PDF inline preview** in the authenticated browser and on public share pages (iframe against `/api/raw` or `/api/public/links/{token}/raw`). Single-file PDF shares show the document on open; folder shares get a Preview action. Files with `.pdf` are classified as kind `pdf`.
+
+### Fixed
+- **Uploads** floating panel stays **hidden** until at least one upload is queued; **Clear** (or an empty list) hides it again. CSS `display: flex` no longer overrides the `hidden` attribute.
+
 ## [0.3.3] - 2026-11-09
 
 ### Fixed
