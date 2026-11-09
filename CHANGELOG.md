@@ -21,6 +21,7 @@ where version tags are used.
 - `GET /api/me` (and login) now include `usedBytes` for home usage.
 
 ### Fixed
+- Toolbar **Sort** label + dropdown + Asc/Desc stay on one horizontal row (global `label { flex-direction: column }` no longer stacks them).
 - File list columns stay aligned under Name / Size / Modified / actions (`table-layout: fixed` + `colgroup`); long names ellipsize; actions (including Delete) stay fully visible via compact icon buttons.
 - Modified hides under 960px; Size hides under 800px on narrow viewports.
 - Closing the media preview (X, Escape, or backdrop) now pauses video, clears `src`, calls `load()`, and removes the element so audio cannot keep playing.

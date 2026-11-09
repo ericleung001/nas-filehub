@@ -391,9 +391,26 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 
 
-/* Sort controls */
-.sort-controls { display: inline-flex; gap: .35rem; align-items: center; }
-.sort-label { display: inline-flex; gap: .35rem; align-items: center; font-size: .82rem; color: var(--muted); }
+/* Sort controls — one horizontal row (override global label { flex-direction: column }) */
+.sort-controls {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: .35rem;
+  align-items: center;
+  white-space: nowrap;
+}
+.sort-label {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: .35rem;
+  align-items: center;
+  font-size: .82rem;
+  color: var(--muted);
+  white-space: nowrap;
+  margin: 0;
+}
 .sort-label select {
   background: #0b1220;
   color: var(--text);
@@ -401,6 +418,11 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   border-radius: 8px;
   padding: .3rem .45rem;
   font: inherit;
+  flex: 0 0 auto;
+}
+#btn-sort-dir {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .th-sort {
   background: none;
