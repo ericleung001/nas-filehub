@@ -368,6 +368,33 @@ func (d *DB) SetUserPassword(id int64, password string) error {
 	return d.DeleteUserSessions(id)
 }
 
+// SetUserPasswordKeepSession updates the password hash, clears other sessions for the user,
+// but keeps the given session token (so a self-service change does not log the user out).
+func (d *DB) SetUserPasswordKeepSession(id int64, password, keepToken string) error {
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("password required")
+	}
+	u, err := d.GetUserByID(id)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return fmt.Errorf("user not found")
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return err
+	}
+	if _, err := d.SQL.Exec(`UPDATE users SET password_hash=? WHERE id=?`, hash, id); err != nil {
+		return err
+	}
+	if keepToken == "" {
+		return d.DeleteUserSessions(id)
+	}
+	_, err = d.SQL.Exec(`DELETE FROM sessions WHERE user_id=? AND token!=?`, id, keepToken)
+	return err
+}
+
 func (d *DB) DeleteUserSessions(userID int64) error {
 	_, err := d.SQL.Exec(`DELETE FROM sessions WHERE user_id=?`, userID)
 	return err

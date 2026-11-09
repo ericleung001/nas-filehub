@@ -41,6 +41,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("/api/me", s.requireAuth(s.handleMe))
+	mux.HandleFunc("/api/me/password", s.requireAuth(s.handleMePassword))
 	mux.HandleFunc("/api/roots", s.requireAuth(s.handleRoots))
 	mux.HandleFunc("/api/list", s.requireAuth(s.handleList))
 	mux.HandleFunc("/api/mkdir", s.requireAuth(s.handleMkdir))
@@ -209,7 +210,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSessionCookie(w, token, exp)
-	writeJSON(w, 200, map[string]any{"user": s.userPublic(u)})
+	m := s.userPublic(u)
+	m["usedBytes"] = s.homeUsedBytes(u)
+	writeJSON(w, 200, map[string]any{"user": m})
 }
 
 
@@ -253,8 +256,51 @@ func (s *Server) checkHomeQuota(u *db.User, extra int64) error {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
 	u := s.currentUser(r)
-	writeJSON(w, 200, map[string]any{"user": s.userPublic(u)})
+	m := s.userPublic(u)
+	m["usedBytes"] = s.homeUsedBytes(u)
+	writeJSON(w, 200, map[string]any{"user": m})
+}
+
+func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	u := s.currentUser(r)
+	var body struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeErr(w, 400, "bad json")
+		return
+	}
+	if strings.TrimSpace(body.NewPassword) == "" {
+		writeErr(w, 400, "new password required")
+		return
+	}
+	if len(body.NewPassword) < 4 {
+		writeErr(w, 400, "new password too short (min 4)")
+		return
+	}
+	if !db.CheckPassword(u.PasswordHash, body.CurrentPassword) {
+		writeErr(w, 401, "current password incorrect")
+		return
+	}
+	keep := ""
+	if c, err := r.Cookie(auth.CookieName); err == nil {
+		keep = c.Value
+	}
+	if err := s.DB.SetUserPasswordKeepSession(u.ID, body.NewPassword, keep); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
 func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {

@@ -24,6 +24,7 @@
         <div class="brand">NAS FileHub</div>
         <div class="spacer"></div>
         <span id="whoami" class="muted"></span>
+        <button id="btn-settings" class="ghost">Settings</button>
         <button id="btn-admin" class="ghost" hidden>Admin</button>
         <button id="btn-logout" class="ghost">Logout</button>
       </header>
@@ -31,6 +32,11 @@
         <aside id="sidebar">
           <h3>Roots</h3>
           <ul id="root-list"></ul>
+          <div id="sidebar-quota" class="sidebar-quota" hidden>
+            <h3>Storage</h3>
+            <div class="meta" id="sidebar-quota-text"></div>
+            <div class="quota-bar" id="sidebar-quota-bar" hidden><span></span></div>
+          </div>
         </aside>
         <main>
           <div class="toolbar">
@@ -56,10 +62,35 @@
       </div>
     </section>
 
-    <section id="admin-view" class="panel" hidden>
+
+    <section id="settings-view" hidden>
       <header class="topbar">
-        <div class="brand">Admin</div>
-        <button id="btn-back" class="ghost">← Back</button>
+        <div class="brand">Settings</div>
+        <button id="btn-back-settings" class="ghost">← Back</button>
+      </header>
+      <div class="settings-wrap">
+        <div class="settings-card">
+          <h3>Account</h3>
+          <div id="settings-account" class="settings-account"></div>
+          <div class="quota-bar" id="settings-quota-bar" hidden><span></span></div>
+        </div>
+        <div class="settings-card">
+          <h3>Change password</h3>
+          <form id="change-password" class="admin-form">
+            <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+            <label>New password<input name="newPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
+            <label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
+            <button type="submit">Update password</button>
+            <p id="change-password-msg" class="muted" hidden></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section id="admin-view" hidden>
+      <header class="topbar">
+        <div class="brand">Admin · System</div>
+        <button id="btn-back-admin" class="ghost">← Back</button>
       </header>
       <div class="admin-grid">
         <div>

@@ -9,10 +9,15 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
+- Per-user **Settings** panel (all logged-in users): account info, home quota used/limit, change own password via `POST /api/me/password` (`currentPassword`, `newPassword`; verifies current; keeps current session, clears others).
+- Admin console clarified as **Admin · System** (admins only); separate from user Settings.
+- Sidebar **folder tree** under Roots: expand/collapse directories for My Files and shares; clicking a node opens that path in the main list.
+- Sidebar **Storage** used/limit bar (from `/api/me`).
 - Upload progress UI: per-file status with filename, transferred bytes / percent, and success or error after each finish (XHR `upload.onprogress`; no API change).
+- `GET /api/me` (and login) now include `usedBytes` for home usage.
 
 ### Fixed
-- Long file and root names no longer break the file list layout on mobile; names ellipsize on one line (full name in `title` tooltip). Size/Modified columns hide under 800px so icon, name, and actions stay aligned.
+- Long file and root names no longer break the file list layout on desktop or mobile; Name column ellipsizes on one line (full name in `title` tooltip) while Size/Modified/actions stay fixed-width. Size/Modified columns still hide under 800px.
 
 ### Changed
 - Remove meta language note from README.
