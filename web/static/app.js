@@ -38,6 +38,7 @@ const state = {
   /** public link token when on /s/:token */
   publicToken: null,
   publicPath: '',
+  publicMeta: null,
   /** password reset token */
   resetToken: null,
 };
@@ -75,7 +76,8 @@ function show(view) {
   if (reset) reset.hidden = view !== 'reset';
   const pub = $('#public-share-view');
   if (pub) pub.hidden = view !== 'public';
-  if (view !== 'settings') stopPreviewMedia();
+  if (view !== 'settings' && view !== 'main' && view !== 'public') stopPreviewMedia();
+  if (view !== 'public') clearPublicInlinePreview();
 }
 
 async function bootstrap() {
@@ -1846,14 +1848,105 @@ async function refreshLinks() {
   }
 }
 
+function publicRawURL(path) {
+  const token = state.publicToken;
+  const q = path ? ('?path=' + encodeURIComponent(path)) : '';
+  return '/api/public/links/' + token + '/raw' + q;
+}
+
+function publicDownloadURL(path) {
+  const token = state.publicToken;
+  const q = path ? ('?path=' + encodeURIComponent(path)) : '';
+  return '/api/public/links/' + token + '/download' + q;
+}
+
+function clearPublicInlinePreview() {
+  const box = $('#public-single-preview');
+  if (!box) return;
+  box.querySelectorAll('video, audio').forEach((el) => {
+    try { el.pause(); el.removeAttribute('src'); el.src = ''; el.load(); } catch { /* ignore */ }
+  });
+  box.innerHTML = '';
+  box.hidden = true;
+}
+
+function openPublicPreview(e) {
+  // Modal preview using public raw URL
+  stopPreviewMedia();
+  const body = $('#preview-body');
+  const url = publicRawURL(e.path || '');
+  if (e.kind === 'image') {
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = e.name || '';
+    body.appendChild(img);
+  } else {
+    const v = document.createElement('video');
+    v.controls = true;
+    v.autoplay = true;
+    v.src = url;
+    body.appendChild(v);
+  }
+  const dlg = $('#preview');
+  if (!dlg.dataset.closeBound) {
+    dlg.dataset.closeBound = '1';
+    dlg.addEventListener('close', stopPreviewMedia);
+    dlg.addEventListener('cancel', stopPreviewMedia);
+  }
+  dlg.showModal();
+}
+
+function renderPublicInlineMedia(e) {
+  const box = $('#public-single-preview');
+  clearPublicInlinePreview();
+  if (!box || !e || e.isDir) return;
+  if (e.kind !== 'image' && e.kind !== 'video') return;
+  const url = publicRawURL(e.path || '');
+  if (e.kind === 'image') {
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = e.name || '';
+    img.style.cursor = 'zoom-in';
+    img.onclick = () => openPublicPreview(e);
+    box.appendChild(img);
+  } else {
+    const v = document.createElement('video');
+    v.controls = true;
+    v.src = url;
+    box.appendChild(v);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'public-actions';
+  const dl = document.createElement('a');
+  dl.href = publicDownloadURL(e.path || '');
+  dl.textContent = 'Download';
+  dl.className = 'ghost';
+  actions.appendChild(dl);
+  if (e.kind === 'image') {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'ghost';
+    open.textContent = 'Open larger';
+    open.onclick = () => openPublicPreview(e);
+    actions.appendChild(open);
+  }
+  box.appendChild(actions);
+  box.hidden = false;
+}
+
 async function loadPublicShare() {
   const token = state.publicToken;
   const errEl = $('#public-share-error');
   errEl.hidden = true;
+  clearPublicInlinePreview();
   try {
     const meta = await api('/api/public/links/' + token + '/meta');
+    state.publicMeta = meta;
     $('#public-share-label').textContent = meta.label || meta.pathName || 'Shared item';
-    if (meta.needPassword) {
+    // Only show password UI when the link actually has a password AND unlock is still needed.
+    const hasPassword = !!meta.hasPassword;
+    const needPassword = hasPassword && !!meta.needPassword;
+    if (needPassword) {
       $('#public-share-unlock').hidden = false;
       $('#public-share-browser').hidden = true;
       return;
@@ -1901,7 +1994,19 @@ async function loadPublicList() {
   }
   const ul = $('#public-file-list');
   ul.innerHTML = '';
-  for (const e of (data.entries || [])) {
+  clearPublicInlinePreview();
+  const entries = data.entries || [];
+  // Single-file share (or one media file at this path): show inline preview.
+  if (!data.isDir && entries.length === 1 && !entries[0].isDir) {
+    const e = entries[0];
+    if (e.kind === 'image' || e.kind === 'video') {
+      renderPublicInlineMedia(e);
+      ul.hidden = true;
+      return;
+    }
+  }
+  ul.hidden = false;
+  for (const e of entries) {
     const li = document.createElement('li');
     const icon = e.isDir ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
     const name = document.createElement('button');
@@ -1912,21 +2017,35 @@ async function loadPublicList() {
       if (e.isDir) {
         state.publicPath = e.path;
         await loadPublicList();
+      } else if (e.kind === 'image' || e.kind === 'video') {
+        openPublicPreview(e);
       } else {
-        window.location = '/api/public/links/' + token + '/download?path=' + encodeURIComponent(e.path);
+        window.location = publicDownloadURL(e.path);
       }
     };
     li.appendChild(name);
     if (!e.isDir) {
+      const actions = document.createElement('span');
+      actions.style.display = 'flex';
+      actions.style.gap = '.35rem';
+      if (e.kind === 'image' || e.kind === 'video') {
+        const prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'ghost';
+        prev.textContent = e.kind === 'video' ? 'Play' : 'Preview';
+        prev.onclick = () => openPublicPreview(e);
+        actions.appendChild(prev);
+      }
       const dl = document.createElement('a');
-      dl.href = '/api/public/links/' + token + '/download?path=' + encodeURIComponent(e.path);
+      dl.href = publicDownloadURL(e.path);
       dl.textContent = 'Download';
       dl.className = 'ghost';
-      li.appendChild(dl);
+      actions.appendChild(dl);
+      li.appendChild(actions);
     }
     ul.appendChild(li);
   }
-  if (!(data.entries || []).length) {
+  if (!entries.length) {
     const li = document.createElement('li');
     li.className = 'muted';
     li.textContent = 'Empty';

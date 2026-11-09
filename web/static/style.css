@@ -685,8 +685,14 @@ tr.drop-folder-target td,
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   padding: .45rem .25rem; border-bottom: 1px solid var(--border);
 }
+.public-file-list .name-btn { text-align: left; flex: 1; min-width: 0; }
 .public-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: .15rem; margin-top: .75rem; }
-#public-share-view { max-width: 640px; }
+#public-share-view { max-width: min(920px, 96vw); }
+.public-single-preview { margin-top: 1rem; text-align: center; }
+.public-single-preview img, .public-single-preview video {
+  max-width: 100%; max-height: min(70vh, 640px); border-radius: 10px; background: #0b1220;
+}
+.public-single-preview .public-actions { margin-top: .75rem; display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }
 #transfer-dialog, #share-dialog {
   border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;
   background: var(--panel); color: var(--text); max-width: min(96vw, 420px); width: 100%;

@@ -405,14 +405,15 @@
   <section id="public-share-view" class="panel center" hidden>
     <h1>Filehub</h1>
     <p id="public-share-label" class="muted"></p>
+    <p id="public-share-error" class="error" hidden></p>
     <form id="public-share-unlock" hidden>
       <p class="muted">This link is password-protected.</p>
       <label>Password<input name="password" type="password" required /></label>
       <button type="submit">Unlock</button>
-      <p id="public-share-error" class="error" hidden></p>
     </form>
     <div id="public-share-browser" hidden>
       <nav id="public-breadcrumbs" class="public-crumbs"></nav>
+      <div id="public-single-preview" class="public-single-preview" hidden></div>
       <ul id="public-file-list" class="public-file-list"></ul>
     </div>
   </section>
