@@ -4,6 +4,8 @@ const state = {
   path: '',
   perm: 'write',
   roots: [],
+  /** @type {'list'|'icons'} */
+  viewMode: (localStorage.getItem('filehub-view') === 'icons' ? 'icons' : 'list'),
   /** @type {Set<string>} expanded tree keys "rootId:path" */
   treeExpanded: new Set(['home:']),
   /** @type {Map<string, Array>} cached dir children for tree */
@@ -55,6 +57,7 @@ async function bootstrap() {
 async function enterApp() {
   $('#whoami').textContent = state.user.username + (state.user.isAdmin ? ' (admin)' : '');
   show('main');
+  applyViewMode();
   renderSidebarQuota();
   await loadRoots();
   await loadList();
@@ -317,87 +320,200 @@ async function loadList() {
   $('#btn-mkdir').disabled = !canWrite;
   $('#file-input').disabled = !canWrite;
   renderBreadcrumbs();
-  const body = $('#file-body');
-  body.innerHTML = '';
   const entries = (data.entries || []).slice().sort((a, b) => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+  applyViewMode();
+  renderEntries(entries, canWrite);
+}
+
+function applyViewMode() {
+  const listBtn = $('#btn-view-list');
+  const iconsBtn = $('#btn-view-icons');
+  const table = $('#files-table');
+  const grid = $('#files-grid');
+  const isIcons = state.viewMode === 'icons';
+  listBtn.classList.toggle('active', !isIcons);
+  iconsBtn.classList.toggle('active', isIcons);
+  listBtn.setAttribute('aria-pressed', !isIcons ? 'true' : 'false');
+  iconsBtn.setAttribute('aria-pressed', isIcons ? 'true' : 'false');
+  table.hidden = isIcons;
+  grid.hidden = !isIcons;
+}
+
+function setViewMode(mode) {
+  state.viewMode = mode === 'icons' ? 'icons' : 'list';
+  try { localStorage.setItem('filehub-view', state.viewMode); } catch { /* ignore */ }
+  applyViewMode();
+  loadList().catch((err) => console.error(err));
+}
+
+$('#btn-view-list').addEventListener('click', () => setViewMode('list'));
+$('#btn-view-icons').addEventListener('click', () => setViewMode('icons'));
+
+function entryIcon(e) {
+  return e.kind === 'dir' ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
+}
+
+function joinPath(base, name) {
+  return base ? base + '/' + name : name;
+}
+
+async function openEntry(e) {
+  if (e.isDir) {
+    state.path = e.path;
+    const parts = e.path.split('/');
+    let acc = '';
+    state.treeExpanded.add(treeKey(state.root, ''));
+    for (const p of parts) {
+      acc = acc ? acc + '/' + p : p;
+      state.treeExpanded.add(treeKey(state.root, acc));
+    }
+    invalidateTreeCache(state.root);
+    await loadRoots();
+    await loadList();
+  } else if (e.kind === 'image' || e.kind === 'video') {
+    openPreview(e);
+  } else {
+    window.open(`/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`, '_blank');
+  }
+}
+
+function appendEntryActions(container, e, canWrite, compact) {
+  if (!e.isDir) {
+    const dl = document.createElement('button');
+    dl.type = 'button';
+    dl.textContent = '↓';
+    dl.className = 'ghost';
+    dl.title = 'Download';
+    dl.setAttribute('aria-label', 'Download');
+    dl.onclick = (ev) => {
+      ev.stopPropagation();
+      window.location = `/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+    };
+    container.appendChild(dl);
+  }
+  if (canWrite) {
+    const ren = document.createElement('button');
+    ren.type = 'button';
+    ren.textContent = '✎';
+    ren.className = 'ghost';
+    ren.title = 'Rename';
+    ren.setAttribute('aria-label', 'Rename');
+    ren.onclick = async (ev) => {
+      ev.stopPropagation();
+      const next = prompt('New path relative to root', e.path);
+      if (!next || next === e.path) return;
+      await api('/api/rename', { method: 'POST', body: JSON.stringify({ root: state.root, from: e.path, to: next }) });
+      invalidateTreeCache(state.root);
+      await loadRoots();
+      await loadList();
+    };
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '🗑';
+    del.className = 'ghost danger';
+    del.title = 'Delete';
+    del.setAttribute('aria-label', 'Delete');
+    del.onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!confirm('Delete ' + e.name + '?')) return;
+      await api('/api/delete', { method: 'POST', body: JSON.stringify({ root: state.root, path: e.path }) });
+      invalidateTreeCache(state.root);
+      await loadRoots();
+      await loadList();
+      try { await refreshMe(); } catch { /* ignore */ }
+    };
+    container.appendChild(ren);
+    container.appendChild(del);
+  }
+}
+
+function markFolderDropTarget(el, folderPath) {
+  el.dataset.dropPath = folderPath;
+  el.classList.add('is-folder-drop');
+}
+
+function renderEntries(entries, canWrite) {
+  const body = $('#file-body');
+  const grid = $('#files-grid');
+  body.innerHTML = '';
+  grid.innerHTML = '';
+
+  if (!entries.length) {
+    if (state.viewMode === 'icons') {
+      const empty = document.createElement('div');
+      empty.className = 'files-empty';
+      empty.textContent = canWrite ? 'Empty folder — drop files here to upload' : 'Empty folder';
+      grid.appendChild(empty);
+    } else {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="5" class="empty-row muted">${canWrite ? 'Empty folder — drop files here to upload' : 'Empty folder'}</td>`;
+      body.appendChild(tr);
+    }
+    return;
+  }
+
+  if (state.viewMode === 'icons') {
+    for (const e of entries) {
+      const card = document.createElement('div');
+      card.className = 'file-card';
+      card.title = e.name;
+      if (e.isDir) markFolderDropTarget(card, e.path);
+
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      if (!e.isDir && (e.kind === 'image' || e.kind === 'video')) {
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.alt = e.name;
+        img.src = `/api/thumb?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+        img.onerror = () => {
+          img.remove();
+          thumb.textContent = entryIcon(e);
+        };
+        thumb.appendChild(img);
+        if (e.kind === 'video') {
+          const badge = document.createElement('span');
+          badge.className = 'play-badge';
+          badge.textContent = '▶';
+          thumb.appendChild(badge);
+        }
+      } else {
+        thumb.textContent = entryIcon(e);
+      }
+
+      const name = document.createElement('div');
+      name.className = 'card-name';
+      name.textContent = e.name;
+
+      const actions = document.createElement('div');
+      actions.className = 'card-actions';
+      actions.onclick = (ev) => ev.stopPropagation();
+      appendEntryActions(actions, e, canWrite, true);
+
+      card.appendChild(thumb);
+      card.appendChild(name);
+      card.appendChild(actions);
+      card.onclick = () => openEntry(e);
+      grid.appendChild(card);
+    }
+    return;
+  }
+
   for (const e of entries) {
     const tr = document.createElement('tr');
-    const icon = e.kind === 'dir' ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
-    tr.innerHTML = `<td class="icon">${icon}</td><td class="name-cell"><div class="name-wrap"></div></td><td class="size-cell">${e.isDir ? '—' : fmtSize(e.size)}</td><td class="mod-cell">${new Date(e.modTime).toLocaleString()}</td><td class="row-actions"></td>`;
+    if (e.isDir) markFolderDropTarget(tr, e.path);
+    tr.innerHTML = `<td class="icon">${entryIcon(e)}</td><td class="name-cell"><div class="name-wrap"></div></td><td class="size-cell">${e.isDir ? '—' : fmtSize(e.size)}</td><td class="mod-cell">${new Date(e.modTime).toLocaleString()}</td><td class="row-actions"></td>`;
     const nameWrap = tr.querySelector('.name-wrap');
     const nameBtn = document.createElement('button');
     nameBtn.className = 'name-btn';
     nameBtn.textContent = e.name;
     nameBtn.title = e.name;
-    nameBtn.onclick = async () => {
-      if (e.isDir) {
-        state.path = e.path;
-        // keep sidebar tree in sync
-        const parts = e.path.split('/');
-        let acc = '';
-        state.treeExpanded.add(treeKey(state.root, ''));
-        for (const p of parts) {
-          acc = acc ? acc + '/' + p : p;
-          state.treeExpanded.add(treeKey(state.root, acc));
-        }
-        invalidateTreeCache(state.root);
-        await loadRoots();
-        await loadList();
-      } else if (e.kind === 'image' || e.kind === 'video') {
-        openPreview(e);
-      } else {
-        window.open(`/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`, '_blank');
-      }
-    };
+    nameBtn.onclick = () => openEntry(e);
     nameWrap.appendChild(nameBtn);
-    const actions = tr.querySelector('.row-actions');
-    if (!e.isDir) {
-      const dl = document.createElement('button');
-      dl.type = 'button';
-      dl.textContent = '↓';
-      dl.className = 'ghost';
-      dl.title = 'Download';
-      dl.setAttribute('aria-label', 'Download');
-      dl.onclick = () => {
-        window.location = `/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
-      };
-      actions.appendChild(dl);
-    }
-    if (canWrite) {
-      const ren = document.createElement('button');
-      ren.type = 'button';
-      ren.textContent = '✎';
-      ren.className = 'ghost';
-      ren.title = 'Rename';
-      ren.setAttribute('aria-label', 'Rename');
-      ren.onclick = async () => {
-        const next = prompt('New path relative to root', e.path);
-        if (!next || next === e.path) return;
-        await api('/api/rename', { method: 'POST', body: JSON.stringify({ root: state.root, from: e.path, to: next }) });
-        invalidateTreeCache(state.root);
-        await loadRoots();
-        await loadList();
-      };
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.textContent = '🗑';
-      del.className = 'ghost danger';
-      del.title = 'Delete';
-      del.setAttribute('aria-label', 'Delete');
-      del.onclick = async () => {
-        if (!confirm('Delete ' + e.name + '?')) return;
-        await api('/api/delete', { method: 'POST', body: JSON.stringify({ root: state.root, path: e.path }) });
-        invalidateTreeCache(state.root);
-        await loadRoots();
-        await loadList();
-        try { await refreshMe(); } catch { /* ignore */ }
-      };
-      actions.appendChild(ren);
-      actions.appendChild(del);
-    }
+    appendEntryActions(tr.querySelector('.row-actions'), e, canWrite, false);
     body.appendChild(tr);
   }
 }
@@ -480,11 +596,11 @@ function setUploadItem(li, { loaded, total, status, error }) {
   }
 }
 
-function uploadFileWithProgress(file, onProgress) {
+function uploadFileWithProgress(file, destPath, onProgress) {
   return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append('root', state.root);
-    fd.append('path', state.path);
+    fd.append('path', destPath || '');
     fd.append('file', file);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload');
@@ -510,23 +626,29 @@ $('#btn-clear-uploads').addEventListener('click', () => {
   $('#btn-clear-uploads').hidden = true;
 });
 
-$('#file-input').addEventListener('change', async (ev) => {
-  const files = [...ev.target.files];
-  ev.target.value = '';
-  if (!files.length) return;
+async function uploadFiles(files, destPath) {
+  const listFiles = [...files].filter((f) => f && f.name);
+  if (!listFiles.length) return;
+  if (state.perm !== 'write') {
+    alert('This folder is read-only');
+    return;
+  }
+  const target = destPath == null ? state.path : destPath;
   ensureUploadPanel();
   const list = $('#upload-list');
   $('#btn-clear-uploads').hidden = true;
   let anyErr = false;
-  for (const f of files) {
+  for (const f of listFiles) {
     const li = document.createElement('li');
     li.className = 'upload-item';
     li.innerHTML = `<div class="row"><span class="name"></span><span class="meta"></span></div><div class="bar"><span></span></div>`;
-    li.querySelector('.name').textContent = f.name;
+    const label = target ? `${f.name} → ${target}/` : f.name;
+    li.querySelector('.name').textContent = label;
+    li.querySelector('.name').title = label;
     list.appendChild(li);
     setUploadItem(li, { loaded: 0, total: f.size, status: 'uploading' });
     try {
-      await uploadFileWithProgress(f, (loaded, total) => {
+      await uploadFileWithProgress(f, target, (loaded, total) => {
         setUploadItem(li, { loaded, total, status: 'uploading' });
       });
       setUploadItem(li, { loaded: f.size, total: f.size, status: 'done' });
@@ -538,11 +660,115 @@ $('#file-input').addEventListener('change', async (ev) => {
   $('#btn-clear-uploads').hidden = false;
   invalidateTreeCache(state.root);
   try { await loadRoots(); } catch { /* ignore */ }
-  if (!anyErr) await loadList();
-  else {
-    try { await loadList(); } catch { /* keep status visible */ }
-  }
+  try { await loadList(); } catch { /* keep status visible */ }
   try { await refreshMe(); } catch { /* ignore */ }
+  return !anyErr;
+}
+
+function collectDroppedFiles(dt) {
+  const out = [];
+  if (dt.items && dt.items.length) {
+    for (const item of dt.items) {
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry && entry.isDirectory) continue;
+      const f = item.getAsFile();
+      if (f) out.push(f);
+    }
+  } else if (dt.files) {
+    out.push(...dt.files);
+  }
+  return out;
+}
+
+function findFolderDropPath(target) {
+  const el = target && target.closest ? target.closest('.is-folder-drop') : null;
+  return el ? el.dataset.dropPath : null;
+}
+
+(function setupDragDrop() {
+  const zone = $('#files-dropzone');
+  const hint = $('#drop-hint');
+  let dragDepth = 0;
+
+  function clearFolderHighlights() {
+    document.querySelectorAll('.drop-folder-target').forEach((el) => el.classList.remove('drop-folder-target'));
+  }
+
+  function hasFiles(dt) {
+    if (!dt) return false;
+    if (dt.types && [...dt.types].includes('Files')) return true;
+    if (dt.items) {
+      for (const it of dt.items) if (it.kind === 'file') return true;
+    }
+    return !!(dt.files && dt.files.length);
+  }
+
+  // Prevent browser from opening dropped files outside the zone
+  window.addEventListener('dragover', (ev) => {
+    if (hasFiles(ev.dataTransfer)) ev.preventDefault();
+  });
+  window.addEventListener('drop', (ev) => {
+    if (hasFiles(ev.dataTransfer)) ev.preventDefault();
+  });
+
+  zone.addEventListener('dragenter', (ev) => {
+    if (!hasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    dragDepth += 1;
+    zone.classList.add('drop-active');
+    if (hint) hint.hidden = false;
+  });
+  zone.addEventListener('dragleave', (ev) => {
+    if (!hasFiles(ev.dataTransfer)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      zone.classList.remove('drop-active');
+      if (hint) hint.hidden = true;
+      clearFolderHighlights();
+    }
+  });
+  zone.addEventListener('dragover', (ev) => {
+    if (!hasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = state.perm === 'write' ? 'copy' : 'none';
+    clearFolderHighlights();
+    const folderPath = findFolderDropPath(ev.target);
+    if (folderPath != null) {
+      const el = ev.target.closest('.is-folder-drop');
+      if (el) el.classList.add('drop-folder-target');
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = 'Drop to upload into “' + folderPath.split('/').pop() + '”';
+      }
+    } else if (hint) {
+      hint.hidden = false;
+      hint.textContent = 'Drop files to upload here';
+    }
+  });
+  zone.addEventListener('drop', async (ev) => {
+    if (!hasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    dragDepth = 0;
+    zone.classList.remove('drop-active');
+    if (hint) {
+      hint.hidden = true;
+      hint.textContent = 'Drop files to upload here';
+    }
+    const folderPath = findFolderDropPath(ev.target);
+    clearFolderHighlights();
+    const files = collectDroppedFiles(ev.dataTransfer);
+    if (!files.length) return;
+    await uploadFiles(files, folderPath != null ? folderPath : state.path);
+  });
+})();
+
+$('#file-input').addEventListener('change', async (ev) => {
+  const files = [...ev.target.files];
+  ev.target.value = '';
+  if (!files.length) return;
+  await uploadFiles(files, state.path);
 });
 
 $('#btn-refresh').addEventListener('click', loadList);

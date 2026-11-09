@@ -1,4 +1,4 @@
-# NAS FileHub — bind to loopback only; put Nginx Proxy Manager in front.
+# Filehub — bind to loopback only; put Nginx Proxy Manager in front.
 services:
   filehub:
     build: .

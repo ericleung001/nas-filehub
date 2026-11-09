@@ -1,4 +1,4 @@
-# NAS FileHub
+# Filehub
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
@@ -10,8 +10,8 @@ Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shar
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
-- **File ops** — browse, upload (with per-file progress), download, mkdir, rename, delete; fixed-column list keeps Name/Size/Modified/actions aligned; long names ellipsize; compact action icons keep Delete visible
-- **Preview** — image preview and HTML5 video playback; closing the dialog stops video/audio cleanly
+- **File ops** — browse, upload (with per-file progress), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; list or icons view; fixed-column list keeps Name/Size/Modified/actions aligned; long names ellipsize; compact action icons keep Delete visible
+- **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; Unraid Intel VAAPI supported)
 - **Settings** — one top-bar entry for everyone
   - **Account** — quota used/limit, change own password (`POST /api/me/password`)
@@ -80,7 +80,7 @@ Disabled users cannot log in. Uploads / mkdir that would exceed home quota are r
 
 ## Nginx Proxy Manager
 
-1. Keep FileHub on loopback / LAN only (`127.0.0.1:8088`)
+1. Keep Filehub on loopback / LAN only (`127.0.0.1:8088`)
 2. Add a Proxy Host → your domain → forward to `http://<host>:8088` (or the Docker network hostname)
 3. Enable SSL (Let’s Encrypt)
 4. Prefer an Access List, Authelia, or Cloudflare Access in front
@@ -103,7 +103,7 @@ environment:
 
 Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls back to software; if that fails, the original image is used.
 
-(Full transcode streaming belongs in products like Jellyfin; FileHub stays intentionally light.)
+(Full transcode streaming belongs in products like Jellyfin; Filehub stays intentionally light.)
 
 ## Security defaults
 

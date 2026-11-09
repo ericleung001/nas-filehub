@@ -9,6 +9,9 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
+- **Drag-and-drop upload** from macOS/Windows: drop on the empty list/grid area to upload into the current folder; drop onto a folder row/icon to upload into that folder (visual drop-target highlight).
+- **List / Icons view toggle** in the toolbar (preference saved in `localStorage`).
+- **Icon view** shows image/video thumbnails via `GET /api/thumb` (falls back to file-type icons); clicking an image or video opens the existing preview modal (close still stops audio).
 - Unified **Settings** with tabs: **Account** for every user (quota + change password); admins also get **Users**, **Shares**, and **System** tabs (no separate top-bar Admin button).
 - Per-user account panel: home quota used/limit, change own password via `POST /api/me/password` (`currentPassword`, `newPassword`; verifies current; keeps current session, clears others).
 - Sidebar **folder tree** under Roots: expand/collapse directories for My Files and shares; clicking a node opens that path in the main list.
@@ -22,6 +25,7 @@ where version tags are used.
 - Closing the media preview (X, Escape, or backdrop) now pauses video, clears `src`, calls `load()`, and removes the element so audio cannot keep playing.
 
 ### Changed
+- Product display name is **Filehub** (UI title/header/login; repository path remains `nas-filehub`).
 - Settings **Users** and **Shares** admin tabs render as dark-theme tables (columns + row actions) instead of stacked cards.
 - Top bar exposes a single **Settings** entry; admin user/share management moved into Settings tabs.
 - Remove meta language note from README.

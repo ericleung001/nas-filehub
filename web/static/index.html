@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NAS FileHub</title>
+  <title>Filehub</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <div id="app">
     <section id="login-view" class="panel center">
-      <h1>NAS FileHub</h1>
+      <h1>Filehub</h1>
       <p class="muted">多用戶檔案瀏覽器 · Multi-user file manager</p>
       <form id="login-form">
         <label>Username<input name="username" autocomplete="username" required /></label>
@@ -21,7 +21,7 @@
 
     <section id="main-view" hidden>
       <header class="topbar">
-        <div class="brand">NAS FileHub</div>
+        <div class="brand">Filehub</div>
         <div class="spacer"></div>
         <span id="whoami" class="muted"></span>
         <button id="btn-settings" class="ghost">Settings</button>
@@ -41,6 +41,10 @@
           <div class="toolbar">
             <nav id="breadcrumbs"></nav>
             <div class="actions">
+              <div class="view-toggle" role="group" aria-label="View mode">
+                <button type="button" id="btn-view-list" class="ghost view-btn active" title="List view" aria-pressed="true">☰ List</button>
+                <button type="button" id="btn-view-icons" class="ghost view-btn" title="Icon view" aria-pressed="false">▦ Icons</button>
+              </div>
               <button id="btn-mkdir" title="New folder">+ Folder</button>
               <label class="btn file-btn">Upload<input id="file-input" type="file" multiple hidden /></label>
               <button id="btn-refresh" class="ghost">Refresh</button>
@@ -53,8 +57,9 @@
             </div>
             <ul id="upload-list"></ul>
           </div>
-          <div class="files-wrap">
-            <table class="files">
+          <div id="files-dropzone" class="files-wrap" tabindex="-1">
+            <div id="drop-hint" class="drop-hint" hidden>Drop files to upload here</div>
+            <table class="files" id="files-table">
               <colgroup>
                 <col class="col-icon" />
                 <col class="col-name" />
@@ -73,6 +78,7 @@
               </thead>
               <tbody id="file-body"></tbody>
             </table>
+            <div id="files-grid" class="files-grid" hidden></div>
           </div>
         </main>
       </div>
