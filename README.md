@@ -10,18 +10,13 @@ Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shar
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
-- **File ops** — browse, upload (with per-file progress), download, mkdir, rename, delete; long names ellipsize in a fixed-column list (desktop and mobile)
-- **Preview** — image preview and HTML5 video playback (client-side decode)
+- **File ops** — browse, upload (with per-file progress), download, mkdir, rename, delete; fixed-column list keeps Name/Size/Modified/actions aligned; long names ellipsize; compact action icons keep Delete visible
+- **Preview** — image preview and HTML5 video playback; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; Unraid Intel VAAPI supported)
-- **Per-user Settings** — account info, home quota used/limit, change own password (`POST /api/me/password`)
+- **Settings** — one top-bar entry for everyone
+  - **Account** — quota used/limit, change own password (`POST /api/me/password`)
+  - **Users / Shares / System** tabs (admins only) — create/edit users, quotas, password reset, disable accounts, manage shares and grants
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
-- **Admin · System** (admins only)
-  - Create / edit / delete users
-  - Set storage **quota** per user (e.g. `5GB`; `0` = unlimited)
-  - See **home usage** vs quota in the user list
-  - **Reset passwords** for others (invalidates that user’s sessions)
-  - Disable accounts (blocked at login)
-  - Manage shares and grants
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login rate limit; path-traversal guards; non-root container user
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
@@ -70,24 +65,16 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 | `LOGIN_RATE_LIMIT` | `10` | Max login attempts per IP per minute |
 | `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
 
-## Settings (all users)
+## Settings
 
-Sign in → **Settings**:
+Sign in → **Settings** (single top-bar button):
 
-1. See username, admin badge (if any), home path, and storage used / quota
-2. **Change password** — requires current password; other sessions are cleared, current session kept
+1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota; **Change password** (requires current password; other sessions cleared, current kept)
+2. **Users** (admins) — create / edit / delete users; set quota; reset passwords; disable accounts
+3. **Shares** (admins) — create shares and grant `read` / `write`
+4. **System** (admins) — short notes on `DATA_ROOT` layout and quota scope
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
-
-## Admin · System (admins only)
-
-Sign in as an admin → **Admin**:
-
-1. **Create user** — home is created automatically; optional quota (e.g. `5GB`, `500MB`, or `0` for unlimited)
-2. **Edit user** — username, admin flag, home path, quota, disabled
-3. **Set password** — resets another user’s password and clears that user’s sessions
-4. **Create share** — path relative to `DATA_ROOT` (e.g. `shared/family`)
-5. **Grant** — assign `read` or `write` to a user id
 
 Disabled users cannot log in. Uploads / mkdir that would exceed home quota are rejected.
 

@@ -25,7 +25,6 @@
         <div class="spacer"></div>
         <span id="whoami" class="muted"></span>
         <button id="btn-settings" class="ghost">Settings</button>
-        <button id="btn-admin" class="ghost" hidden>Admin</button>
         <button id="btn-logout" class="ghost">Logout</button>
       </header>
       <div class="layout">
@@ -54,88 +53,119 @@
             </div>
             <ul id="upload-list"></ul>
           </div>
-          <table class="files">
-            <thead><tr><th></th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
-            <tbody id="file-body"></tbody>
-          </table>
+          <div class="files-wrap">
+            <table class="files">
+              <colgroup>
+                <col class="col-icon" />
+                <col class="col-name" />
+                <col class="col-size" />
+                <col class="col-mod" />
+                <col class="col-actions" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="icon-h" aria-hidden="true"></th>
+                  <th class="name-h">Name</th>
+                  <th class="size-h">Size</th>
+                  <th class="mod-h">Modified</th>
+                  <th class="actions-h" aria-label="Actions"></th>
+                </tr>
+              </thead>
+              <tbody id="file-body"></tbody>
+            </table>
+          </div>
         </main>
       </div>
     </section>
-
 
     <section id="settings-view" hidden>
       <header class="topbar">
         <div class="brand">Settings</div>
         <button id="btn-back-settings" class="ghost">← Back</button>
       </header>
-      <div class="settings-wrap">
-        <div class="settings-card">
-          <h3>Account</h3>
-          <div id="settings-account" class="settings-account"></div>
-          <div class="quota-bar" id="settings-quota-bar" hidden><span></span></div>
+      <nav class="settings-tabs" id="settings-tabs" role="tablist">
+        <button type="button" class="settings-tab active" data-tab="account" role="tab" aria-selected="true">Account</button>
+        <button type="button" class="settings-tab admin-only" data-tab="users" role="tab" aria-selected="false" hidden>Users</button>
+        <button type="button" class="settings-tab admin-only" data-tab="shares" role="tab" aria-selected="false" hidden>Shares</button>
+        <button type="button" class="settings-tab admin-only" data-tab="system" role="tab" aria-selected="false" hidden>System</button>
+      </nav>
+      <div class="settings-panels">
+        <div id="tab-account" class="settings-panel active" role="tabpanel">
+          <div class="settings-wrap">
+            <div class="settings-card">
+              <h3>Account</h3>
+              <div id="settings-account" class="settings-account"></div>
+              <div class="quota-bar" id="settings-quota-bar" hidden><span></span></div>
+            </div>
+            <div class="settings-card">
+              <h3>Change password</h3>
+              <form id="change-password" class="admin-form">
+                <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+                <label>New password<input name="newPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
+                <label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
+                <button type="submit">Update password</button>
+                <p id="change-password-msg" class="muted" hidden></p>
+              </form>
+            </div>
+          </div>
         </div>
-        <div class="settings-card">
-          <h3>Change password</h3>
-          <form id="change-password" class="admin-form">
-            <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
-            <label>New password<input name="newPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
-            <label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
-            <button type="submit">Update password</button>
-            <p id="change-password-msg" class="muted" hidden></p>
-          </form>
-        </div>
-      </div>
-    </section>
-
-    <section id="admin-view" hidden>
-      <header class="topbar">
-        <div class="brand">Admin · System</div>
-        <button id="btn-back-admin" class="ghost">← Back</button>
-      </header>
-      <div class="admin-grid">
-        <div>
-          <h3>Users</h3>
-          <form id="create-user" class="admin-form">
-            <input name="username" placeholder="username" required />
-            <input name="password" type="password" placeholder="password" required />
-            <input name="homePath" placeholder="home path (optional)" />
-            <input name="quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
-            <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
-            <button type="submit">Create user</button>
-          </form>
-          <ul id="user-list"></ul>
-
-          <dialog id="user-edit-dialog">
-            <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
-            <h3>Edit user</h3>
-            <form id="edit-user" class="admin-form">
-              <input type="hidden" name="id" />
-              <label>Username<input name="username" required /></label>
-              <label>Home path<input name="homePath" required /></label>
-              <label>Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
+        <div id="tab-users" class="settings-panel" role="tabpanel" hidden>
+          <div class="admin-section">
+            <h3>Users</h3>
+            <form id="create-user" class="admin-form">
+              <input name="username" placeholder="username" required />
+              <input name="password" type="password" placeholder="password" required />
+              <input name="homePath" placeholder="home path (optional)" />
+              <input name="quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
               <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
-              <label class="check"><input name="disabled" type="checkbox" /> disabled</label>
-              <button type="submit">Save</button>
-              <p id="edit-user-error" class="error" hidden></p>
+              <button type="submit">Create user</button>
             </form>
-            <hr class="sep" />
-            <h3>Set password</h3>
-            <form id="set-password" class="admin-form">
-              <input type="hidden" name="id" />
-              <label>New password<input name="password" type="password" required minlength="4" /></label>
-              <button type="submit">Update password</button>
-              <p id="set-password-msg" class="muted" hidden></p>
-            </form>
-          </dialog>
+            <ul id="user-list"></ul>
+            <dialog id="user-edit-dialog">
+              <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
+              <h3>Edit user</h3>
+              <form id="edit-user" class="admin-form">
+                <input type="hidden" name="id" />
+                <label>Username<input name="username" required /></label>
+                <label>Home path<input name="homePath" required /></label>
+                <label>Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
+                <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
+                <label class="check"><input name="disabled" type="checkbox" /> disabled</label>
+                <button type="submit">Save</button>
+                <p id="edit-user-error" class="error" hidden></p>
+              </form>
+              <hr class="sep" />
+              <h3>Set password</h3>
+              <form id="set-password" class="admin-form">
+                <input type="hidden" name="id" />
+                <label>New password<input name="password" type="password" required minlength="4" /></label>
+                <button type="submit">Update password</button>
+                <p id="set-password-msg" class="muted" hidden></p>
+              </form>
+            </dialog>
+          </div>
         </div>
-        <div>
-          <h3>Shared folders</h3>
-          <form id="create-share">
-            <input name="name" placeholder="display name" required />
-            <input name="path" placeholder="path under DATA_ROOT e.g. shared/team" required />
-            <button type="submit">Create share</button>
-          </form>
-          <ul id="share-list"></ul>
+        <div id="tab-shares" class="settings-panel" role="tabpanel" hidden>
+          <div class="admin-section">
+            <h3>Shared folders</h3>
+            <form id="create-share" class="admin-form">
+              <input name="name" placeholder="display name" required />
+              <input name="path" placeholder="path under DATA_ROOT e.g. shared/team" required />
+              <button type="submit">Create share</button>
+            </form>
+            <ul id="share-list"></ul>
+          </div>
+        </div>
+        <div id="tab-system" class="settings-panel" role="tabpanel" hidden>
+          <div class="admin-section settings-card">
+            <h3>System</h3>
+            <p class="muted">Admin system tools live under the Users and Shares tabs. File storage root and listen address are set via server environment variables (see README).</p>
+            <ul class="system-notes muted">
+              <li>Homes: <code>DATA_ROOT/homes/&lt;user&gt;</code></li>
+              <li>Shares: paths under <code>DATA_ROOT</code></li>
+              <li>Quota applies to each user’s home only</li>
+            </ul>
+          </div>
         </div>
       </div>
     </section>

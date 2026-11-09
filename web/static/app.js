@@ -39,7 +39,7 @@ function show(view) {
   $('#login-view').hidden = view !== 'login';
   $('#main-view').hidden = view !== 'main';
   $('#settings-view').hidden = view !== 'settings';
-  $('#admin-view').hidden = view !== 'admin';
+  if (view !== 'settings') stopPreviewMedia();
 }
 
 async function bootstrap() {
@@ -54,7 +54,6 @@ async function bootstrap() {
 
 async function enterApp() {
   $('#whoami').textContent = state.user.username + (state.user.isAdmin ? ' (admin)' : '');
-  $('#btn-admin').hidden = !state.user.isAdmin;
   show('main');
   renderSidebarQuota();
   await loadRoots();
@@ -134,15 +133,37 @@ $('#btn-settings').addEventListener('click', async () => {
   await openSettings();
 });
 $('#btn-back-settings').addEventListener('click', () => show('main'));
-$('#btn-admin').addEventListener('click', async () => {
-  show('admin');
-  await refreshAdmin();
+
+function setSettingsTab(tab) {
+  document.querySelectorAll('.settings-tab').forEach((btn) => {
+    const on = btn.dataset.tab === tab;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.settings-panel').forEach((panel) => {
+    const on = panel.id === 'tab-' + tab;
+    panel.classList.toggle('active', on);
+    panel.hidden = !on;
+  });
+}
+
+document.querySelectorAll('.settings-tab').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const tab = btn.dataset.tab;
+    setSettingsTab(tab);
+    if (tab === 'users' || tab === 'shares') {
+      try { await refreshAdmin(); } catch (err) { console.error(err); }
+    }
+  });
 });
-$('#btn-back-admin').addEventListener('click', () => show('main'));
 
 async function openSettings() {
   try { await refreshMe(); } catch { /* keep cached */ }
   const u = state.user;
+  document.querySelectorAll('.settings-tab.admin-only').forEach((el) => {
+    el.hidden = !u.isAdmin;
+  });
+  setSettingsTab('account');
   const acc = $('#settings-account');
   const badges = [];
   if (u.isAdmin) badges.push('<span class="badge admin">admin</span>');
@@ -332,18 +353,26 @@ async function loadList() {
       }
     };
     nameWrap.appendChild(nameBtn);
-    const actions = tr.children[4];
-    const dl = document.createElement('button');
-    dl.textContent = '↓';
-    dl.className = 'ghost';
-    dl.onclick = () => {
-      window.location = `/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
-    };
-    if (!e.isDir) actions.appendChild(dl);
+    const actions = tr.querySelector('.row-actions');
+    if (!e.isDir) {
+      const dl = document.createElement('button');
+      dl.type = 'button';
+      dl.textContent = '↓';
+      dl.className = 'ghost';
+      dl.title = 'Download';
+      dl.setAttribute('aria-label', 'Download');
+      dl.onclick = () => {
+        window.location = `/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+      };
+      actions.appendChild(dl);
+    }
     if (canWrite) {
       const ren = document.createElement('button');
-      ren.textContent = 'Rename';
+      ren.type = 'button';
+      ren.textContent = '✎';
       ren.className = 'ghost';
+      ren.title = 'Rename';
+      ren.setAttribute('aria-label', 'Rename');
       ren.onclick = async () => {
         const next = prompt('New path relative to root', e.path);
         if (!next || next === e.path) return;
@@ -353,8 +382,11 @@ async function loadList() {
         await loadList();
       };
       const del = document.createElement('button');
-      del.textContent = 'Del';
-      del.className = 'ghost';
+      del.type = 'button';
+      del.textContent = '🗑';
+      del.className = 'ghost danger';
+      del.title = 'Delete';
+      del.setAttribute('aria-label', 'Delete');
       del.onclick = async () => {
         if (!confirm('Delete ' + e.name + '?')) return;
         await api('/api/delete', { method: 'POST', body: JSON.stringify({ root: state.root, path: e.path }) });
@@ -370,9 +402,24 @@ async function loadList() {
   }
 }
 
-function openPreview(e) {
+function stopPreviewMedia() {
   const body = $('#preview-body');
+  if (!body) return;
+  body.querySelectorAll('video, audio').forEach((el) => {
+    try {
+      el.pause();
+      el.removeAttribute('src');
+      el.src = '';
+      el.load();
+    } catch { /* ignore */ }
+    el.remove();
+  });
   body.innerHTML = '';
+}
+
+function openPreview(e) {
+  stopPreviewMedia();
+  const body = $('#preview-body');
   const url = `/api/raw?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
   if (e.kind === 'image') {
     const img = document.createElement('img');
@@ -386,7 +433,13 @@ function openPreview(e) {
     v.src = url;
     body.appendChild(v);
   }
-  $('#preview').showModal();
+  const dlg = $('#preview');
+  if (!dlg.dataset.closeBound) {
+    dlg.dataset.closeBound = '1';
+    dlg.addEventListener('close', stopPreviewMedia);
+    dlg.addEventListener('cancel', stopPreviewMedia);
+  }
+  dlg.showModal();
 }
 
 $('#btn-mkdir').addEventListener('click', async () => {

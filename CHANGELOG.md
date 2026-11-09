@@ -9,17 +9,20 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
-- Per-user **Settings** panel (all logged-in users): account info, home quota used/limit, change own password via `POST /api/me/password` (`currentPassword`, `newPassword`; verifies current; keeps current session, clears others).
-- Admin console clarified as **Admin · System** (admins only); separate from user Settings.
+- Unified **Settings** with tabs: **Account** for every user (quota + change password); admins also get **Users**, **Shares**, and **System** tabs (no separate top-bar Admin button).
+- Per-user account panel: home quota used/limit, change own password via `POST /api/me/password` (`currentPassword`, `newPassword`; verifies current; keeps current session, clears others).
 - Sidebar **folder tree** under Roots: expand/collapse directories for My Files and shares; clicking a node opens that path in the main list.
 - Sidebar **Storage** used/limit bar (from `/api/me`).
 - Upload progress UI: per-file status with filename, transferred bytes / percent, and success or error after each finish (XHR `upload.onprogress`; no API change).
 - `GET /api/me` (and login) now include `usedBytes` for home usage.
 
 ### Fixed
-- Long file and root names no longer break the file list layout on desktop or mobile; Name column ellipsizes on one line (full name in `title` tooltip) while Size/Modified/actions stay fixed-width. Size/Modified columns still hide under 800px.
+- File list columns stay aligned under Name / Size / Modified / actions (`table-layout: fixed` + `colgroup`); long names ellipsize; actions (including Delete) stay fully visible via compact icon buttons.
+- Modified hides under 960px; Size hides under 800px on narrow viewports.
+- Closing the media preview (X, Escape, or backdrop) now pauses video, clears `src`, calls `load()`, and removes the element so audio cannot keep playing.
 
 ### Changed
+- Top bar exposes a single **Settings** entry; admin user/share management moved into Settings tabs.
 - Remove meta language note from README.
 
 ## [0.2.0] - 2026-11-06
