@@ -186,9 +186,18 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .upload-status {
   margin: 0 0 .85rem; padding: .75rem .85rem; border: 1px solid var(--border);
   border-radius: 10px; background: var(--panel);
+  /* Keep Clear in sticky head; only the file list scrolls when many uploads. */
+  display: flex; flex-direction: column; min-height: 0;
 }
-.upload-status-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
-.upload-status ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem; }
+.upload-status-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; flex: 0 0 auto; }
+.upload-status ul,
+#upload-list {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .55rem;
+  max-height: min(40vh, 280px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+}
 .upload-item { display: flex; flex-direction: column; gap: .3rem; }
 .upload-item .row { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; font-size: .9rem; }
 .upload-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

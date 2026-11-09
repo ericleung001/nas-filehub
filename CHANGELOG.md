@@ -26,6 +26,7 @@ where version tags are used.
 - `GET /api/me` (and login) now include `usedBytes` for home usage.
 
 ### Fixed
+- Upload status panel no longer pushes the layout when many files are queued: `#upload-list` is capped (`max-height: min(40vh, 280px)`) with `overflow-y: auto`; **Clear** stays in the non-scrolling header.
 - Toolbar **Sort** label + dropdown + Asc/Desc stay on one horizontal row (global `label { flex-direction: column }` no longer stacks them).
 - File list columns stay aligned under Name / Size / Modified / actions (`table-layout: fixed` + `colgroup`); long names ellipsize; actions (including Delete) stay fully visible via compact icon buttons.
 - Modified hides under 960px; Size hides under 800px on narrow viewports.
