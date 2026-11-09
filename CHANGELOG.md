@@ -9,6 +9,10 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
+- **Admin password policy** — Settings → System: minimum length (4–128) and require letters / digits / symbols. Stored in `settings`; changing rules bumps `password_policy_version` so users with an older stamp must change password before using the app.
+- **Login remediation gate** — after password (and TOTP if enabled), users who fail the current policy or are behind the policy version must change password; users required to use 2FA must enroll. Password gate runs before 2FA enroll. Server `requireAuth` allows only `/api/me`, password/TOTP remediation routes, and logout while gated.
+- **Settings left nav** — vertical menu (Account, Change password, 2FA; admins also Users, Shares, System) with a single right-hand panel for the selected section (no stacked account cards).
+
 - **TOTP two-factor authentication (RFC 6238)** — users can enable/disable 2FA in Settings → Account (QR + secret, confirm with code; optional backup codes shown once). Login asks for a TOTP/backup code when enabled. Admins can require 2FA per user (Users → Edit → require 2FA) or force all users (Settings → System, or env `FORCE_2FA_ALL`). Forced users who have not enrolled must set up 2FA before accessing files.
 - **File list sorting** — sort by Name, Date (modified), Type (extension), or Size; Asc/Desc toggle; preference saved in `localStorage` (`filehub-sort-by`, `filehub-sort-dir`); works in List and Icons views; list column headers are clickable.
 - **Drag-and-drop upload** from macOS/Windows: drop on the empty list/grid area to upload into the current folder; drop onto a folder row/icon to upload into that folder (visual drop-target highlight).
@@ -28,6 +32,7 @@ where version tags are used.
 - Closing the media preview (X, Escape, or backdrop) now pauses video, clears `src`, calls `load()`, and removes the element so audio cannot keep playing.
 
 ### Changed
+- Settings UI uses a left vertical section menu instead of top tabs / stacked Account cards.
 - README clarifies Filehub runs on any Docker / Linux host (VPS, Synology, Windows/macOS with Docker, bare Go binary); Unraid + VAAPI docs marked as optional hardware accel only.
 - Product display name is **Filehub** (UI title/header/login; repository path remains `nas-filehub`).
 - Settings **Users** and **Shares** admin tabs render as dark-theme tables (columns + row actions) instead of stacked cards.

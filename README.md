@@ -24,11 +24,14 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **File ops** — browse, upload (with per-file progress), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps Name/Size/Modified/actions aligned (clickable headers); long names ellipsize; compact action icons keep Delete visible
 - **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
-- **Settings** — one top-bar entry for everyone
-  - **Account** — quota used/limit, change own password (`POST /api/me/password`), enable/disable TOTP 2FA
-  - **Users / Shares / System** tabs (admins only) — create/edit users, quotas, password reset, disable accounts, manage shares and grants; Users and Shares shown as list tables
+- **Settings** — one top-bar entry; left vertical menu, right content panel
+  - **Account** — username, home, quota used/limit
+  - **Change password** — `POST /api/me/password` (enforces admin password policy)
+  - **2FA** — enable/disable TOTP
+  - **Users / Shares / System** (admins only) — user/share tables; System includes Force 2FA and **password policy** (min length, letters/digits/symbols)
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
+- **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, and self-service change; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login rate limit; path-traversal guards; non-root container user
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
@@ -82,10 +85,12 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 
 Sign in → **Settings** (single top-bar button):
 
-1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota; **Change password** (requires current password; other sessions cleared, current kept)
-2. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts
-3. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
-4. **System** (admins) — short notes on `DATA_ROOT` layout and quota scope; toggle **Force 2FA for all users**
+1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota
+2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
+3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
+4. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts; per-user require 2FA
+5. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
+6. **System** (admins) — `DATA_ROOT` notes; **Force 2FA for all users**; **Password policy** (minimum length, require letters / digits / symbols). Saving a tighter policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 

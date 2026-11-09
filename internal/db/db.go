@@ -17,17 +17,19 @@ type DB struct {
 }
 
 type User struct {
-	ID           int64     `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"`
-	IsAdmin      bool      `json:"isAdmin"`
-	HomePath     string    `json:"homePath"` // relative to DATA_ROOT
-	QuotaBytes   int64     `json:"quotaBytes"` // 0 = unlimited
-	Disabled     bool      `json:"disabled"`
-	TotpSecret   string    `json:"-"`
-	TotpEnabled  bool      `json:"totpEnabled"`
-	TotpRequired bool      `json:"totpRequired"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID                    int64     `json:"id"`
+	Username              string    `json:"username"`
+	PasswordHash          string    `json:"-"`
+	IsAdmin               bool      `json:"isAdmin"`
+	HomePath              string    `json:"homePath"` // relative to DATA_ROOT
+	QuotaBytes            int64     `json:"quotaBytes"` // 0 = unlimited
+	Disabled              bool      `json:"disabled"`
+	TotpSecret            string    `json:"-"`
+	TotpEnabled           bool      `json:"totpEnabled"`
+	TotpRequired          bool      `json:"totpRequired"`
+	PasswordChangedAt     time.Time `json:"passwordChangedAt,omitempty"`
+	PasswordPolicyVersion int       `json:"passwordPolicyVersion"`
+	CreatedAt             time.Time `json:"createdAt"`
 }
 
 type Share struct {
@@ -117,7 +119,10 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if _, err := d.SQL.Exec(schema); err != nil {
 		return err
 	}
-	return d.ensureUserColumns()
+	if err := d.ensureUserColumns(); err != nil {
+		return err
+	}
+	return d.ensurePendingLoginColumns()
 }
 
 func (d *DB) ensureUserColumns() error {
@@ -149,12 +154,43 @@ func (d *DB) ensureUserColumns() error {
 		{"totp_secret", `ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''`},
 		{"totp_enabled", `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`},
 		{"totp_required", `ALTER TABLE users ADD COLUMN totp_required INTEGER NOT NULL DEFAULT 0`},
+		{"password_changed_at", `ALTER TABLE users ADD COLUMN password_changed_at TEXT NOT NULL DEFAULT ''`},
+		{"password_policy_version", `ALTER TABLE users ADD COLUMN password_policy_version INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range alters {
 		if cols[a.name] {
 			continue
 		}
 		if _, err := d.SQL.Exec(a.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+
+func (d *DB) ensurePendingLoginColumns() error {
+	cols := map[string]bool{}
+	rows, err := d.SQL.Query(`PRAGMA table_info(pending_logins)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !cols["must_change_password"] {
+		if _, err := d.SQL.Exec(`ALTER TABLE pending_logins ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
 		}
 	}
@@ -200,8 +236,8 @@ func scanUser(scanner interface {
 }) (*User, error) {
 	u := &User{}
 	var admin, disabled, totpEnabled, totpRequired int
-	var created string
-	err := scanner.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &created)
+	var created, pwChanged string
+	err := scanner.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &created)
 	if err != nil {
 		return nil, err
 	}
@@ -209,11 +245,14 @@ func scanUser(scanner interface {
 	u.Disabled = disabled == 1
 	u.TotpEnabled = totpEnabled == 1
 	u.TotpRequired = totpRequired == 1
+	if pwChanged != "" {
+		u.PasswordChangedAt, _ = time.Parse(time.RFC3339, pwChanged)
+	}
 	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	return u, nil
 }
 
-const userSelectCols = `id, username, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, created_at`
+const userSelectCols = `id, username, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, created_at`
 
 func (d *DB) GetUserByUsername(username string) (*User, error) {
 	row := d.SQL.QueryRow(
@@ -290,9 +329,10 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 		admin = 1
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	pol, _ := d.GetPasswordPolicy()
 	res, err := d.SQL.Exec(
-		`INSERT INTO users(username, password_hash, is_admin, home_path, quota_bytes, disabled, created_at) VALUES(?,?,?,?,?,0,?)`,
-		username, hash, admin, homePath, quotaBytes, now,
+		`INSERT INTO users(username, password_hash, is_admin, home_path, quota_bytes, disabled, password_changed_at, password_policy_version, created_at) VALUES(?,?,?,?,?,0,?,?,?)`,
+		username, hash, admin, homePath, quotaBytes, now, pol.Version, now,
 	)
 	if err != nil {
 		return nil, err
@@ -300,7 +340,8 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	id, _ := res.LastInsertId()
 	return &User{
 		ID: id, Username: username, IsAdmin: isAdmin, HomePath: homePath,
-		QuotaBytes: quotaBytes, CreatedAt: time.Now().UTC(),
+		QuotaBytes: quotaBytes, PasswordChangedAt: time.Now().UTC(),
+		PasswordPolicyVersion: pol.Version, CreatedAt: time.Now().UTC(),
 	}, nil
 }
 
@@ -397,7 +438,15 @@ func (d *DB) SetUserPassword(id int64, password string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := d.SQL.Exec(`UPDATE users SET password_hash=? WHERE id=?`, hash, id); err != nil {
+	pol, err := d.GetPasswordPolicy()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := d.SQL.Exec(
+		`UPDATE users SET password_hash=?, password_changed_at=?, password_policy_version=? WHERE id=?`,
+		hash, now, pol.Version, id,
+	); err != nil {
 		return err
 	}
 	return d.DeleteUserSessions(id)
@@ -420,13 +469,26 @@ func (d *DB) SetUserPasswordKeepSession(id int64, password, keepToken string) er
 	if err != nil {
 		return err
 	}
-	if _, err := d.SQL.Exec(`UPDATE users SET password_hash=? WHERE id=?`, hash, id); err != nil {
+	pol, err := d.GetPasswordPolicy()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := d.SQL.Exec(
+		`UPDATE users SET password_hash=?, password_changed_at=?, password_policy_version=? WHERE id=?`,
+		hash, now, pol.Version, id,
+	); err != nil {
 		return err
 	}
 	if keepToken == "" {
 		return d.DeleteUserSessions(id)
 	}
 	_, err = d.SQL.Exec(`DELETE FROM sessions WHERE user_id=? AND token!=?`, id, keepToken)
+	return err
+}
+
+func (d *DB) MarkPasswordChangeRequired(userID int64) error {
+	_, err := d.SQL.Exec(`UPDATE users SET password_policy_version=-1 WHERE id=?`, userID)
 	return err
 }
 
@@ -668,35 +730,42 @@ func (d *DB) UserNeedsTOTP(u *User, forceAll bool) (needCode bool, needEnroll bo
 	return false, false
 }
 
-func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires time.Time) error {
+func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires time.Time, mustChangePassword bool) error {
 	if kind != "totp" && kind != "enroll" {
 		return fmt.Errorf("invalid pending login kind")
 	}
+	flag := 0
+	if mustChangePassword {
+		flag = 1
+	}
 	_, err := d.SQL.Exec(
-		`INSERT INTO pending_logins(token, user_id, kind, expires_at) VALUES(?,?,?,?)`,
-		token, userID, kind, expires.UTC().Format(time.RFC3339),
+		`INSERT INTO pending_logins(token, user_id, kind, expires_at, must_change_password) VALUES(?,?,?,?,?)`,
+		token, userID, kind, expires.UTC().Format(time.RFC3339), flag,
 	)
 	return err
 }
 
 type PendingLogin struct {
-	Token  string
-	UserID int64
-	Kind   string
+	Token               string
+	UserID              int64
+	Kind                string
+	MustChangePassword  bool
 }
 
 func (d *DB) GetPendingLogin(token string) (*PendingLogin, error) {
 	var p PendingLogin
 	var expStr string
+	var mustChange int
 	err := d.SQL.QueryRow(
-		`SELECT token, user_id, kind, expires_at FROM pending_logins WHERE token=?`, token,
-	).Scan(&p.Token, &p.UserID, &p.Kind, &expStr)
+		`SELECT token, user_id, kind, expires_at, must_change_password FROM pending_logins WHERE token=?`, token,
+	).Scan(&p.Token, &p.UserID, &p.Kind, &expStr, &mustChange)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	p.MustChangePassword = mustChange == 1
 	exp, err := time.Parse(time.RFC3339, expStr)
 	if err != nil || time.Now().After(exp) {
 		_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE token=?`, token)

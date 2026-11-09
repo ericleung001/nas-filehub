@@ -136,8 +136,16 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "account disabled")
 			return
 		}
-		if s.userMustEnrollTotp(u) {
-			path := r.URL.Path
+		path := r.URL.Path
+		if s.userMustChangePassword(u) {
+			allowed := path == "/api/me" ||
+				path == "/api/me/password" ||
+				path == "/api/logout"
+			if !allowed {
+				writeErr(w, http.StatusForbidden, "password change required")
+				return
+			}
+		} else if s.userMustEnrollTotp(u) {
 			allowed := path == "/api/me" ||
 				path == "/api/me/totp/setup" ||
 				path == "/api/me/totp/confirm" ||
@@ -217,6 +225,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "account disabled")
 		return
 	}
+	mustChangePW := s.passwordNeedsChange(u, body.Password)
 	needCode, needEnroll := s.DB.UserNeedsTOTP(u, s.force2FAAll())
 	if needCode || needEnroll {
 		pend, err := auth.NewToken()
@@ -230,7 +239,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		exp := time.Now().Add(10 * time.Minute)
 		_ = s.DB.DeletePendingLoginsForUser(u.ID)
-		if err := s.DB.CreatePendingLogin(pend, u.ID, kind, exp); err != nil {
+		if err := s.DB.CreatePendingLogin(pend, u.ID, kind, exp, mustChangePW); err != nil {
 			writeErr(w, 500, "session error")
 			return
 		}
@@ -250,7 +259,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "session error")
 		return
 	}
+	// Refresh user so public flags see current DB state
+	if u2, err := s.DB.GetUserByID(u.ID); err == nil && u2 != nil {
+		u = u2
+	}
 	m := s.userPublic(u)
+	if mustChangePW {
+		m["mustChangePassword"] = true
+	}
 	m["usedBytes"] = s.homeUsedBytes(u)
 	writeJSON(w, 200, map[string]any{"user": m})
 }
@@ -275,12 +291,50 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 	}
 	forceAll := s.force2FAAll()
 	required := forceAll || u.TotpRequired
+	pol, _ := s.DB.GetPasswordPolicy()
+	mustChange := s.userMustChangePassword(u)
+	mustEnroll := required && !u.TotpEnabled
+	// Password gate takes priority over 2FA enroll for the flag the UI reads first.
 	return map[string]any{
 		"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
 		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled,
 		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
-		"force2faAll": forceAll, "mustEnrollTotp": required && !u.TotpEnabled,
+		"force2faAll": forceAll, "mustEnrollTotp": mustEnroll && !mustChange,
+		"mustChangePassword": mustChange,
+		"passwordPolicy": pol,
+		"passwordPolicyHint": db.PasswordPolicySummary(pol),
 	}
+}
+
+func (s *Server) passwordPolicy() db.PasswordPolicy {
+	p, err := s.DB.GetPasswordPolicy()
+	if err != nil {
+		return db.DefaultPasswordPolicy()
+	}
+	return p
+}
+
+func (s *Server) userMustChangePassword(u *db.User) bool {
+	if u == nil {
+		return false
+	}
+	pol := s.passwordPolicy()
+	return u.PasswordPolicyVersion < pol.Version
+}
+
+// passwordNeedsChange is true when plaintext fails the current policy or the
+// user's stamped policy version is behind (admin tightened rules).
+func (s *Server) passwordNeedsChange(u *db.User, plain string) bool {
+	if s.userMustChangePassword(u) {
+		return true
+	}
+	if db.ValidatePassword(plain, s.passwordPolicy()) != nil {
+		// Stamp behind so requireAuth enforces the gate even when versions matched.
+		_ = s.DB.MarkPasswordChangeRequired(u.ID)
+		u.PasswordPolicyVersion = -1
+		return true
+	}
+	return false
 }
 
 func (s *Server) homeUsedBytes(u *db.User) int64 {
@@ -331,8 +385,8 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "new password required")
 		return
 	}
-	if len(body.NewPassword) < 4 {
-		writeErr(w, 400, "new password too short (min 4)")
+	if err := db.ValidatePassword(body.NewPassword, s.passwordPolicy()); err != nil {
+		writeErr(w, 400, err.Error())
 		return
 	}
 	if !db.CheckPassword(u.PasswordHash, body.CurrentPassword) {
@@ -347,7 +401,10 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]string{"ok": "1"})
+	u2, _ := s.DB.GetUserByID(u.ID)
+	m := s.userPublic(u2)
+	m["usedBytes"] = s.homeUsedBytes(u2)
+	writeJSON(w, 200, map[string]any{"ok": "1", "user": m})
 }
 
 func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
@@ -639,6 +696,10 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "bad json")
 			return
 		}
+		if err := db.ValidatePassword(body.Password, s.passwordPolicy()); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
 		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin, body.QuotaBytes)
 		if err != nil {
 			writeErr(w, 400, err.Error())
@@ -739,6 +800,10 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
+			return
+		}
+		if err := db.ValidatePassword(body.Password, s.passwordPolicy()); err != nil {
+			writeErr(w, 400, err.Error())
 			return
 		}
 		if err := s.DB.SetUserPassword(id, body.Password); err != nil {

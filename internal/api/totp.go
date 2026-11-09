@@ -82,12 +82,20 @@ func (s *Server) handleLoginTotp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	mustChange := pend.MustChangePassword || s.userMustChangePassword(u)
 	_ = s.DB.DeletePendingLogin(body.PendingToken)
 	if err := s.issueSession(w, u); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}
+	if u2, err := s.DB.GetUserByID(u.ID); err == nil && u2 != nil {
+		u = u2
+	}
 	m := s.userPublic(u)
+	if mustChange {
+		m["mustChangePassword"] = true
+		m["mustEnrollTotp"] = false
+	}
 	m["usedBytes"] = s.homeUsedBytes(u)
 	writeJSON(w, 200, map[string]any{"user": m})
 }
@@ -180,6 +188,7 @@ func (s *Server) handleLoginTotpEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "backup codes error")
 		return
 	}
+	mustChange := pend.MustChangePassword || s.userMustChangePassword(u)
 	_ = s.DB.DeletePendingLogin(body.PendingToken)
 	u2, _ := s.DB.GetUserByID(u.ID)
 	if u2 == nil {
@@ -191,6 +200,9 @@ func (s *Server) handleLoginTotpEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m := s.userPublic(u2)
+	if mustChange {
+		m["mustChangePassword"] = true
+	}
 	m["usedBytes"] = s.homeUsedBytes(u2)
 	writeJSON(w, 200, map[string]any{"user": m, "backupCodes": codes})
 }
@@ -336,32 +348,65 @@ func (s *Server) handleMeTotpDisable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
+	settingsPayload := func() map[string]any {
+		pol := s.passwordPolicy()
+		return map[string]any{
+			"force2faAll":       s.force2FAAll(),
+			"force2faAllEnv":    s.Cfg.Force2FAAll,
+			"passwordPolicy":    pol,
+			"passwordPolicyHint": db.PasswordPolicySummary(pol),
+		}
+	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, 200, map[string]any{
-			"force2faAll":    s.force2FAAll(),
-			"force2faAllEnv": s.Cfg.Force2FAAll,
-		})
+		writeJSON(w, 200, settingsPayload())
 	case http.MethodPut, http.MethodPatch, http.MethodPost:
 		var body struct {
-			Force2FAAll *bool `json:"force2faAll"`
+			Force2FAAll      *bool `json:"force2faAll"`
+			PasswordMinLength *int  `json:"passwordMinLength"`
+			RequireLetters   *bool `json:"passwordRequireLetters"`
+			RequireDigits    *bool `json:"passwordRequireDigits"`
+			RequireSymbols   *bool `json:"passwordRequireSymbols"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
 			return
 		}
-		if body.Force2FAAll == nil {
-			writeErr(w, 400, "force2faAll required")
+		touched := false
+		if body.Force2FAAll != nil {
+			if err := s.DB.SetForce2FAAll(*body.Force2FAAll); err != nil {
+				writeErr(w, 500, "db error")
+				return
+			}
+			touched = true
+		}
+		polTouch := body.PasswordMinLength != nil || body.RequireLetters != nil ||
+			body.RequireDigits != nil || body.RequireSymbols != nil
+		if polTouch {
+			cur := s.passwordPolicy()
+			if body.PasswordMinLength != nil {
+				cur.MinLength = *body.PasswordMinLength
+			}
+			if body.RequireLetters != nil {
+				cur.RequireLetters = *body.RequireLetters
+			}
+			if body.RequireDigits != nil {
+				cur.RequireDigits = *body.RequireDigits
+			}
+			if body.RequireSymbols != nil {
+				cur.RequireSymbols = *body.RequireSymbols
+			}
+			if _, err := s.DB.SetPasswordPolicy(cur); err != nil {
+				writeErr(w, 500, "db error")
+				return
+			}
+			touched = true
+		}
+		if !touched {
+			writeErr(w, 400, "no settings fields provided")
 			return
 		}
-		if err := s.DB.SetForce2FAAll(*body.Force2FAAll); err != nil {
-			writeErr(w, 500, "db error")
-			return
-		}
-		writeJSON(w, 200, map[string]any{
-			"force2faAll":    s.force2FAAll(),
-			"force2faAllEnv": s.Cfg.Force2FAAll,
-		})
+		writeJSON(w, 200, settingsPayload())
 	default:
 		writeErr(w, 405, "method not allowed")
 	}

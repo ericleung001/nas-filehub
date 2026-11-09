@@ -75,7 +75,7 @@ async function bootstrap() {
 
 async function enterApp() {
   $('#whoami').textContent = state.user.username + (state.user.isAdmin ? ' (admin)' : '');
-  if (state.user.mustEnrollTotp) {
+  if (state.user.mustChangePassword || state.user.mustEnrollTotp) {
     show('settings');
     await openSettings();
     return;
@@ -248,13 +248,18 @@ $('#btn-settings').addEventListener('click', async () => {
   show('settings');
   await openSettings();
 });
-$('#btn-back-settings').addEventListener('click', () => show('main'));
+$('#btn-back-settings').addEventListener('click', () => {
+  if (state.user && (state.user.mustChangePassword || state.user.mustEnrollTotp)) {
+    return;
+  }
+  show('main');
+});
 
 function setSettingsTab(tab) {
-  document.querySelectorAll('.settings-tab').forEach((btn) => {
+  document.querySelectorAll('.settings-nav-item').forEach((btn) => {
     const on = btn.dataset.tab === tab;
     btn.classList.toggle('active', on);
-    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    btn.setAttribute('aria-current', on ? 'page' : 'false');
   });
   document.querySelectorAll('.settings-panel').forEach((panel) => {
     const on = panel.id === 'tab-' + tab;
@@ -263,8 +268,60 @@ function setSettingsTab(tab) {
   });
 }
 
-document.querySelectorAll('.settings-tab').forEach((btn) => {
+function applySettingsGate() {
+  const u = state.user || {};
+  const mustPw = !!u.mustChangePassword;
+  const must2fa = !!u.mustEnrollTotp && !mustPw;
+  const banner = $('#settings-gate-banner');
+  const back = $('#btn-back-settings');
+  if (mustPw) {
+    banner.textContent = 'Password change required before continuing';
+    banner.hidden = false;
+    back.hidden = true;
+  } else if (must2fa) {
+    banner.textContent = '2FA setup required before continuing';
+    banner.hidden = false;
+    back.hidden = true;
+  } else {
+    banner.hidden = true;
+    banner.textContent = '';
+    back.hidden = false;
+  }
+  document.querySelectorAll('.settings-nav-item').forEach((btn) => {
+    const tab = btn.dataset.tab;
+    let locked = false;
+    if (mustPw) locked = tab !== 'password';
+    else if (must2fa) locked = tab !== '2fa';
+    btn.disabled = locked;
+    btn.setAttribute('aria-disabled', locked ? 'true' : 'false');
+  });
+}
+
+function updatePasswordPolicyHints(u) {
+  const hint = (u && (u.passwordPolicyHint || (u.passwordPolicy && formatPolicyHint(u.passwordPolicy)))) || 'min 4 characters';
+  const el = $('#password-policy-hint');
+  if (el) el.textContent = 'Requirements: ' + hint;
+  const adminHint = $('#admin-password-policy-hint');
+  if (adminHint) adminHint.textContent = 'Policy: ' + hint;
+  const form = $('#change-password');
+  if (form && u && u.passwordPolicy && u.passwordPolicy.minLength) {
+    form.newPassword.minLength = u.passwordPolicy.minLength;
+    form.confirmPassword.minLength = u.passwordPolicy.minLength;
+  }
+}
+
+function formatPolicyHint(p) {
+  if (!p) return 'min 4 characters';
+  const parts = [`min ${p.minLength || 4} characters`];
+  if (p.requireLetters) parts.push('letters');
+  if (p.requireDigits) parts.push('digits');
+  if (p.requireSymbols) parts.push('symbols');
+  return parts.join(', ');
+}
+
+document.querySelectorAll('.settings-nav-item').forEach((btn) => {
   btn.addEventListener('click', async () => {
+    if (btn.disabled) return;
     const tab = btn.dataset.tab;
     setSettingsTab(tab);
     if (tab === 'users' || tab === 'shares') {
@@ -279,10 +336,15 @@ document.querySelectorAll('.settings-tab').forEach((btn) => {
 async function openSettings() {
   try { await refreshMe(); } catch { /* keep cached */ }
   const u = state.user;
-  document.querySelectorAll('.settings-tab.admin-only').forEach((el) => {
+  document.querySelectorAll('.settings-nav-item.admin-only').forEach((el) => {
     el.hidden = !u.isAdmin;
   });
-  setSettingsTab('account');
+  applySettingsGate();
+  updatePasswordPolicyHints(u);
+  let tab = 'account';
+  if (u.mustChangePassword) tab = 'password';
+  else if (u.mustEnrollTotp) tab = '2fa';
+  setSettingsTab(tab);
   const acc = $('#settings-account');
   const badges = [];
   if (u.isAdmin) badges.push('<span class="badge admin">admin</span>');
@@ -305,9 +367,6 @@ async function openSettings() {
   $('#change-password').reset();
   $('#change-password-msg').hidden = true;
   renderTotpSettings();
-  if (u.mustEnrollTotp) {
-    setSettingsTab('account');
-  }
 }
 
 $('#change-password').addEventListener('submit', async (e) => {
@@ -323,16 +382,27 @@ $('#change-password').addEventListener('submit', async (e) => {
     return;
   }
   try {
-    await api('/api/me/password', {
+    const data = await api('/api/me/password', {
       method: 'POST',
       body: JSON.stringify({
         currentPassword: fd.get('currentPassword'),
         newPassword: fd.get('newPassword'),
       }),
     });
+    if (data.user) state.user = data.user;
     msg.textContent = 'Password updated';
     msg.hidden = false;
     e.target.reset();
+    updatePasswordPolicyHints(state.user);
+    applySettingsGate();
+    if (state.user.mustEnrollTotp) {
+      setSettingsTab('2fa');
+      renderTotpSettings();
+      return;
+    }
+    if (!state.user.mustChangePassword && !state.user.mustEnrollTotp) {
+      await enterApp();
+    }
   } catch (err) {
     msg.textContent = err.message;
     msg.classList.add('error');
@@ -1072,8 +1142,12 @@ $('#totp-confirm-form').addEventListener('submit', async (e) => {
       $('#totp-backup-panel').hidden = false;
     }
     renderTotpSettings();
+    applySettingsGate();
     msg.textContent = '2FA enabled';
     msg.hidden = false;
+    if (state.user && !state.user.mustChangePassword && !state.user.mustEnrollTotp) {
+      await enterApp();
+    }
   } catch (err) {
     msg.textContent = err.message;
     msg.classList.add('error');
@@ -1131,6 +1205,19 @@ async function loadSystemSettings() {
   }
   $('#force-2fa-msg').hidden = true;
   $('#force-2fa-msg').classList.remove('error');
+  const pol = data.passwordPolicy || {};
+  const form = $('#password-policy-form');
+  if (form) {
+    form.passwordMinLength.value = pol.minLength || 4;
+    form.passwordRequireLetters.checked = !!pol.requireLetters;
+    form.passwordRequireDigits.checked = !!pol.requireDigits;
+    form.passwordRequireSymbols.checked = !!pol.requireSymbols;
+  }
+  const ver = $('#password-policy-version');
+  if (ver) ver.textContent = 'Policy version: ' + (pol.version ?? 0) + (data.passwordPolicyHint ? ' · ' + data.passwordPolicyHint : '');
+  $('#password-policy-msg').hidden = true;
+  $('#password-policy-msg').classList.remove('error');
+  updatePasswordPolicyHints({ passwordPolicy: pol, passwordPolicyHint: data.passwordPolicyHint });
 }
 
 $('#force-2fa-all').addEventListener('change', async (e) => {
@@ -1147,6 +1234,39 @@ $('#force-2fa-all').addEventListener('change', async (e) => {
     msg.hidden = false;
   } catch (err) {
     e.target.checked = !e.target.checked;
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+$('#password-policy-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = $('#password-policy-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        passwordMinLength: Number(fd.get('passwordMinLength')),
+        passwordRequireLetters: !!e.target.passwordRequireLetters.checked,
+        passwordRequireDigits: !!e.target.passwordRequireDigits.checked,
+        passwordRequireSymbols: !!e.target.passwordRequireSymbols.checked,
+      }),
+    });
+    const pol = data.passwordPolicy || {};
+    e.target.passwordMinLength.value = pol.minLength || 4;
+    e.target.passwordRequireLetters.checked = !!pol.requireLetters;
+    e.target.passwordRequireDigits.checked = !!pol.requireDigits;
+    e.target.passwordRequireSymbols.checked = !!pol.requireSymbols;
+    const ver = $('#password-policy-version');
+    if (ver) ver.textContent = 'Policy version: ' + (pol.version ?? 0) + (data.passwordPolicyHint ? ' · ' + data.passwordPolicyHint : '');
+    updatePasswordPolicyHints({ passwordPolicy: pol, passwordPolicyHint: data.passwordPolicyHint });
+    msg.textContent = 'Password policy saved' + (pol.version ? ` (version ${pol.version})` : '');
+    msg.hidden = false;
+  } catch (err) {
     msg.textContent = err.message;
     msg.classList.add('error');
     msg.hidden = false;

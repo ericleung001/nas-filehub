@@ -241,35 +241,58 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .settings-card .quota-bar.over > span,
 .admin-table .quota-bar.over > span { background: var(--danger); }
 
-/* Settings tabs (unified Account + admin Users/Shares/System) */
-.settings-tabs {
-  display: flex; flex-wrap: wrap; gap: .35rem;
-  padding: .65rem 1rem 0; border-bottom: 1px solid var(--border);
+/* Settings: left vertical nav + right content panel */
+#settings-view { display: flex; flex-direction: column; min-height: 100vh; }
+#settings-view[hidden] { display: none; }
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+.settings-nav {
+  display: flex; flex-direction: column; gap: .25rem;
+  padding: 1rem .75rem;
+  border-right: 1px solid var(--border);
   background: var(--panel);
 }
-.settings-tab {
+.settings-nav-item {
+  text-align: left;
   background: transparent; border: 1px solid transparent; color: var(--muted);
-  border-radius: 8px 8px 0 0; padding: .45rem .85rem; margin-bottom: -1px;
+  border-radius: 8px; padding: .55rem .75rem;
 }
-.settings-tab:hover { color: var(--text); background: #152033; }
-.settings-tab.active {
-  color: var(--text); border-color: var(--border); border-bottom-color: var(--panel);
-  background: var(--bg);
+.settings-nav-item:hover { color: var(--text); background: #152033; }
+.settings-nav-item.active {
+  color: var(--text); border-color: var(--border); background: var(--bg);
 }
-.settings-panels { padding: 0; }
-.settings-panel { display: none; }
+.settings-nav-item:disabled,
+.settings-nav-item[aria-disabled="true"] {
+  opacity: .4; pointer-events: none;
+}
+.settings-content { padding: 1rem 1.25rem; overflow: auto; }
+.settings-panel { display: none; max-width: 960px; }
 .settings-panel.active { display: block; }
-.settings-wrap {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; padding: 1rem;
-  max-width: 900px;
-}
 .settings-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.1rem;
 }
 .settings-card h3 { margin: 0 0 .75rem; }
 .settings-account { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .65rem; }
 .settings-account .meta { font-size: .85rem; color: var(--muted); }
-#change-password-msg.error { color: var(--danger); }
+#change-password-msg.error,
+#password-policy-msg.error { color: var(--danger); }
+.settings-gate-banner {
+  margin: 0; color: #fbbf24; font-size: .9rem; max-width: 50vw;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.policy-form { max-width: 420px; }
+.policy-form label.check { display: flex; flex-direction: row; align-items: center; gap: .5rem; }
+@media (max-width: 800px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav {
+    flex-direction: row; flex-wrap: wrap; border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
 .admin-section { padding: 1rem; max-width: 1100px; }
 .admin-section h3 { margin-top: 0; }
 .admin-section .admin-form {
@@ -382,7 +405,6 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   .admin-table thead th.path-h { display: none; }
 }
 @media (max-width: 800px) {
-  .settings-wrap { grid-template-columns: 1fr; }
   .admin-grid { grid-template-columns: 1fr; }
   .admin-table col.col-status,
   .admin-table td.status-cell,
