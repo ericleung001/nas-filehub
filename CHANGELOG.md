@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-11-09
+
+### Changed
+- **Sign up** and **Forgot password** are separate pages (`/register`, `/forgot`) instead of long forms on the login screen. Login keeps username/password (+ 2FA steps) with links when those features are enabled. Password reset remains at `/reset?token=…`.
+
 ## [0.3.5] - 2026-11-09
 
 ### Added

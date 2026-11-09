@@ -34,8 +34,8 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
-- **Forgot password** — admin configures SMTP; users with an email can request a reset link from the login page (rate-limited; generic responses)
-- **Open registration** — optional admin toggle; login page Sign up creates username/email/password accounts under the password policy (active immediately; no approval gate yet)
+- **Forgot password** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses)
+- **Open registration** — optional admin toggle; `/register` (linked from login) creates username/email/password accounts under the password policy (active immediately; no approval gate yet)
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
@@ -206,7 +206,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 1. Admin → Settings → **System** → **Email (SMTP)**: enable, host, port, username, password, from address. Save. Optionally **Send test email**.
 2. Set each user’s **email** under Users → Create / Edit (required for that user to receive reset mail).
 3. Prefer setting `PUBLIC_BASE_URL` to your public HTTPS origin so reset links are correct behind Nginx Proxy Manager.
-4. On the login page, **Forgot password?** appears when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
+4. The login page links to **Forgot password?** (`/forgot`) when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
 
 SMTP credentials can also be supplied via env (`SMTP_*`); env values override the DB for the running process. The API never returns the SMTP password — only `passwordSet: true|false`.
 

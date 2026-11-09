@@ -72,6 +72,10 @@ function show(view) {
   $('#login-view').hidden = view !== 'login';
   $('#main-view').hidden = view !== 'main';
   $('#settings-view').hidden = view !== 'settings';
+  const register = $('#register-view');
+  if (register) register.hidden = view !== 'register';
+  const forgot = $('#forgot-view');
+  if (forgot) forgot.hidden = view !== 'forgot';
   const reset = $('#reset-view');
   if (reset) reset.hidden = view !== 'reset';
   const pub = $('#public-share-view');
@@ -88,7 +92,18 @@ async function bootstrap() {
     await loadPublicShare();
     return;
   }
-  if (location.pathname === '/reset' || location.pathname === '/reset/') {
+  const path = location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/register') {
+    show('register');
+    await initRegisterPage();
+    return;
+  }
+  if (path === '/forgot') {
+    show('forgot');
+    await initForgotPage();
+    return;
+  }
+  if (path === '/reset') {
     const token = new URLSearchParams(location.search).get('token') || '';
     show('reset');
     await initResetPage(token);
@@ -101,6 +116,12 @@ async function bootstrap() {
   } catch {
     show('login');
     await refreshForgotLink();
+    const registered = new URLSearchParams(location.search).get('registered');
+    if (registered) {
+      const loginUser = $('#login-form')?.username;
+      if (loginUser) loginUser.value = registered;
+      history.replaceState(null, '', '/');
+    }
   }
 }
 
@@ -167,15 +188,11 @@ function showLoginStep(step) {
   $('#login-form').hidden = step !== 'password';
   $('#totp-form').hidden = step !== 'totp';
   $('#totp-enroll-login').hidden = step !== 'enroll';
-  const forgot = $('#forgot-form');
-  if (forgot) forgot.hidden = step !== 'forgot';
-  const signup = $('#signup-form');
-  if (signup) signup.hidden = step !== 'signup';
 }
 
 async function refreshAuthFeatures() {
-  const forgot = $('#btn-forgot');
-  const signup = $('#btn-signup');
+  const forgot = $('#link-forgot');
+  const signup = $('#link-signup');
   try {
     const data = await api('/api/auth/features');
     if (forgot) forgot.hidden = !data.forgotPassword;
@@ -191,9 +208,11 @@ async function refreshAuthFeatures() {
       sf.password.minLength = data.passwordPolicy.minLength;
       sf.confirm.minLength = data.passwordPolicy.minLength;
     }
+    return data;
   } catch {
     if (forgot) forgot.hidden = true;
     if (signup) signup.hidden = true;
+    return null;
   }
 }
 
@@ -2196,16 +2215,38 @@ $('#public-share-unlock')?.addEventListener('submit', async (e) => {
 });
 
 
-$('#btn-signup')?.addEventListener('click', async () => {
-  $('#signup-error').hidden = true;
-  $('#signup-msg').hidden = true;
-  $('#signup-form')?.reset();
-  await refreshAuthFeatures();
-  showLoginStep('signup');
-});
-$('#btn-signup-back')?.addEventListener('click', () => {
-  showLoginStep('password');
-});
+async function initRegisterPage() {
+  const errEl = $('#signup-error');
+  const msgEl = $('#signup-msg');
+  if (errEl) errEl.hidden = true;
+  if (msgEl) msgEl.hidden = true;
+  const data = await refreshAuthFeatures();
+  if (!data || !data.openRegistration) {
+    if (errEl) {
+      errEl.textContent = 'Open registration is disabled.';
+      errEl.hidden = false;
+    }
+    const form = $('#signup-form');
+    if (form) form.hidden = true;
+  }
+}
+
+async function initForgotPage() {
+  const errEl = $('#forgot-error');
+  const msgEl = $('#forgot-msg');
+  if (errEl) errEl.hidden = true;
+  if (msgEl) msgEl.hidden = true;
+  const data = await refreshAuthFeatures();
+  if (!data || !data.forgotPassword) {
+    if (errEl) {
+      errEl.textContent = 'Password reset is not available (SMTP not configured).';
+      errEl.hidden = false;
+    }
+    const form = $('#forgot-form');
+    if (form) form.hidden = true;
+  }
+}
+
 $('#signup-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -2231,24 +2272,16 @@ $('#signup-form')?.addEventListener('submit', async (e) => {
     });
     msgEl.textContent = data.message || 'Account created. You can sign in now.';
     msgEl.hidden = false;
-    const loginUser = $('#login-form')?.username;
-    if (loginUser) loginUser.value = data.username || fd.get('username') || '';
-    setTimeout(() => showLoginStep('password'), 800);
+    const user = data.username || fd.get('username') || '';
+    setTimeout(() => {
+      location.href = user ? ('/?registered=' + encodeURIComponent(user)) : '/';
+    }, 800);
   } catch (err) {
     errEl.textContent = err.message;
     errEl.hidden = false;
   }
 });
 
-$('#btn-forgot')?.addEventListener('click', () => {
-  $('#forgot-error').hidden = true;
-  $('#forgot-msg').hidden = true;
-  $('#forgot-form').reset();
-  showLoginStep('forgot');
-});
-$('#btn-forgot-back')?.addEventListener('click', () => {
-  showLoginStep('password');
-});
 $('#forgot-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
