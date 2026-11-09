@@ -41,6 +41,17 @@
           <div class="toolbar">
             <nav id="breadcrumbs"></nav>
             <div class="actions">
+              <div class="sort-controls" role="group" aria-label="Sort files">
+                <label class="sort-label" for="sort-by">Sort
+                  <select id="sort-by" title="Sort by">
+                    <option value="name">Name</option>
+                    <option value="modified">Date</option>
+                    <option value="type">Type</option>
+                    <option value="size">Size</option>
+                  </select>
+                </label>
+                <button type="button" id="btn-sort-dir" class="ghost view-btn" title="Toggle ascending / descending" aria-label="Sort direction">↑ Asc</button>
+              </div>
               <div class="view-toggle" role="group" aria-label="View mode">
                 <button type="button" id="btn-view-list" class="ghost view-btn active" title="List view" aria-pressed="true">☰ List</button>
                 <button type="button" id="btn-view-icons" class="ghost view-btn" title="Icon view" aria-pressed="false">▦ Icons</button>
@@ -70,9 +81,9 @@
               <thead>
                 <tr>
                   <th class="icon-h" aria-hidden="true"></th>
-                  <th class="name-h">Name</th>
-                  <th class="size-h">Size</th>
-                  <th class="mod-h">Modified</th>
+                  <th class="name-h"><button type="button" class="th-sort" data-sort="name" title="Sort by name">Name</button></th>
+                  <th class="size-h"><button type="button" class="th-sort" data-sort="size" title="Sort by size">Size</button></th>
+                  <th class="mod-h"><button type="button" class="th-sort" data-sort="modified" title="Sort by date">Modified</button></th>
                   <th class="actions-h" aria-label="Actions"></th>
                 </tr>
               </thead>

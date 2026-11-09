@@ -9,6 +9,7 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
+- **File list sorting** — sort by Name, Date (modified), Type (extension), or Size; Asc/Desc toggle; preference saved in `localStorage` (`filehub-sort-by`, `filehub-sort-dir`); works in List and Icons views; list column headers are clickable.
 - **Drag-and-drop upload** from macOS/Windows: drop on the empty list/grid area to upload into the current folder; drop onto a folder row/icon to upload into that folder (visual drop-target highlight).
 - **List / Icons view toggle** in the toolbar (preference saved in `localStorage`).
 - **Icon view** shows image/video thumbnails via `GET /api/thumb` (falls back to file-type icons); clicking an image or video opens the existing preview modal (close still stops audio).

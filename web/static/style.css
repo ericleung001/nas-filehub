@@ -391,6 +391,30 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 
 
+/* Sort controls */
+.sort-controls { display: inline-flex; gap: .35rem; align-items: center; }
+.sort-label { display: inline-flex; gap: .35rem; align-items: center; font-size: .82rem; color: var(--muted); }
+.sort-label select {
+  background: #0b1220;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .3rem .45rem;
+  font: inherit;
+}
+.th-sort {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+.th-sort:hover { color: var(--accent); }
+.th-sort.active { color: var(--accent); }
+
 /* View toggle */
 .view-toggle { display: inline-flex; gap: .2rem; border: 1px solid var(--border); border-radius: 8px; padding: .15rem; background: #0b1220; }
 .view-btn { padding: .3rem .55rem !important; font-size: .82rem; border: none !important; border-radius: 6px !important; color: var(--muted) !important; }

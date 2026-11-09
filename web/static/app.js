@@ -1,3 +1,14 @@
+const SORT_KEYS = new Set(['name', 'modified', 'type', 'size']);
+
+function loadSortBy() {
+  const v = localStorage.getItem('filehub-sort-by');
+  return SORT_KEYS.has(v) ? v : 'name';
+}
+
+function loadSortDir() {
+  return localStorage.getItem('filehub-sort-dir') === 'desc' ? 'desc' : 'asc';
+}
+
 const state = {
   user: null,
   root: 'home',
@@ -6,6 +17,12 @@ const state = {
   roots: [],
   /** @type {'list'|'icons'} */
   viewMode: (localStorage.getItem('filehub-view') === 'icons' ? 'icons' : 'list'),
+  /** @type {'name'|'modified'|'type'|'size'} */
+  sortBy: loadSortBy(),
+  /** @type {'asc'|'desc'} */
+  sortDir: loadSortDir(),
+  /** @type {Array|null} */
+  entries: null,
   /** @type {Set<string>} expanded tree keys "rootId:path" */
   treeExpanded: new Set(['home:']),
   /** @type {Map<string, Array>} cached dir children for tree */
@@ -313,6 +330,84 @@ function renderBreadcrumbs() {
   }
 }
 
+function fileExt(name) {
+  const i = String(name || '').lastIndexOf('.');
+  if (i <= 0) return '';
+  return name.slice(i + 1).toLowerCase();
+}
+
+function sortEntries(entries) {
+  const dir = state.sortDir === 'desc' ? -1 : 1;
+  const by = state.sortBy;
+  return entries.slice().sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    let cmp = 0;
+    if (by === 'size') {
+      cmp = (a.isDir ? 0 : Number(a.size) || 0) - (b.isDir ? 0 : Number(b.size) || 0);
+    } else if (by === 'modified') {
+      cmp = new Date(a.modTime).getTime() - new Date(b.modTime).getTime();
+      if (Number.isNaN(cmp)) cmp = 0;
+    } else if (by === 'type') {
+      const ta = a.isDir ? '' : (fileExt(a.name) || a.kind || '');
+      const tb = b.isDir ? '' : (fileExt(b.name) || b.kind || '');
+      cmp = ta.localeCompare(tb, undefined, { sensitivity: 'base' });
+    } else {
+      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+    }
+    if (cmp === 0 && by !== 'name') {
+      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
+    }
+    return cmp * dir;
+  });
+}
+
+function applySortControls() {
+  const sel = $('#sort-by');
+  const btn = $('#btn-sort-dir');
+  if (sel) sel.value = state.sortBy;
+  if (btn) {
+    const asc = state.sortDir !== 'desc';
+    btn.textContent = asc ? '↑ Asc' : '↓ Desc';
+    btn.setAttribute('aria-label', asc ? 'Ascending' : 'Descending');
+    btn.title = asc ? 'Ascending — click for descending' : 'Descending — click for ascending';
+  }
+  document.querySelectorAll('.th-sort').forEach((el) => {
+    const key = el.dataset.sort;
+    const active = key === state.sortBy;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-sort', active ? (state.sortDir === 'desc' ? 'descending' : 'ascending') : 'none');
+    const arrow = active ? (state.sortDir === 'desc' ? ' ↓' : ' ↑') : '';
+    const labels = { name: 'Name', size: 'Size', modified: 'Modified' };
+    el.textContent = (labels[key] || key) + arrow;
+  });
+}
+
+function persistSort() {
+  try {
+    localStorage.setItem('filehub-sort-by', state.sortBy);
+    localStorage.setItem('filehub-sort-dir', state.sortDir);
+  } catch { /* ignore */ }
+}
+
+function setSort(by, dir) {
+  if (SORT_KEYS.has(by)) state.sortBy = by;
+  if (dir === 'asc' || dir === 'desc') state.sortDir = dir;
+  persistSort();
+  applySortControls();
+  if (state.entries) {
+    renderEntries(sortEntries(state.entries), state.perm === 'write');
+  }
+}
+
+function cycleSortHeader(by) {
+  if (!SORT_KEYS.has(by)) return;
+  if (state.sortBy === by) {
+    setSort(by, state.sortDir === 'asc' ? 'desc' : 'asc');
+  } else {
+    setSort(by, 'asc');
+  }
+}
+
 async function loadList() {
   const data = await api(`/api/list?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(state.path)}`);
   state.perm = data.perm;
@@ -320,12 +415,10 @@ async function loadList() {
   $('#btn-mkdir').disabled = !canWrite;
   $('#file-input').disabled = !canWrite;
   renderBreadcrumbs();
-  const entries = (data.entries || []).slice().sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  state.entries = data.entries || [];
   applyViewMode();
-  renderEntries(entries, canWrite);
+  applySortControls();
+  renderEntries(sortEntries(state.entries), canWrite);
 }
 
 function applyViewMode() {
@@ -351,6 +444,17 @@ function setViewMode(mode) {
 
 $('#btn-view-list').addEventListener('click', () => setViewMode('list'));
 $('#btn-view-icons').addEventListener('click', () => setViewMode('icons'));
+
+$('#sort-by').addEventListener('change', (ev) => {
+  setSort(ev.target.value, state.sortDir);
+});
+$('#btn-sort-dir').addEventListener('click', () => {
+  setSort(state.sortBy, state.sortDir === 'asc' ? 'desc' : 'asc');
+});
+document.querySelectorAll('.th-sort').forEach((el) => {
+  el.addEventListener('click', () => cycleSortHeader(el.dataset.sort));
+});
+applySortControls();
 
 function entryIcon(e) {
   return e.kind === 'dir' ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
