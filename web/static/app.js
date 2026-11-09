@@ -11,6 +11,8 @@ function loadSortDir() {
 
 const state = {
   user: null,
+  pendingToken: null,
+  pendingUsername: null,
   root: 'home',
   path: '',
   perm: 'write',
@@ -73,6 +75,11 @@ async function bootstrap() {
 
 async function enterApp() {
   $('#whoami').textContent = state.user.username + (state.user.isAdmin ? ' (admin)' : '');
+  if (state.user.mustEnrollTotp) {
+    show('settings');
+    await openSettings();
+    return;
+  }
   show('main');
   applyViewMode();
   renderSidebarQuota();
@@ -125,6 +132,26 @@ function invalidateTreeCache(rootId) {
   }
 }
 
+function showLoginStep(step) {
+  $('#login-form').hidden = step !== 'password';
+  $('#totp-form').hidden = step !== 'totp';
+  $('#totp-enroll-login').hidden = step !== 'enroll';
+}
+
+async function startLoginEnroll(pendingToken) {
+  const data = await api('/api/login/totp/setup', {
+    method: 'POST',
+    body: JSON.stringify({ pendingToken }),
+  });
+  const img = $('#login-totp-qr');
+  if (data.qrDataUrl) {
+    img.src = data.qrDataUrl;
+    img.hidden = false;
+  }
+  $('#login-totp-secret').textContent = data.secret || '';
+  showLoginStep('enroll');
+}
+
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -134,7 +161,23 @@ $('#login-form').addEventListener('submit', async (e) => {
       method: 'POST',
       body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }),
     });
+    if (data.needTotp) {
+      state.pendingToken = data.pendingToken;
+      state.pendingUsername = data.username;
+      $('#totp-form').reset();
+      $('#totp-error').hidden = true;
+      showLoginStep('totp');
+      return;
+    }
+    if (data.needTotpSetup) {
+      state.pendingToken = data.pendingToken;
+      state.pendingUsername = data.username;
+      $('#totp-enroll-error').hidden = true;
+      await startLoginEnroll(data.pendingToken);
+      return;
+    }
     state.user = data.user;
+    state.pendingToken = null;
     await enterApp();
   } catch (err) {
     $('#login-error').textContent = err.message;
@@ -142,9 +185,62 @@ $('#login-form').addEventListener('submit', async (e) => {
   }
 });
 
+$('#totp-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  $('#totp-error').hidden = true;
+  try {
+    const data = await api('/api/login/totp', {
+      method: 'POST',
+      body: JSON.stringify({ pendingToken: state.pendingToken, code: fd.get('code') }),
+    });
+    state.user = data.user;
+    state.pendingToken = null;
+    showLoginStep('password');
+    await enterApp();
+  } catch (err) {
+    $('#totp-error').textContent = err.message;
+    $('#totp-error').hidden = false;
+  }
+});
+
+$('#btn-totp-back').addEventListener('click', () => {
+  state.pendingToken = null;
+  showLoginStep('password');
+});
+
+$('#totp-enroll-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  $('#totp-enroll-error').hidden = true;
+  try {
+    const data = await api('/api/login/totp/enable', {
+      method: 'POST',
+      body: JSON.stringify({ pendingToken: state.pendingToken, code: fd.get('code') }),
+    });
+    state.user = data.user;
+    state.pendingToken = null;
+    if (data.backupCodes && data.backupCodes.length) {
+      alert('2FA enabled. Save these backup codes:\n\n' + data.backupCodes.join('\n'));
+    }
+    showLoginStep('password');
+    await enterApp();
+  } catch (err) {
+    $('#totp-enroll-error').textContent = err.message;
+    $('#totp-enroll-error').hidden = false;
+  }
+});
+
+$('#btn-enroll-back').addEventListener('click', () => {
+  state.pendingToken = null;
+  showLoginStep('password');
+});
+
 $('#btn-logout').addEventListener('click', async () => {
   await api('/api/logout', { method: 'POST', body: '{}' });
   state.user = null;
+  state.pendingToken = null;
+  showLoginStep('password');
   show('login');
 });
 
@@ -173,6 +269,9 @@ document.querySelectorAll('.settings-tab').forEach((btn) => {
     setSettingsTab(tab);
     if (tab === 'users' || tab === 'shares') {
       try { await refreshAdmin(); } catch (err) { console.error(err); }
+    }
+    if (tab === 'system') {
+      try { await loadSystemSettings(); } catch (err) { console.error(err); }
     }
   });
 });
@@ -205,6 +304,10 @@ async function openSettings() {
   }
   $('#change-password').reset();
   $('#change-password-msg').hidden = true;
+  renderTotpSettings();
+  if (u.mustEnrollTotp) {
+    setSettingsTab('account');
+  }
 }
 
 $('#change-password').addEventListener('submit', async (e) => {
@@ -902,12 +1005,153 @@ function openUserEdit(u) {
   form.quota.value = u.quotaBytes ? fmtQuota(u.quotaBytes).replace(' ', '') : '0';
   form.isAdmin.checked = !!u.isAdmin;
   form.disabled.checked = !!u.disabled;
+  form.totpRequired.checked = !!u.totpRequired;
   $('#edit-user-error').hidden = true;
   $('#set-password').id.value = u.id;
   $('#set-password').password.value = '';
   $('#set-password-msg').hidden = true;
   dlg.showModal();
 }
+
+function renderTotpSettings() {
+  const u = state.user;
+  const status = $('#totp-status');
+  const msg = $('#totp-msg');
+  if (!status || !u) return;
+  msg.hidden = true;
+  msg.classList.remove('error');
+  $('#totp-setup-panel').hidden = true;
+  $('#totp-disable-form').hidden = true;
+  const required = !!(u.force2faAll || u.totpRequired);
+  if (u.totpEnabled) {
+    status.innerHTML = '<span class="badge admin">enabled</span>' +
+      (required ? ' <span class="badge">required</span>' : '');
+    $('#btn-totp-enable').hidden = true;
+    $('#btn-totp-disable').hidden = !!required;
+  } else {
+    status.innerHTML = '<span class="badge">disabled</span>' +
+      (required ? ' <span class="badge disabled">enrollment required</span>' : '');
+    $('#btn-totp-enable').hidden = false;
+    $('#btn-totp-disable').hidden = true;
+  }
+}
+
+$('#btn-totp-enable').addEventListener('click', async () => {
+  const msg = $('#totp-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/me/totp/setup', { method: 'POST', body: '{}' });
+    const img = $('#settings-totp-qr');
+    if (data.qrDataUrl) { img.src = data.qrDataUrl; img.hidden = false; }
+    $('#settings-totp-secret').textContent = data.secret || '';
+    $('#totp-setup-panel').hidden = false;
+    $('#totp-confirm-form').reset();
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+$('#totp-confirm-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = $('#totp-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/me/totp/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ code: fd.get('code') }),
+    });
+    state.user = data.user;
+    if (data.backupCodes && data.backupCodes.length) {
+      const ul = $('#totp-backup-list');
+      ul.innerHTML = data.backupCodes.map((c) => `<li><code>${c}</code></li>`).join('');
+      $('#totp-backup-panel').hidden = false;
+    }
+    renderTotpSettings();
+    msg.textContent = '2FA enabled';
+    msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+$('#btn-totp-disable').addEventListener('click', () => {
+  $('#totp-disable-form').hidden = false;
+  $('#totp-disable-msg').hidden = true;
+  $('#totp-disable-msg').classList.remove('error');
+  $('#totp-disable-form').reset();
+});
+
+$('#totp-disable-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const msg = $('#totp-disable-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  const cred = String(fd.get('credential') || '');
+  const body = {};
+  if (/^\d{6}$/.test(cred) || /^[A-Fa-f0-9]{4}-?[A-Fa-f0-9]{4}$/.test(cred)) {
+    body.code = cred;
+  } else {
+    body.password = cred;
+  }
+  try {
+    const data = await api('/api/me/totp/disable', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    state.user = data.user;
+    renderTotpSettings();
+    msg.textContent = '2FA disabled';
+    msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+async function loadSystemSettings() {
+  const data = await api('/api/admin/settings');
+  const box = $('#force-2fa-all');
+  box.checked = !!data.force2faAll;
+  box.disabled = !!data.force2faAllEnv;
+  const note = $('#force-2fa-env-note');
+  if (data.force2faAllEnv) {
+    note.textContent = 'FORCE_2FA_ALL is set in the environment; UI toggle is locked on.';
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+  }
+  $('#force-2fa-msg').hidden = true;
+  $('#force-2fa-msg').classList.remove('error');
+}
+
+$('#force-2fa-all').addEventListener('change', async (e) => {
+  const msg = $('#force-2fa-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ force2faAll: !!e.target.checked }),
+    });
+    e.target.checked = !!data.force2faAll;
+    msg.textContent = 'Saved';
+    msg.hidden = false;
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
 
 async function refreshAdmin() {
   const users = await api('/api/admin/users');
@@ -923,6 +1167,8 @@ async function refreshAdmin() {
     const badges = [];
     if (u.isAdmin) badges.push('<span class="badge admin">admin</span>');
     if (u.disabled) badges.push('<span class="badge disabled">disabled</span>');
+    if (u.totpEnabled) badges.push('<span class="badge admin">2FA</span>');
+    else if (u.totpRequired || u.force2faAll) badges.push('<span class="badge disabled">2FA req</span>');
     if (!badges.length) badges.push('<span class="badge">user</span>');
     const quotaLabel = quota
       ? `${fmtSize(used)} / ${fmtQuota(quota)} (${pct}%)`
@@ -1053,6 +1299,7 @@ $('#edit-user').addEventListener('submit', async (e) => {
         homePath: fd.get('homePath'),
         isAdmin: !!fd.get('isAdmin'),
         disabled: !!fd.get('disabled'),
+        totpRequired: !!fd.get('totpRequired'),
         quotaBytes,
       }),
     });

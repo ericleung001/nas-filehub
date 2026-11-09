@@ -24,6 +24,9 @@ type User struct {
 	HomePath     string    `json:"homePath"` // relative to DATA_ROOT
 	QuotaBytes   int64     `json:"quotaBytes"` // 0 = unlimited
 	Disabled     bool      `json:"disabled"`
+	TotpSecret   string    `json:"-"`
+	TotpEnabled  bool      `json:"totpEnabled"`
+	TotpRequired bool      `json:"totpRequired"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -92,6 +95,24 @@ CREATE TABLE IF NOT EXISTS share_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_grants_user ON share_grants(user_id);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pending_logins (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('totp','enroll')),
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pending_logins_user ON pending_logins(user_id);
+CREATE TABLE IF NOT EXISTS totp_backup_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 `
 	if _, err := d.SQL.Exec(schema); err != nil {
 		return err
@@ -125,6 +146,9 @@ func (d *DB) ensureUserColumns() error {
 	}{
 		{"quota_bytes", `ALTER TABLE users ADD COLUMN quota_bytes INTEGER NOT NULL DEFAULT 0`},
 		{"disabled", `ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0`},
+		{"totp_secret", `ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''`},
+		{"totp_enabled", `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`},
+		{"totp_required", `ALTER TABLE users ADD COLUMN totp_required INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range alters {
 		if cols[a.name] {
@@ -175,19 +199,21 @@ func scanUser(scanner interface {
 	Scan(dest ...any) error
 }) (*User, error) {
 	u := &User{}
-	var admin, disabled int
+	var admin, disabled, totpEnabled, totpRequired int
 	var created string
-	err := scanner.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &created)
+	err := scanner.Scan(&u.ID, &u.Username, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &created)
 	if err != nil {
 		return nil, err
 	}
 	u.IsAdmin = admin == 1
 	u.Disabled = disabled == 1
+	u.TotpEnabled = totpEnabled == 1
+	u.TotpRequired = totpRequired == 1
 	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	return u, nil
 }
 
-const userSelectCols = `id, username, password_hash, is_admin, home_path, quota_bytes, disabled, created_at`
+const userSelectCols = `id, username, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, created_at`
 
 func (d *DB) GetUserByUsername(username string) (*User, error) {
 	row := d.SQL.QueryRow(
@@ -282,11 +308,12 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 // Pass clearDisabled/setDisabled via disabled pointer; nil means leave unchanged for optional fields
 // that use pointers in the API layer — here we take concrete values with "set" flags.
 type UserUpdate struct {
-	Username   *string
-	IsAdmin    *bool
-	HomePath   *string
-	QuotaBytes *int64
-	Disabled   *bool
+	Username     *string
+	IsAdmin      *bool
+	HomePath     *string
+	QuotaBytes   *int64
+	Disabled     *bool
+	TotpRequired *bool
 }
 
 func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
@@ -326,6 +353,10 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 	if upd.Disabled != nil {
 		disabled = *upd.Disabled
 	}
+	totpRequired := cur.TotpRequired
+	if upd.TotpRequired != nil {
+		totpRequired = *upd.TotpRequired
+	}
 	admin := 0
 	if isAdmin {
 		admin = 1
@@ -334,9 +365,13 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 	if disabled {
 		dis = 1
 	}
+	req := 0
+	if totpRequired {
+		req = 1
+	}
 	_, err = d.SQL.Exec(
-		`UPDATE users SET username=?, is_admin=?, home_path=?, quota_bytes=?, disabled=? WHERE id=?`,
-		username, admin, homePath, quota, dis, id,
+		`UPDATE users SET username=?, is_admin=?, home_path=?, quota_bytes=?, disabled=?, totp_required=? WHERE id=?`,
+		username, admin, homePath, quota, dis, req, id,
 	)
 	if err != nil {
 		return nil, err
@@ -437,7 +472,9 @@ func (d *DB) DeleteSession(token string) error {
 }
 
 func (d *DB) CleanupSessions() {
-	_, _ = d.SQL.Exec(`DELETE FROM sessions WHERE expires_at < ?`, time.Now().UTC().Format(time.RFC3339))
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, _ = d.SQL.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now)
+	_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE expires_at < ?`, now)
 }
 
 func (d *DB) CreateShare(name, path string, createdBy int64) (*Share, error) {
@@ -578,4 +615,177 @@ func (d *DB) ListGrants(shareID int64) ([]ShareGrant, error) {
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+// --- TOTP / settings ---
+
+func (d *DB) GetSetting(key string) (string, error) {
+	var v string
+	err := d.SQL.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return v, err
+}
+
+func (d *DB) SetSetting(key, value string) error {
+	_, err := d.SQL.Exec(
+		`INSERT INTO settings(key, value) VALUES(?,?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		key, value,
+	)
+	return err
+}
+
+func (d *DB) Force2FAAll() (bool, error) {
+	v, err := d.GetSetting("force_2fa_all")
+	if err != nil {
+		return false, err
+	}
+	return v == "1" || strings.EqualFold(v, "true"), nil
+}
+
+func (d *DB) SetForce2FAAll(on bool) error {
+	if on {
+		return d.SetSetting("force_2fa_all", "1")
+	}
+	return d.SetSetting("force_2fa_all", "0")
+}
+
+// UserNeedsTOTP reports whether this user must pass a TOTP step at login
+// (already enrolled) or must enroll before full access.
+func (d *DB) UserNeedsTOTP(u *User, forceAll bool) (needCode bool, needEnroll bool) {
+	if u == nil {
+		return false, false
+	}
+	required := forceAll || u.TotpRequired
+	if u.TotpEnabled && u.TotpSecret != "" {
+		return true, false
+	}
+	if required {
+		return false, true
+	}
+	return false, false
+}
+
+func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires time.Time) error {
+	if kind != "totp" && kind != "enroll" {
+		return fmt.Errorf("invalid pending login kind")
+	}
+	_, err := d.SQL.Exec(
+		`INSERT INTO pending_logins(token, user_id, kind, expires_at) VALUES(?,?,?,?)`,
+		token, userID, kind, expires.UTC().Format(time.RFC3339),
+	)
+	return err
+}
+
+type PendingLogin struct {
+	Token  string
+	UserID int64
+	Kind   string
+}
+
+func (d *DB) GetPendingLogin(token string) (*PendingLogin, error) {
+	var p PendingLogin
+	var expStr string
+	err := d.SQL.QueryRow(
+		`SELECT token, user_id, kind, expires_at FROM pending_logins WHERE token=?`, token,
+	).Scan(&p.Token, &p.UserID, &p.Kind, &expStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	exp, err := time.Parse(time.RFC3339, expStr)
+	if err != nil || time.Now().After(exp) {
+		_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE token=?`, token)
+		return nil, nil
+	}
+	return &p, nil
+}
+
+func (d *DB) DeletePendingLogin(token string) error {
+	_, err := d.SQL.Exec(`DELETE FROM pending_logins WHERE token=?`, token)
+	return err
+}
+
+func (d *DB) DeletePendingLoginsForUser(userID int64) error {
+	_, err := d.SQL.Exec(`DELETE FROM pending_logins WHERE user_id=?`, userID)
+	return err
+}
+
+func (d *DB) SetTotpSecret(userID int64, secret string) error {
+	_, err := d.SQL.Exec(`UPDATE users SET totp_secret=? WHERE id=?`, secret, userID)
+	return err
+}
+
+func (d *DB) EnableTotp(userID int64, secret string) error {
+	_, err := d.SQL.Exec(
+		`UPDATE users SET totp_secret=?, totp_enabled=1 WHERE id=?`,
+		secret, userID,
+	)
+	return err
+}
+
+func (d *DB) DisableTotp(userID int64) error {
+	tx, err := d.SQL.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE users SET totp_secret='', totp_enabled=0 WHERE id=?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM totp_backup_codes WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (d *DB) ReplaceBackupCodes(userID int64, codeHashes []string) error {
+	tx, err := d.SQL.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM totp_backup_codes WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	for _, h := range codeHashes {
+		if _, err := tx.Exec(
+			`INSERT INTO totp_backup_codes(user_id, code_hash, used) VALUES(?,?,0)`,
+			userID, h,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ConsumeBackupCode marks a matching unused backup code as used. Returns true if consumed.
+func (d *DB) ConsumeBackupCode(userID int64, plainCode string) (bool, error) {
+	rows, err := d.SQL.Query(
+		`SELECT id, code_hash FROM totp_backup_codes WHERE user_id=? AND used=0`, userID,
+	)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var hash string
+		if err := rows.Scan(&id, &hash); err != nil {
+			return false, err
+		}
+		if CheckPassword(hash, plainCode) {
+			res, err := d.SQL.Exec(`UPDATE totp_backup_codes SET used=1 WHERE id=? AND used=0`, id)
+			if err != nil {
+				return false, err
+			}
+			n, _ := res.RowsAffected()
+			return n == 1, nil
+		}
+	}
+	return false, rows.Err()
 }

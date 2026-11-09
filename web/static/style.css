@@ -556,3 +556,36 @@ tr.drop-folder-target td,
   border-radius: 10px;
   margin: .5rem 0;
 }
+
+.totp-qr {
+  display: block;
+  width: 180px;
+  height: 180px;
+  margin: .75rem 0;
+  background: #fff;
+  border-radius: 8px;
+  padding: .5rem;
+}
+.backup-codes {
+  list-style: none;
+  padding: 0;
+  margin: .5rem 0 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .35rem .75rem;
+  font-family: ui-monospace, monospace;
+}
+.totp-actions {
+  display: flex;
+  gap: .5rem;
+  margin-top: .75rem;
+  flex-wrap: wrap;
+}
+#totp-enroll-login, #totp-form {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  text-align: left;
+  margin-top: 1rem;
+}
+#totp-enroll-login[hidden], #totp-form[hidden] { display: none !important; }

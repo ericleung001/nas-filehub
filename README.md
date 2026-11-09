@@ -25,9 +25,10 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
 - **Settings** — one top-bar entry for everyone
-  - **Account** — quota used/limit, change own password (`POST /api/me/password`)
+  - **Account** — quota used/limit, change own password (`POST /api/me/password`), enable/disable TOTP 2FA
   - **Users / Shares / System** tabs (admins only) — create/edit users, quotas, password reset, disable accounts, manage shares and grants; Users and Shares shown as list tables
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
+- **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login rate limit; path-traversal guards; non-root container user
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
@@ -75,6 +76,7 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 | `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory |
 | `LOGIN_RATE_LIMIT` | `10` | Max login attempts per IP per minute |
 | `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
+| `FORCE_2FA_ALL` | `false` | If true, every user must enroll TOTP (overrides UI off) |
 
 ## Settings
 
@@ -83,7 +85,7 @@ Sign in → **Settings** (single top-bar button):
 1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota; **Change password** (requires current password; other sessions cleared, current kept)
 2. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts
 3. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
-4. **System** (admins) — short notes on `DATA_ROOT` layout and quota scope
+4. **System** (admins) — short notes on `DATA_ROOT` layout and quota scope; toggle **Force 2FA for all users**
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -162,3 +164,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
+
+## Two-factor authentication (2FA)
+
+Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Authenticator, 1Password, Authy, etc.
+
+1. **User (voluntary)** — Settings → Account → Enable 2FA → scan QR → confirm code. Backup codes are shown once. Disable with password or a current code (blocked if 2FA is required).
+2. **Admin per user** — Settings → Users → Edit → **require 2FA**.
+3. **Admin all users** — Settings → System → **Force 2FA for all users**, or set env `FORCE_2FA_ALL=true`.
+4. **Login** — after a correct password, if 2FA is enabled the UI asks for a code (or backup code). If 2FA is required but not enrolled, enrollment (QR) is required before a session is issued.
+
+### API — 2FA
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/login` | — | Password; may return `{needTotp,pendingToken}` or `{needTotpSetup,pendingToken}` |
+| POST | `/api/login/totp` | — | `{pendingToken,code}` → session |
+| POST | `/api/login/totp/setup` | — | `{pendingToken}` → `{secret,otpauthUrl,qrDataUrl}` (enroll challenge) |
+| POST | `/api/login/totp/enable` | — | `{pendingToken,code}` → session + `{backupCodes}` |
+| POST | `/api/me/totp/setup` | session | Start enrollment → QR/secret |
+| POST | `/api/me/totp/confirm` | session | `{code}` enable + `{backupCodes}` |
+| POST | `/api/me/totp/disable` | session | `{password}` or `{code}` |
+| GET/PUT | `/api/admin/settings` | admin | `{force2faAll}` |
+| PATCH | `/api/admin/users/{id}` | admin | accepts `totpRequired` |
+
+SQLite: `users.totp_secret`, `users.totp_enabled`, `users.totp_required`; `settings.force_2fa_all`; `pending_logins`; `totp_backup_codes`.

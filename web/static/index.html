@@ -17,6 +17,24 @@
         <button type="submit">登入 Login</button>
         <p id="login-error" class="error" hidden></p>
       </form>
+      <form id="totp-form" hidden>
+        <p class="muted">Enter the 6-digit code from your authenticator app (or a backup code).</p>
+        <label>Authentication code<input name="code" inputmode="numeric" autocomplete="one-time-code" required /></label>
+        <button type="submit">Verify</button>
+        <button type="button" id="btn-totp-back" class="ghost">Back</button>
+        <p id="totp-error" class="error" hidden></p>
+      </form>
+      <div id="totp-enroll-login" hidden>
+        <p class="muted">Admin requires 2FA. Scan the QR with an authenticator app, then enter a code.</p>
+        <img id="login-totp-qr" alt="TOTP QR code" class="totp-qr" hidden />
+        <p class="meta">Secret: <code id="login-totp-secret"></code></p>
+        <form id="totp-enroll-form">
+          <label>Authentication code<input name="code" inputmode="numeric" autocomplete="one-time-code" required /></label>
+          <button type="submit">Enable 2FA &amp; continue</button>
+          <button type="button" id="btn-enroll-back" class="ghost">Back</button>
+          <p id="totp-enroll-error" class="error" hidden></p>
+        </form>
+      </div>
     </section>
 
     <section id="main-view" hidden>
@@ -124,6 +142,33 @@
                 <p id="change-password-msg" class="muted" hidden></p>
               </form>
             </div>
+            <div class="settings-card">
+              <h3>Two-factor authentication (2FA)</h3>
+              <div id="totp-status" class="meta"></div>
+              <div id="totp-setup-panel" hidden>
+                <p class="muted">Scan this QR with Google Authenticator, 1Password, Authy, etc.</p>
+                <img id="settings-totp-qr" alt="TOTP QR code" class="totp-qr" hidden />
+                <p class="meta">Secret: <code id="settings-totp-secret"></code></p>
+                <form id="totp-confirm-form" class="admin-form">
+                  <label>Confirm with code<input name="code" inputmode="numeric" autocomplete="one-time-code" required /></label>
+                  <button type="submit">Enable 2FA</button>
+                </form>
+              </div>
+              <div id="totp-backup-panel" hidden>
+                <p class="muted">Save these backup codes now — they are shown once.</p>
+                <ul id="totp-backup-list" class="backup-codes"></ul>
+              </div>
+              <div class="totp-actions">
+                <button type="button" id="btn-totp-enable" class="ghost">Enable 2FA</button>
+                <button type="button" id="btn-totp-disable" class="ghost danger" hidden>Disable 2FA</button>
+              </div>
+              <form id="totp-disable-form" class="admin-form" hidden>
+                <label>Password or current code<input name="credential" type="password" autocomplete="current-password" required /></label>
+                <button type="submit">Confirm disable</button>
+                <p id="totp-disable-msg" class="muted" hidden></p>
+              </form>
+              <p id="totp-msg" class="muted" hidden></p>
+            </div>
           </div>
         </div>
         <div id="tab-users" class="settings-panel" role="tabpanel" hidden>
@@ -168,6 +213,7 @@
                 <label>Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
                 <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
                 <label class="check"><input name="disabled" type="checkbox" /> disabled</label>
+                <label class="check"><input name="totpRequired" type="checkbox" /> require 2FA</label>
                 <button type="submit">Save</button>
                 <p id="edit-user-error" class="error" hidden></p>
               </form>
@@ -220,6 +266,12 @@
               <li>Shares: paths under <code>DATA_ROOT</code></li>
               <li>Quota applies to each user’s home only</li>
             </ul>
+            <hr class="sep" />
+            <h3>Security — 2FA</h3>
+            <p class="muted">Force every user to enroll TOTP before using Filehub. Can also be set with env <code>FORCE_2FA_ALL=true</code> (env always on if set).</p>
+            <label class="check"><input id="force-2fa-all" type="checkbox" /> Force 2FA for all users</label>
+            <p id="force-2fa-msg" class="muted" hidden></p>
+            <p id="force-2fa-env-note" class="meta" hidden></p>
           </div>
         </div>
       </div>

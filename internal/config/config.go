@@ -8,18 +8,19 @@ import (
 )
 
 type Config struct {
-	ListenAddr     string
-	DataRoot       string
-	DBPath         string
-	AdminUser      string
-	AdminPassword  string
-	SessionSecret  string
-	SecureCookies  bool
-	ThumbEnable    bool
-	ThumbVAAPI     bool
-	ThumbCacheDir  string
-	MaxUploadMB    int64
+	ListenAddr      string
+	DataRoot        string
+	DBPath          string
+	AdminUser       string
+	AdminPassword   string
+	SessionSecret   string
+	SecureCookies   bool
+	ThumbEnable     bool
+	ThumbVAAPI      bool
+	ThumbCacheDir   string
+	MaxUploadMB     int64
 	RateLimitPerMin int
+	Force2FAAll     bool // env FORCE_2FA_ALL; OR with DB setting force_2fa_all
 }
 
 func getenv(k, def string) string {
@@ -65,6 +66,7 @@ func Load() Config {
 		ThumbCacheDir:   getenv("THUMB_CACHE_DIR", "/data/thumbs"),
 		MaxUploadMB:     int64(getenvInt("MAX_UPLOAD_MB", 2048)),
 		RateLimitPerMin: getenvInt("LOGIN_RATE_LIMIT", 10),
+		Force2FAAll:     getenvBool("FORCE_2FA_ALL", false),
 	}
 }
 

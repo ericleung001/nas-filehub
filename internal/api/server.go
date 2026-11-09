@@ -39,9 +39,15 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/login/totp", s.handleLoginTotp)
+	mux.HandleFunc("/api/login/totp/setup", s.handleLoginTotpSetup)
+	mux.HandleFunc("/api/login/totp/enable", s.handleLoginTotpEnable)
 	mux.HandleFunc("/api/logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("/api/me", s.requireAuth(s.handleMe))
 	mux.HandleFunc("/api/me/password", s.requireAuth(s.handleMePassword))
+	mux.HandleFunc("/api/me/totp/setup", s.requireAuth(s.handleMeTotpSetup))
+	mux.HandleFunc("/api/me/totp/confirm", s.requireAuth(s.handleMeTotpConfirm))
+	mux.HandleFunc("/api/me/totp/disable", s.requireAuth(s.handleMeTotpDisable))
 	mux.HandleFunc("/api/roots", s.requireAuth(s.handleRoots))
 	mux.HandleFunc("/api/list", s.requireAuth(s.handleList))
 	mux.HandleFunc("/api/mkdir", s.requireAuth(s.handleMkdir))
@@ -55,6 +61,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/admin/users/", s.requireAdmin(s.handleAdminUserID))
 	mux.HandleFunc("/api/admin/shares", s.requireAdmin(s.handleAdminShares))
 	mux.HandleFunc("/api/admin/shares/", s.requireAdmin(s.handleAdminShareID))
+	mux.HandleFunc("/api/admin/settings", s.requireAdmin(s.handleAdminSettings))
 
 	mux.Handle("/", s.spaHandler())
 	return s.securityHeaders(mux)
@@ -129,6 +136,17 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "account disabled")
 			return
 		}
+		if s.userMustEnrollTotp(u) {
+			path := r.URL.Path
+			allowed := path == "/api/me" ||
+				path == "/api/me/totp/setup" ||
+				path == "/api/me/totp/confirm" ||
+				path == "/api/logout"
+			if !allowed {
+				writeErr(w, http.StatusForbidden, "2FA setup required")
+				return
+			}
+		}
 		next(w, r)
 	}
 }
@@ -199,17 +217,39 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "account disabled")
 		return
 	}
-	token, err := auth.NewToken()
-	if err != nil {
+	needCode, needEnroll := s.DB.UserNeedsTOTP(u, s.force2FAAll())
+	if needCode || needEnroll {
+		pend, err := auth.NewToken()
+		if err != nil {
+			writeErr(w, 500, "session error")
+			return
+		}
+		kind := "totp"
+		if needEnroll {
+			kind = "enroll"
+		}
+		exp := time.Now().Add(10 * time.Minute)
+		_ = s.DB.DeletePendingLoginsForUser(u.ID)
+		if err := s.DB.CreatePendingLogin(pend, u.ID, kind, exp); err != nil {
+			writeErr(w, 500, "session error")
+			return
+		}
+		out := map[string]any{
+			"pendingToken": pend,
+			"username":     u.Username,
+		}
+		if needCode {
+			out["needTotp"] = true
+		} else {
+			out["needTotpSetup"] = true
+		}
+		writeJSON(w, 200, out)
+		return
+	}
+	if err := s.issueSession(w, u); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}
-	exp := time.Now().Add(s.Cfg.SessionTTL())
-	if err := s.DB.CreateSession(token, u.ID, exp); err != nil {
-		writeErr(w, 500, "session error")
-		return
-	}
-	s.setSessionCookie(w, token, exp)
 	m := s.userPublic(u)
 	m["usedBytes"] = s.homeUsedBytes(u)
 	writeJSON(w, 200, map[string]any{"user": m})
@@ -230,9 +270,16 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) userPublic(u *db.User) map[string]any {
+	if u == nil {
+		return map[string]any{}
+	}
+	forceAll := s.force2FAAll()
+	required := forceAll || u.TotpRequired
 	return map[string]any{
 		"id": u.ID, "username": u.Username, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
 		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled,
+		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
+		"force2faAll": forceAll, "mustEnrollTotp": required && !u.TotpEnabled,
 	}
 }
 
@@ -633,11 +680,12 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, map[string]any{"user": m})
 		case http.MethodPatch, http.MethodPut:
 			var body struct {
-				Username   *string `json:"username"`
-				IsAdmin    *bool   `json:"isAdmin"`
-				HomePath   *string `json:"homePath"`
-				QuotaBytes *int64  `json:"quotaBytes"`
-				Disabled   *bool   `json:"disabled"`
+				Username     *string `json:"username"`
+				IsAdmin      *bool   `json:"isAdmin"`
+				HomePath     *string `json:"homePath"`
+				QuotaBytes   *int64  `json:"quotaBytes"`
+				Disabled     *bool   `json:"disabled"`
+				TotpRequired *bool   `json:"totpRequired"`
 			}
 			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 				writeErr(w, 400, "bad json")
@@ -654,7 +702,7 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 			}
 			u, err := s.DB.UpdateUser(id, db.UserUpdate{
 				Username: body.Username, IsAdmin: body.IsAdmin, HomePath: body.HomePath,
-				QuotaBytes: body.QuotaBytes, Disabled: body.Disabled,
+				QuotaBytes: body.QuotaBytes, Disabled: body.Disabled, TotpRequired: body.TotpRequired,
 			})
 			if err != nil {
 				writeErr(w, 400, err.Error())

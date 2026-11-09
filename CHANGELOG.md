@@ -9,6 +9,7 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
+- **TOTP two-factor authentication (RFC 6238)** — users can enable/disable 2FA in Settings → Account (QR + secret, confirm with code; optional backup codes shown once). Login asks for a TOTP/backup code when enabled. Admins can require 2FA per user (Users → Edit → require 2FA) or force all users (Settings → System, or env `FORCE_2FA_ALL`). Forced users who have not enrolled must set up 2FA before accessing files.
 - **File list sorting** — sort by Name, Date (modified), Type (extension), or Size; Asc/Desc toggle; preference saved in `localStorage` (`filehub-sort-by`, `filehub-sort-dir`); works in List and Icons views; list column headers are clickable.
 - **Drag-and-drop upload** from macOS/Windows: drop on the empty list/grid area to upload into the current folder; drop onto a folder row/icon to upload into that folder (visual drop-target highlight).
 - **List / Icons view toggle** in the toolbar (preference saved in `localStorage`).
