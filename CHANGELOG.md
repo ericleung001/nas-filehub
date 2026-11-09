@@ -8,6 +8,15 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-09
+
+### Added
+- **Open registration** — Settings → System toggle **Allow open registration**. When on, the login page shows **Sign up**; `POST /api/register` creates a non-admin user with username + email + password (enforces username rules and the password policy). Accounts are active immediately (admin approval not required yet). `GET /api/auth/features` exposes `openRegistration` and the password policy hint.
+
+### Fixed
+- **PDF preview** no longer shows “refused to connect” in the modal or on public share pages. Cause: global `X-Frame-Options: DENY` blocked same-origin iframes of `/api/raw` and `/api/public/links/.../raw`. Fix: allow `SAMEORIGIN` framing (plus `frame-ancestors 'self'`) for those raw/thumb routes, set `Content-Type: application/pdf` with `Content-Disposition: inline` for PDFs, and load previews via a same-origin **blob object URL** so framing headers cannot break the viewer.
+- **Settings → Users** actions column: the current user’s lone **Edit** button no longer sits flush-right while other rows show Edit+Del. Actions use a two-slot grid plus a spacer when Del is omitted so Edit stays aligned.
+
 ## [0.3.4] - 2026-11-09
 
 ### Added

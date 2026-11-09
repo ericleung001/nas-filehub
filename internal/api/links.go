@@ -400,6 +400,8 @@ func (s *Server) servePublicFile(w http.ResponseWriter, r *http.Request, asAttac
 	defer f.Close()
 	if asAttachment {
 		w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(st.Name())+`"`)
+	} else {
+		setInlineFileHeaders(w, st.Name())
 	}
 	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
 }

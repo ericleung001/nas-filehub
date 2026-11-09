@@ -169,17 +169,36 @@ function showLoginStep(step) {
   $('#totp-enroll-login').hidden = step !== 'enroll';
   const forgot = $('#forgot-form');
   if (forgot) forgot.hidden = step !== 'forgot';
+  const signup = $('#signup-form');
+  if (signup) signup.hidden = step !== 'signup';
+}
+
+async function refreshAuthFeatures() {
+  const forgot = $('#btn-forgot');
+  const signup = $('#btn-signup');
+  try {
+    const data = await api('/api/auth/features');
+    if (forgot) forgot.hidden = !data.forgotPassword;
+    if (signup) signup.hidden = !data.openRegistration;
+    const hint = $('#signup-policy-hint');
+    if (hint) {
+      hint.textContent = data.passwordPolicyHint
+        ? ('Password: ' + data.passwordPolicyHint)
+        : '';
+    }
+    const sf = $('#signup-form');
+    if (sf && data.passwordPolicy && data.passwordPolicy.minLength) {
+      sf.password.minLength = data.passwordPolicy.minLength;
+      sf.confirm.minLength = data.passwordPolicy.minLength;
+    }
+  } catch {
+    if (forgot) forgot.hidden = true;
+    if (signup) signup.hidden = true;
+  }
 }
 
 async function refreshForgotLink() {
-  const btn = $('#btn-forgot');
-  if (!btn) return;
-  try {
-    const data = await api('/api/auth/features');
-    btn.hidden = !data.forgotPassword;
-  } catch {
-    btn.hidden = true;
-  }
+  return refreshAuthFeatures();
 }
 
 async function startLoginEnroll(pendingToken) {
@@ -692,13 +711,47 @@ function isPreviewable(e) {
   return !e.isDir && (e.kind === 'image' || e.kind === 'video' || e.kind === 'pdf');
 }
 
+function revokePdfObjectUrls(root) {
+  if (!root) return;
+  root.querySelectorAll('iframe.pdf-frame, embed.pdf-frame, object.pdf-frame').forEach((el) => {
+    const u = el.dataset.objectUrl || '';
+    if (u.startsWith('blob:')) {
+      try { URL.revokeObjectURL(u); } catch { /* ignore */ }
+    }
+    el.removeAttribute('src');
+    el.removeAttribute('data');
+  });
+}
+
 function appendPdfFrame(container, url, title) {
   const frame = document.createElement('iframe');
   frame.className = 'pdf-frame';
-  frame.src = url;
   frame.title = title || 'PDF';
   frame.setAttribute('loading', 'lazy');
+  // Placeholder until blob is ready; avoids flashing a framed /api/raw that may be DENY'd.
+  frame.src = 'about:blank';
   container.appendChild(frame);
+  const tip = document.createElement('p');
+  tip.className = 'muted pdf-loading';
+  tip.textContent = 'Loading PDF…';
+  container.appendChild(tip);
+  fetch(url, { credentials: 'same-origin' })
+    .then(async (res) => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: 'application/pdf' });
+      const obj = URL.createObjectURL(blob);
+      frame.dataset.objectUrl = obj;
+      frame.src = obj;
+      tip.remove();
+    })
+    .catch((err) => {
+      tip.textContent = 'Could not load PDF preview. Try Download.';
+      tip.classList.add('error');
+      // Fallback: direct URL (works when server allows SAMEORIGIN framing).
+      frame.src = url;
+      console.warn('pdf preview fetch failed', err);
+    });
 }
 
 function joinPath(base, name) {
@@ -937,6 +990,7 @@ function stopPreviewMedia() {
     } catch { /* ignore */ }
     el.remove();
   });
+  revokePdfObjectUrls(body);
   body.classList.remove('pdf-mode');
   body.innerHTML = '';
 }
@@ -1350,6 +1404,12 @@ $('#totp-disable-form').addEventListener('submit', async (e) => {
 
 async function loadSystemSettings() {
   const data = await api('/api/admin/settings');
+  const openReg = $('#open-registration');
+  if (openReg) {
+    openReg.checked = !!data.openRegistration;
+    $('#open-registration-msg').hidden = true;
+    $('#open-registration-msg').classList.remove('error');
+  }
   const box = $('#force-2fa-all');
   box.checked = !!data.force2faAll;
   box.disabled = !!data.force2faAllEnv;
@@ -1409,6 +1469,26 @@ async function loadSystemSettings() {
   $('#smtp-msg').hidden = true;
   $('#smtp-msg').classList.remove('error');
 }
+
+$('#open-registration')?.addEventListener('change', async (e) => {
+  const msg = $('#open-registration-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ openRegistration: !!e.target.checked }),
+    });
+    e.target.checked = !!data.openRegistration;
+    msg.textContent = 'Saved';
+    msg.hidden = false;
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
 
 $('#force-2fa-all').addEventListener('change', async (e) => {
   const msg = $('#force-2fa-msg');
@@ -1514,6 +1594,12 @@ async function refreshAdmin() {
         await refreshAdmin();
       };
       btns.appendChild(b);
+    } else {
+      // Keep Edit under Edit when this row has no Del (cannot delete self).
+      const spacer = document.createElement('span');
+      spacer.className = 'row-action-spacer';
+      spacer.setAttribute('aria-hidden', 'true');
+      btns.appendChild(spacer);
     }
     ul.appendChild(tr);
   }
@@ -1897,6 +1983,7 @@ function clearPublicInlinePreview() {
   box.querySelectorAll('video, audio').forEach((el) => {
     try { el.pause(); el.removeAttribute('src'); el.src = ''; el.load(); } catch { /* ignore */ }
   });
+  revokePdfObjectUrls(box);
   box.classList.remove('pdf-mode');
   box.innerHTML = '';
   box.hidden = true;
@@ -2108,6 +2195,50 @@ $('#public-share-unlock')?.addEventListener('submit', async (e) => {
   }
 });
 
+
+$('#btn-signup')?.addEventListener('click', async () => {
+  $('#signup-error').hidden = true;
+  $('#signup-msg').hidden = true;
+  $('#signup-form')?.reset();
+  await refreshAuthFeatures();
+  showLoginStep('signup');
+});
+$('#btn-signup-back')?.addEventListener('click', () => {
+  showLoginStep('password');
+});
+$('#signup-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const errEl = $('#signup-error');
+  const msgEl = $('#signup-msg');
+  errEl.hidden = true;
+  msgEl.hidden = true;
+  const password = fd.get('password') || '';
+  const confirm = fd.get('confirm') || '';
+  if (password !== confirm) {
+    errEl.textContent = 'Passwords do not match';
+    errEl.hidden = false;
+    return;
+  }
+  try {
+    const data = await api('/api/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: fd.get('username'),
+        email: fd.get('email'),
+        password,
+      }),
+    });
+    msgEl.textContent = data.message || 'Account created. You can sign in now.';
+    msgEl.hidden = false;
+    const loginUser = $('#login-form')?.username;
+    if (loginUser) loginUser.value = data.username || fd.get('username') || '';
+    setTimeout(() => showLoginStep('password'), 800);
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
 
 $('#btn-forgot')?.addEventListener('click', () => {
   $('#forgot-error').hidden = true;

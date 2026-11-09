@@ -354,6 +354,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		return map[string]any{
 			"force2faAll":        s.force2FAAll(),
 			"force2faAllEnv":     s.Cfg.Force2FAAll,
+			"openRegistration":   s.openRegistration(),
 			"passwordPolicy":     pol,
 			"passwordPolicyHint": db.PasswordPolicySummary(pol),
 			"smtp":               s.smtpPublic(smtpCfg),
@@ -366,6 +367,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut, http.MethodPatch, http.MethodPost:
 		var body struct {
 			Force2FAAll       *bool   `json:"force2faAll"`
+			OpenRegistration  *bool   `json:"openRegistration"`
 			PasswordMinLength *int    `json:"passwordMinLength"`
 			RequireLetters    *bool   `json:"passwordRequireLetters"`
 			RequireDigits     *bool   `json:"passwordRequireDigits"`
@@ -384,6 +386,13 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		touched := false
 		if body.Force2FAAll != nil {
 			if err := s.DB.SetForce2FAAll(*body.Force2FAAll); err != nil {
+				writeErr(w, 500, "db error")
+				return
+			}
+			touched = true
+		}
+		if body.OpenRegistration != nil {
+			if err := s.DB.SetOpenRegistration(*body.OpenRegistration); err != nil {
 				writeErr(w, 500, "db error")
 				return
 			}

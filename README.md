@@ -23,19 +23,20 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
 - **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke anytime from Settings → Link shares
 - **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
-- **Preview** — image, **PDF** (inline iframe), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
+- **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
 - **Settings** — one top-bar entry; left vertical menu, right content panel
   - **Account** — username, home, quota used/limit
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list and revoke public links you created (admins see all)
-  - **Users / Shares / System** (admins only) — user/share tables; System includes Force 2FA, **password policy** (min length, letters/digits/symbols), and **Email (SMTP)** for forgot-password
+  - **Users / Shares / System** (admins only) — user/share tables; System includes **open registration**, Force 2FA, **password policy** (min length, letters/digits/symbols), and **Email (SMTP)** for forgot-password
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
 - **Forgot password** — admin configures SMTP; users with an email can request a reset link from the login page (rate-limited; generic responses)
-- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API
+- **Open registration** — optional admin toggle; login page Sign up creates username/email/password accounts under the password policy (active immediately; no approval gate yet)
+- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
 

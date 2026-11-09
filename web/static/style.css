@@ -418,11 +418,20 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   white-space: nowrap;
   overflow: visible;
 }
-.admin-table .row-actions {
-  display: flex;
-  justify-content: flex-end;
+/* Two fixed action slots so a lone Edit (no Del on self) lines up with Edit+Del rows. */
+.admin-table td.row-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(2.75rem, max-content));
+  justify-content: end;
+  align-items: center;
   gap: .25rem;
-  flex-wrap: nowrap;
+}
+.admin-table .row-action-spacer {
+  display: block;
+  min-width: 2.75rem;
+  min-height: 1.6rem;
+  visibility: hidden;
+  pointer-events: none;
 }
 .admin-table .row-actions button {
   flex: 0 0 auto;

@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 )
 
 type DB struct {
@@ -22,7 +23,7 @@ type User struct {
 	Email                 string    `json:"email"`
 	PasswordHash          string    `json:"-"`
 	IsAdmin               bool      `json:"isAdmin"`
-	HomePath              string    `json:"homePath"` // relative to DATA_ROOT
+	HomePath              string    `json:"homePath"`   // relative to DATA_ROOT
 	QuotaBytes            int64     `json:"quotaBytes"` // 0 = unlimited
 	Disabled              bool      `json:"disabled"`
 	TotpSecret            string    `json:"-"`
@@ -176,7 +177,6 @@ func (d *DB) ensureUserColumns() error {
 	return nil
 }
 
-
 func (d *DB) ensurePendingLoginColumns() error {
 	cols := map[string]bool{}
 	rows, err := d.SQL.Query(`PRAGMA table_info(pending_logins)`)
@@ -320,6 +320,9 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	email = normalizeEmail(email)
 	if username == "" || password == "" {
 		return nil, fmt.Errorf("username and password required")
+	}
+	if err := ValidateUsername(username); err != nil {
+		return nil, err
 	}
 	if quotaBytes < 0 {
 		return nil, fmt.Errorf("quotaBytes must be >= 0")
@@ -737,6 +740,21 @@ func (d *DB) SetForce2FAAll(on bool) error {
 	return d.SetSetting("force_2fa_all", "0")
 }
 
+func (d *DB) OpenRegistration() (bool, error) {
+	v, err := d.GetSetting("open_registration")
+	if err != nil {
+		return false, err
+	}
+	return v == "1" || strings.EqualFold(v, "true"), nil
+}
+
+func (d *DB) SetOpenRegistration(on bool) error {
+	if on {
+		return d.SetSetting("open_registration", "1")
+	}
+	return d.SetSetting("open_registration", "0")
+}
+
 // UserNeedsTOTP reports whether this user must pass a TOTP step at login
 // (already enrolled) or must enroll before full access.
 func (d *DB) UserNeedsTOTP(u *User, forceAll bool) (needCode bool, needEnroll bool) {
@@ -769,10 +787,10 @@ func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires
 }
 
 type PendingLogin struct {
-	Token               string
-	UserID              int64
-	Kind                string
-	MustChangePassword  bool
+	Token              string
+	UserID             int64
+	Kind               string
+	MustChangePassword bool
 }
 
 func (d *DB) GetPendingLogin(token string) (*PendingLogin, error) {
@@ -884,6 +902,31 @@ func (d *DB) ConsumeBackupCode(userID int64, plainCode string) (bool, error) {
 
 func normalizeEmail(email string) string {
 	return strings.TrimSpace(strings.ToLower(email))
+}
+
+var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{1,31}$`)
+
+// ValidateUsername enforces a conservative public signup / admin create username.
+func ValidateUsername(username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("username required")
+	}
+	if len(username) < 2 || len(username) > 32 {
+		return fmt.Errorf("username must be 2–32 characters")
+	}
+	if !usernamePattern.MatchString(username) {
+		return fmt.Errorf("username may only use letters, digits, ., _, - and must start with a letter or digit")
+	}
+	return nil
+}
+
+func ValidateEmailRequired(email string) error {
+	email = normalizeEmail(email)
+	if email == "" {
+		return fmt.Errorf("email required")
+	}
+	return validateEmailOptional(email)
 }
 
 func validateEmailOptional(email string) error {

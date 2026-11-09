@@ -44,6 +44,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/login/totp/setup", s.handleLoginTotpSetup)
 	mux.HandleFunc("/api/login/totp/enable", s.handleLoginTotpEnable)
 	mux.HandleFunc("/api/auth/features", s.handleAuthFeatures)
+	mux.HandleFunc("/api/register", s.handleRegister)
 	mux.HandleFunc("/api/forgot-password", s.handleForgotPassword)
 	mux.HandleFunc("/api/reset-password", s.handleResetPassword)
 	mux.HandleFunc("/api/reset-password/meta", s.handleResetPasswordMeta)
@@ -109,12 +110,40 @@ func (s *Server) spaHandler() http.Handler {
 	})
 }
 
+func allowSameOriginFrame(path string) bool {
+	if path == "/api/raw" || path == "/api/thumb" {
+		return true
+	}
+	// Public share raw for inline image/video/PDF preview in the SPA.
+	if strings.HasPrefix(path, "/api/public/links/") && strings.HasSuffix(path, "/raw") {
+		return true
+	}
+	return false
+}
+
+func setInlineFileHeaders(w http.ResponseWriter, name string) {
+	// Override global DENY so same-origin <iframe>/<embed> can preview PDFs.
+	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+	w.Header().Del("Content-Disposition")
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext == ".pdf" {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `inline; filename="`+filepath.Base(name)+`"`)
+	}
+}
+
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-XSS-Protection", "0")
+		if allowSameOriginFrame(r.URL.Path) {
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+			w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+		} else {
+			w.Header().Set("X-Frame-Options", "DENY")
+		}
 		// No command execution endpoint exists by design.
 		next.ServeHTTP(w, r)
 	})
@@ -288,8 +317,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"user": m})
 }
 
-
-
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -318,7 +345,7 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
 		"force2faAll": forceAll, "mustEnrollTotp": mustEnroll && !mustChange,
 		"mustChangePassword": mustChange,
-		"passwordPolicy": pol,
+		"passwordPolicy":     pol,
 		"passwordPolicyHint": db.PasswordPolicySummary(pol),
 	}
 }
@@ -665,6 +692,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
+	setInlineFileHeaders(w, st.Name())
 	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
 }
 

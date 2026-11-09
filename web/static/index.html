@@ -15,8 +15,23 @@
         <label>Username<input name="username" autocomplete="username" required /></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
         <button type="submit">登入 Login</button>
-        <p class="login-links"><button type="button" id="btn-forgot" class="linkish" hidden>Forgot password?</button></p>
+        <p class="login-links">
+          <button type="button" id="btn-signup" class="linkish" hidden>Sign up</button>
+          <button type="button" id="btn-forgot" class="linkish" hidden>Forgot password?</button>
+        </p>
         <p id="login-error" class="error" hidden></p>
+      </form>
+      <form id="signup-form" hidden>
+        <p class="muted">Create an account. Password must meet the server policy.</p>
+        <label>Username<input name="username" autocomplete="username" required minlength="2" maxlength="32" /></label>
+        <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" required /></label>
+        <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required /></label>
+        <p id="signup-policy-hint" class="meta"></p>
+        <button type="submit">Create account</button>
+        <button type="button" id="btn-signup-back" class="ghost">Back to login</button>
+        <p id="signup-msg" class="muted" hidden></p>
+        <p id="signup-error" class="error" hidden></p>
       </form>
       <form id="forgot-form" hidden>
         <p class="muted">Enter your username or email. If an account exists and mail is configured, we will send a reset link.</p>
@@ -317,6 +332,11 @@
                 <li>Shares: paths under <code>DATA_ROOT</code></li>
                 <li>Quota applies to each user’s home only</li>
               </ul>
+              <hr class="sep" />
+              <h3>Registration</h3>
+              <p class="muted">When enabled, the login page shows <strong>Sign up</strong>. New accounts need username, email, and a password that meets the password policy. Accounts are active immediately (no admin approval yet).</p>
+              <label class="check"><input id="open-registration" type="checkbox" /> Allow open registration</label>
+              <p id="open-registration-msg" class="muted" hidden></p>
               <hr class="sep" />
               <h3>Security — 2FA</h3>
               <p class="muted">Force every user to enroll TOTP before using Filehub. Can also be set with env <code>FORCE_2FA_ALL=true</code> (env always on if set).</p>

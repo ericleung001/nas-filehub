@@ -10,6 +10,7 @@ import (
 
 	"github.com/eric/nas-filehub/internal/auth"
 	"github.com/eric/nas-filehub/internal/db"
+	"github.com/eric/nas-filehub/internal/files"
 	"github.com/eric/nas-filehub/internal/mail"
 )
 
@@ -44,15 +45,20 @@ func (s *Server) effectiveSMTP() (db.SMTPSettings, error) {
 func (s *Server) smtpPublic(cfg db.SMTPSettings) map[string]any {
 	envOverride := s.Cfg.SMTPHost != "" || s.Cfg.SMTPEnabled
 	return map[string]any{
-		"enabled":      cfg.Enabled,
-		"host":         cfg.Host,
-		"port":         cfg.Port,
-		"username":     cfg.Username,
-		"from":         cfg.From,
-		"passwordSet":  cfg.PasswordSet,
-		"ready":        cfg.Ready(),
-		"envOverride":  envOverride,
+		"enabled":     cfg.Enabled,
+		"host":        cfg.Host,
+		"port":        cfg.Port,
+		"username":    cfg.Username,
+		"from":        cfg.From,
+		"passwordSet": cfg.PasswordSet,
+		"ready":       cfg.Ready(),
+		"envOverride": envOverride,
 	}
+}
+
+func (s *Server) openRegistration() bool {
+	on, err := s.DB.OpenRegistration()
+	return err == nil && on
 }
 
 func (s *Server) handleAuthFeatures(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +71,68 @@ func (s *Server) handleAuthFeatures(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "db error")
 		return
 	}
+	pol := s.passwordPolicy()
 	writeJSON(w, 200, map[string]any{
-		"forgotPassword": cfg.Ready(),
+		"forgotPassword":     cfg.Ready(),
+		"openRegistration":   s.openRegistration(),
+		"passwordPolicy":     pol,
+		"passwordPolicyHint": db.PasswordPolicySummary(pol),
+	})
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	if !s.openRegistration() {
+		writeErr(w, 403, "registration is closed")
+		return
+	}
+	ip := auth.ClientIP(r)
+	if !s.Limiter.Allow(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many requests")
+		return
+	}
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeErr(w, 400, "bad json")
+		return
+	}
+	if err := db.ValidateUsername(body.Username); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := db.ValidateEmailRequired(body.Email); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if err := db.ValidatePassword(body.Password, s.passwordPolicy()); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	u, err := s.DB.CreateUser(body.Username, body.Password, "", false, 0, body.Email)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(strings.ToLower(msg), "unique") {
+			writeErr(w, 409, "username already taken")
+			return
+		}
+		writeErr(w, 400, msg)
+		return
+	}
+	abs, err := files.SafeJoin(s.Cfg.DataRoot, u.HomePath)
+	if err == nil {
+		_ = files.EnsureDir(abs)
+	}
+	writeJSON(w, 201, map[string]any{
+		"ok":       true,
+		"username": u.Username,
+		"message":  "Account created. You can sign in now.",
 	})
 }
 
