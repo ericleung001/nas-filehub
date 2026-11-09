@@ -581,34 +581,47 @@ function openUserEdit(u) {
 
 async function refreshAdmin() {
   const users = await api('/api/admin/users');
+  const byId = {};
+  for (const u of users.users) byId[u.id] = u.username;
   const ul = $('#user-list');
   ul.innerHTML = '';
   for (const u of users.users) {
-    const li = document.createElement('li');
-    li.className = 'user-card';
+    const tr = document.createElement('tr');
     const used = u.usedBytes || 0;
     const quota = u.quotaBytes || 0;
     const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
     const badges = [];
     if (u.isAdmin) badges.push('<span class="badge admin">admin</span>');
     if (u.disabled) badges.push('<span class="badge disabled">disabled</span>');
-    li.innerHTML = `
-      <div><strong>${u.username}</strong> ${badges.join(' ')} <span class="muted">#${u.id}</span></div>
-      <div class="meta">home: <code>${u.homePath}</code></div>
-      <div class="meta">used ${fmtSize(used)} / ${fmtQuota(quota)}${quota ? ` (${pct}%)` : ''}</div>
-      ${quota ? `<div class="quota-bar${used > quota ? ' over' : ''}"><span style="width:${pct}%"></span></div>` : ''}
+    if (!badges.length) badges.push('<span class="badge">user</span>');
+    const quotaLabel = quota
+      ? `${fmtSize(used)} / ${fmtQuota(quota)} (${pct}%)`
+      : `${fmtSize(used)} / unlimited`;
+    tr.innerHTML = `
+      <td class="user-cell">
+        <div class="user-name" title="${u.username}">${u.username}</div>
+        <div class="meta">#${u.id}</div>
+      </td>
+      <td class="home-cell"><code title="${u.homePath}">${u.homePath}</code></td>
+      <td class="quota-cell">
+        <div class="meta">${quotaLabel}</div>
+        ${quota ? `<div class="quota-bar${used > quota ? ' over' : ''}"><span style="width:${pct}%"></span></div>` : ''}
+      </td>
+      <td class="status-cell">${badges.join(' ')}</td>
+      <td class="row-actions"></td>
     `;
-    const btns = document.createElement('div');
-    btns.className = 'row-btns';
+    const btns = tr.querySelector('.row-actions');
     const edit = document.createElement('button');
     edit.textContent = 'Edit';
     edit.className = 'ghost';
+    edit.title = 'Edit user';
     edit.onclick = () => openUserEdit(u);
     btns.appendChild(edit);
     if (u.id !== state.user.id) {
       const b = document.createElement('button');
-      b.textContent = 'Delete';
-      b.className = 'ghost';
+      b.textContent = 'Del';
+      b.className = 'ghost danger';
+      b.title = 'Delete user';
       b.onclick = async () => {
         if (!confirm('Delete user ' + u.username + '?')) return;
         await api('/api/admin/users/' + u.id, { method: 'DELETE' });
@@ -616,20 +629,34 @@ async function refreshAdmin() {
       };
       btns.appendChild(b);
     }
-    li.appendChild(btns);
-    ul.appendChild(li);
+    ul.appendChild(tr);
+  }
+  if (!users.users.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="5" class="empty-row muted">No users</td>';
+    ul.appendChild(tr);
   }
 
   const shares = await api('/api/admin/shares');
   const sl = $('#share-list');
   sl.innerHTML = '';
   for (const s of shares.shares) {
-    const li = document.createElement('li');
-    const grants = (s.grants || []).map(g => `user#${g.userId}:${g.perm}`).join(', ') || 'no grants';
-    li.innerHTML = `<strong>${s.name}</strong> · <code>${s.path}</code><div class="muted">${grants}</div>`;
+    const tr = document.createElement('tr');
+    const grants = (s.grants || []).map((g) => {
+      const name = byId[g.userId] || ('user#' + g.userId);
+      return `<span class="grant-chip">${name}:${g.perm}</span>`;
+    }).join(' ') || '<span class="muted">no grants</span>';
+    tr.innerHTML = `
+      <td class="share-name-cell"><div class="user-name" title="${s.name}">${s.name}</div><div class="meta">#${s.id}</div></td>
+      <td class="home-cell"><code title="${s.path}">${s.path}</code></td>
+      <td class="grants-cell">${grants}</td>
+      <td class="row-actions"></td>
+    `;
+    const btns = tr.querySelector('.row-actions');
     const grantBtn = document.createElement('button');
     grantBtn.textContent = 'Grant';
     grantBtn.className = 'ghost';
+    grantBtn.title = 'Grant access';
     grantBtn.onclick = async () => {
       const userId = Number(prompt('User ID'));
       const perm = prompt('perm: read or write', 'read');
@@ -641,16 +668,22 @@ async function refreshAdmin() {
       await refreshAdmin();
     };
     const del = document.createElement('button');
-    del.textContent = 'Delete share';
-    del.className = 'ghost';
+    del.textContent = 'Del';
+    del.className = 'ghost danger';
+    del.title = 'Delete share';
     del.onclick = async () => {
       if (!confirm('Delete share definition? (files kept)')) return;
       await api('/api/admin/shares/' + s.id, { method: 'DELETE' });
       await refreshAdmin();
     };
-    li.appendChild(grantBtn);
-    li.appendChild(del);
-    sl.appendChild(li);
+    btns.appendChild(grantBtn);
+    btns.appendChild(del);
+    sl.appendChild(tr);
+  }
+  if (!shares.shares.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4" class="empty-row muted">No shared folders</td>';
+    sl.appendChild(tr);
   }
 }
 

@@ -162,11 +162,6 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 
 .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; padding: 1rem; }
-.admin-grid ul, .admin-section ul { list-style: none; padding: 0; }
-.admin-grid li, .admin-section li {
-  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  padding: .75rem; margin: .5rem 0;
-}
 .check { flex-direction: row; align-items: center; gap: .5rem; color: var(--text); }
 #preview { border: none; border-radius: 12px; padding: 0; max-width: min(96vw, 1100px); max-height: 92vh; background: #000; color: white; }
 #preview::backdrop { background: rgba(0,0,0,.65); }
@@ -176,15 +171,7 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 
 .admin-form { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .75rem; }
 .admin-form input[type="text"], .admin-form input:not([type]), .admin-form input[type="password"] { width: 100%; }
-.user-card { display: flex; flex-direction: column; gap: .35rem; }
-.user-card .meta { font-size: .85rem; color: var(--muted); }
-.user-card .quota-bar {
-  height: 6px; background: #0b1220; border-radius: 4px; overflow: hidden; border: 1px solid var(--border);
-}
-.user-card .quota-bar > span { display: block; height: 100%; background: var(--accent); }
-.user-card .quota-bar.over > span { background: var(--danger); }
-.user-card .row-btns { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
-.badge { display: inline-block; font-size: .72rem; padding: .1rem .4rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.badge { display: inline-block; font-size: .72rem; padding: .1rem .4rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
 .badge.admin { color: #93c5fd; border-color: #3b82f6; }
 .badge.disabled { color: #fca5a5; border-color: var(--danger); }
 #user-edit-dialog {
@@ -244,13 +231,15 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .sidebar-quota .meta { font-size: .82rem; color: var(--muted); margin-bottom: .35rem; }
 .sidebar-quota .quota-bar,
 .settings-card .quota-bar,
-.user-card .quota-bar {
+.admin-table .quota-bar {
   height: 6px; background: #0b1220; border-radius: 4px; overflow: hidden; border: 1px solid var(--border);
 }
 .sidebar-quota .quota-bar > span,
-.settings-card .quota-bar > span { display: block; height: 100%; background: var(--accent); }
+.settings-card .quota-bar > span,
+.admin-table .quota-bar > span { display: block; height: 100%; background: var(--accent); }
 .sidebar-quota .quota-bar.over > span,
-.settings-card .quota-bar.over > span { background: var(--danger); }
+.settings-card .quota-bar.over > span,
+.admin-table .quota-bar.over > span { background: var(--danger); }
 
 /* Settings tabs (unified Account + admin Users/Shares/System) */
 .settings-tabs {
@@ -281,11 +270,122 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .settings-account { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .65rem; }
 .settings-account .meta { font-size: .85rem; color: var(--muted); }
 #change-password-msg.error { color: var(--danger); }
-.admin-section { padding: 1rem; max-width: 720px; }
+.admin-section { padding: 1rem; max-width: 1100px; }
 .admin-section h3 { margin-top: 0; }
-.system-notes { padding-left: 1.1rem; margin: .5rem 0 0; }
+.admin-section .admin-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .5rem .65rem;
+  align-items: end;
+  margin-bottom: 1rem;
+  padding: .85rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.admin-section .admin-form .check { grid-column: span 1; }
+.admin-section .admin-form button[type="submit"] { justify-self: start; }
+
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.admin-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.admin-table col.col-user { width: 9.5rem; }
+.admin-table col.col-home { width: auto; }
+.admin-table col.col-quota { width: 11rem; }
+.admin-table col.col-status { width: 7.5rem; }
+.admin-table col.col-share-name { width: 9.5rem; }
+.admin-table col.col-share-path { width: auto; }
+.admin-table col.col-share-grants { width: 14rem; }
+.admin-table col.col-actions { width: 7.5rem; }
+.admin-table th, .admin-table td {
+  text-align: left;
+  padding: .55rem .55rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .9rem;
+  vertical-align: middle;
+}
+.admin-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+  background: #121a26;
+  position: sticky;
+  top: 0;
+}
+.admin-table tbody tr:hover td { background: #152033; }
+.admin-table tbody tr:last-child td { border-bottom: none; }
+.admin-table .user-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-table .meta { font-size: .78rem; color: var(--muted); margin-top: .1rem; }
+.admin-table .home-cell code,
+.admin-table .grants-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.admin-table .quota-cell .quota-bar { margin-top: .3rem; }
+.admin-table .status-cell { white-space: nowrap; }
+.admin-table td.row-actions,
+.admin-table th.actions-h {
+  text-align: right;
+  white-space: nowrap;
+  overflow: visible;
+}
+.admin-table .row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .25rem;
+  flex-wrap: nowrap;
+}
+.admin-table .row-actions button {
+  flex: 0 0 auto;
+  padding: .25rem .45rem;
+  font-size: .82rem;
+  line-height: 1.2;
+  min-width: 2rem;
+  margin: 0;
+}
+.admin-table .empty-row { text-align: center; padding: 1rem; }
+.grant-chip {
+  display: inline-block;
+  font-size: .72rem;
+  padding: .1rem .4rem;
+  margin: .1rem .15rem .1rem 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: #0b1220;
+  white-space: nowrap;
+}
+.system-notes { padding-left: 1.1rem; margin: .5rem 0 0; list-style: disc; }
 .system-notes li { margin: .35rem 0; background: transparent; border: none; padding: 0; }
+@media (max-width: 900px) {
+  .admin-table col.col-home,
+  .admin-table col.col-share-path,
+  .admin-table td.home-cell { display: none; }
+  .admin-table thead th.home-h,
+  .admin-table thead th.path-h { display: none; }
+}
 @media (max-width: 800px) {
   .settings-wrap { grid-template-columns: 1fr; }
   .admin-grid { grid-template-columns: 1fr; }
+  .admin-table col.col-status,
+  .admin-table td.status-cell,
+  .admin-table thead th.status-h { display: none; }
+  .admin-table col.col-actions { width: 6.5rem; }
 }

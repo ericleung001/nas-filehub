@@ -120,7 +120,27 @@
               <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
               <button type="submit">Create user</button>
             </form>
-            <ul id="user-list"></ul>
+            <div class="admin-table-wrap">
+              <table class="admin-table" aria-label="Users">
+                <colgroup>
+                  <col class="col-user" />
+                  <col class="col-home" />
+                  <col class="col-quota" />
+                  <col class="col-status" />
+                  <col class="col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">User</th>
+                    <th scope="col" class="home-h">Home</th>
+                    <th scope="col">Storage</th>
+                    <th scope="col" class="status-h">Status</th>
+                    <th scope="col" class="actions-h">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="user-list"></tbody>
+              </table>
+            </div>
             <dialog id="user-edit-dialog">
               <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
               <h3>Edit user</h3>
@@ -153,7 +173,25 @@
               <input name="path" placeholder="path under DATA_ROOT e.g. shared/team" required />
               <button type="submit">Create share</button>
             </form>
-            <ul id="share-list"></ul>
+            <div class="admin-table-wrap">
+              <table class="admin-table" aria-label="Shared folders">
+                <colgroup>
+                  <col class="col-share-name" />
+                  <col class="col-share-path" />
+                  <col class="col-share-grants" />
+                  <col class="col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col" class="path-h">Path</th>
+                    <th scope="col">Grants</th>
+                    <th scope="col" class="actions-h">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="share-list"></tbody>
+              </table>
+            </div>
           </div>
         </div>
         <div id="tab-system" class="settings-panel" role="tabpanel" hidden>

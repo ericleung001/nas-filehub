@@ -22,6 +22,7 @@ where version tags are used.
 - Closing the media preview (X, Escape, or backdrop) now pauses video, clears `src`, calls `load()`, and removes the element so audio cannot keep playing.
 
 ### Changed
+- Settings **Users** and **Shares** admin tabs render as dark-theme tables (columns + row actions) instead of stacked cards.
 - Top bar exposes a single **Settings** entry; admin user/share management moved into Settings tabs.
 - Remove meta language note from README.
 

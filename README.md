@@ -15,7 +15,7 @@ Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shar
 - **Thumbnails** — optional ffmpeg thumbs (software by default; Unraid Intel VAAPI supported)
 - **Settings** — one top-bar entry for everyone
   - **Account** — quota used/limit, change own password (`POST /api/me/password`)
-  - **Users / Shares / System** tabs (admins only) — create/edit users, quotas, password reset, disable accounts, manage shares and grants
+  - **Users / Shares / System** tabs (admins only) — create/edit users, quotas, password reset, disable accounts, manage shares and grants; Users and Shares shown as list tables
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login rate limit; path-traversal guards; non-root container user
 
@@ -70,8 +70,8 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 Sign in → **Settings** (single top-bar button):
 
 1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota; **Change password** (requires current password; other sessions cleared, current kept)
-2. **Users** (admins) — create / edit / delete users; set quota; reset passwords; disable accounts
-3. **Shares** (admins) — create shares and grant `read` / `write`
+2. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts
+3. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
 4. **System** (admins) — short notes on `DATA_ROOT` layout and quota scope
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
