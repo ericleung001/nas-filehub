@@ -42,15 +42,31 @@ Quota enforcement currently counts only the user’s **home** directory (shared 
 
 ## Quick start
 
+### First boot — admin password (required)
+
+There is **no emailed or printed default password**. On first start the seed admin is created from env:
+
+| Item | Value |
+|------|--------|
+| Username | `ADMIN_USER` (default **`admin`**) |
+| Password | **`ADMIN_PASSWORD`** — **you must set this yourself** before first run |
+
+1. Copy `.env.example` → `.env` and set a strong `ADMIN_PASSWORD` (and preferably `SESSION_SECRET`) **before** `docker compose up` / the first binary start.
+2. Sign in with that username and password.
+3. Change the password later under **Settings → Change password** (or reset another user from **Settings → Users**).
+
+`ADMIN_PASSWORD` is only used to **seed** the admin on an empty database. Changing `.env` later does **not** update an existing admin hash — use Settings (or recreate the DB if you are still in initial setup). Compose falls back to a weak placeholder if the variable is unset; always set `.env` yourself and never leave the placeholder in production.
+
 ### Docker Compose (recommended)
 
 ```bash
-cp .env.example .env   # set ADMIN_PASSWORD and SESSION_SECRET
+cp .env.example .env   # REQUIRED: set ADMIN_PASSWORD (and SESSION_SECRET) before first start
+# edit .env — replace ADMIN_PASSWORD=replace-me with your own strong password
 mkdir -p data/files data/db
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8088>.  
+Open <http://127.0.0.1:8088> and sign in as `admin` with the password you put in `.env`.  
 Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reverse proxy) in front.
 
 ### Local development
@@ -74,8 +90,8 @@ Or: `ADMIN_PASSWORD='your-password' make run` / `make smoke`.
 | `LISTEN_ADDR` | `:8080` | HTTP listen address |
 | `DATA_ROOT` | `/data/files` | File storage root |
 | `DB_PATH` | `/data/filehub.db` | SQLite database path |
-| `ADMIN_USER` | `admin` | Seed admin username (first boot) |
-| `ADMIN_PASSWORD` | _(required first boot)_ | Seed admin password |
+| `ADMIN_USER` | `admin` | Seed admin **username** on first boot only |
+| `ADMIN_PASSWORD` | _(required first boot)_ | Seed admin **password** — set in `.env` before first run; **not** emailed or shown; ignored after the admin already exists |
 | `SESSION_SECRET` | — | Recommended; session tokens are random and stored in DB |
 | `SECURE_COOKIES` | `false` | Set `true` behind HTTPS / NPM |
 | `THUMB_ENABLE` | `true` | Generate thumbs with ffmpeg |
@@ -131,11 +147,12 @@ Each release includes:
 # example: Linux amd64 from the latest release assets
 chmod +x nas-filehub-linux-amd64
 export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/thumbs
+# REQUIRED on first boot: choose your own password (nothing is emailed)
 export ADMIN_USER=admin ADMIN_PASSWORD='your-strong-password' LISTEN_ADDR=:8080
 ./nas-filehub-linux-amd64
 ```
 
-Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front).
+Sign in as `admin` with that password, then change it under **Settings → Change password**. Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front).
 
 ## Unraid + Intel VAAPI (optional)
 

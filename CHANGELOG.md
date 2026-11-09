@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-11-09
+
+### Changed
+- **Docs:** README and `.env.example` spell out first-boot admin setup — set `ADMIN_PASSWORD` in `.env` before `docker compose` / first run; default `ADMIN_USER=admin`; no password is emailed or printed; change later under Settings → Change password (env only seeds an empty DB).
+
 ## [0.3.6] - 2026-11-09
 
 ### Changed
@@ -110,7 +115,11 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/ericleung001/nas-filehub/compare/v0.3.6...v0.3.7
+[0.3.6]: https://github.com/ericleung001/nas-filehub/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/ericleung001/nas-filehub/compare/v0.3.4...v0.3.5
+[0.3.4]: https://github.com/ericleung001/nas-filehub/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/ericleung001/nas-filehub/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/ericleung001/nas-filehub/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ericleung001/nas-filehub/compare/v0.3.0...v0.3.1
