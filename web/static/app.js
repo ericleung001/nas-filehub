@@ -29,6 +29,15 @@ const state = {
   treeExpanded: new Set(['home:']),
   /** @type {Map<string, Array>} cached dir children for tree */
   treeChildren: new Map(),
+  /** @type {Set<string>} selected entry paths in current folder */
+  selected: new Set(),
+  /** @type {'move'|'copy'|null} */
+  transferMode: null,
+  /** pending share target { path, isDir, name } */
+  shareTarget: null,
+  /** public link token when on /s/:token */
+  publicToken: null,
+  publicPath: '',
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -60,10 +69,19 @@ function show(view) {
   $('#login-view').hidden = view !== 'login';
   $('#main-view').hidden = view !== 'main';
   $('#settings-view').hidden = view !== 'settings';
+  const pub = $('#public-share-view');
+  if (pub) pub.hidden = view !== 'public';
   if (view !== 'settings') stopPreviewMedia();
 }
 
 async function bootstrap() {
+  const m = location.pathname.match(/^\/s\/([a-fA-F0-9]+)\/?$/);
+  if (m) {
+    state.publicToken = m[1];
+    show('public');
+    await loadPublicShare();
+    return;
+  }
   try {
     const me = await api('/api/me');
     state.user = me.user;
@@ -330,6 +348,9 @@ document.querySelectorAll('.settings-nav-item').forEach((btn) => {
     if (tab === 'system') {
       try { await loadSystemSettings(); } catch (err) { console.error(err); }
     }
+    if (tab === 'links') {
+      try { await refreshLinks(); } catch (err) { console.error(err); }
+    }
   });
 });
 
@@ -589,9 +610,11 @@ async function loadList() {
   $('#file-input').disabled = !canWrite;
   renderBreadcrumbs();
   state.entries = data.entries || [];
+  state.selected.clear();
   applyViewMode();
   applySortControls();
   renderEntries(sortEntries(state.entries), canWrite);
+  updateBulkBar();
 }
 
 function applyViewMode() {
@@ -671,6 +694,17 @@ function appendEntryActions(container, e, canWrite, compact) {
     };
     container.appendChild(dl);
   }
+  const share = document.createElement('button');
+  share.type = 'button';
+  share.textContent = '🔗';
+  share.className = 'ghost';
+  share.title = 'Share link';
+  share.setAttribute('aria-label', 'Share link');
+  share.onclick = (ev) => {
+    ev.stopPropagation();
+    openShareDialog({ path: e.path, isDir: e.isDir, name: e.name });
+  };
+  container.appendChild(share);
   if (canWrite) {
     const ren = document.createElement('button');
     ren.type = 'button';
@@ -712,6 +746,46 @@ function markFolderDropTarget(el, folderPath) {
   el.classList.add('is-folder-drop');
 }
 
+function toggleSelect(path, on) {
+  if (on) state.selected.add(path);
+  else state.selected.delete(path);
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = $('#bulk-bar');
+  const n = state.selected.size;
+  if (!bar) return;
+  bar.hidden = n === 0;
+  const count = $('#bulk-count');
+  if (count) count.textContent = n + ' selected';
+  const shareBtn = $('#btn-bulk-share');
+  if (shareBtn) shareBtn.disabled = n !== 1;
+  const canWrite = state.perm === 'write';
+  ['btn-bulk-delete', 'btn-bulk-move'].forEach((id) => {
+    const el = $('#' + id);
+    if (el) el.disabled = !canWrite;
+  });
+  const sa = $('#select-all');
+  if (sa && state.entries) {
+    const total = state.entries.length;
+    sa.checked = total > 0 && n === total;
+    sa.indeterminate = n > 0 && n < total;
+  }
+}
+
+function makeCheckbox(e) {
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'row-check';
+  cb.checked = state.selected.has(e.path);
+  cb.title = 'Select';
+  cb.setAttribute('aria-label', 'Select ' + e.name);
+  cb.onclick = (ev) => ev.stopPropagation();
+  cb.onchange = () => toggleSelect(e.path, cb.checked);
+  return cb;
+}
+
 function renderEntries(entries, canWrite) {
   const body = $('#file-body');
   const grid = $('#files-grid');
@@ -726,18 +800,24 @@ function renderEntries(entries, canWrite) {
       grid.appendChild(empty);
     } else {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="5" class="empty-row muted">${canWrite ? 'Empty folder — drop files here to upload' : 'Empty folder'}</td>`;
+      tr.innerHTML = `<td colspan="6" class="empty-row muted">${canWrite ? 'Empty folder — drop files here to upload' : 'Empty folder'}</td>`;
       body.appendChild(tr);
     }
+    updateBulkBar();
     return;
   }
 
   if (state.viewMode === 'icons') {
     for (const e of entries) {
       const card = document.createElement('div');
-      card.className = 'file-card';
+      card.className = 'file-card' + (state.selected.has(e.path) ? ' selected' : '');
       card.title = e.name;
       if (e.isDir) markFolderDropTarget(card, e.path);
+
+      const checkWrap = document.createElement('label');
+      checkWrap.className = 'card-check';
+      checkWrap.onclick = (ev) => ev.stopPropagation();
+      checkWrap.appendChild(makeCheckbox(e));
 
       const thumb = document.createElement('div');
       thumb.className = 'thumb';
@@ -770,19 +850,23 @@ function renderEntries(entries, canWrite) {
       actions.onclick = (ev) => ev.stopPropagation();
       appendEntryActions(actions, e, canWrite, true);
 
+      card.appendChild(checkWrap);
       card.appendChild(thumb);
       card.appendChild(name);
       card.appendChild(actions);
       card.onclick = () => openEntry(e);
       grid.appendChild(card);
     }
+    updateBulkBar();
     return;
   }
 
   for (const e of entries) {
     const tr = document.createElement('tr');
     if (e.isDir) markFolderDropTarget(tr, e.path);
-    tr.innerHTML = `<td class="icon">${entryIcon(e)}</td><td class="name-cell"><div class="name-wrap"></div></td><td class="size-cell">${e.isDir ? '—' : fmtSize(e.size)}</td><td class="mod-cell">${new Date(e.modTime).toLocaleString()}</td><td class="row-actions"></td>`;
+    if (state.selected.has(e.path)) tr.classList.add('selected');
+    tr.innerHTML = `<td class="check-cell"></td><td class="icon">${entryIcon(e)}</td><td class="name-cell"><div class="name-wrap"></div></td><td class="size-cell">${e.isDir ? '—' : fmtSize(e.size)}</td><td class="mod-cell">${new Date(e.modTime).toLocaleString()}</td><td class="row-actions"></td>`;
+    tr.querySelector('.check-cell').appendChild(makeCheckbox(e));
     const nameWrap = tr.querySelector('.name-wrap');
     const nameBtn = document.createElement('button');
     nameBtn.className = 'name-btn';
@@ -793,6 +877,7 @@ function renderEntries(entries, canWrite) {
     appendEntryActions(tr.querySelector('.row-actions'), e, canWrite, false);
     body.appendChild(tr);
   }
+  updateBulkBar();
 }
 
 function stopPreviewMedia() {
@@ -1459,6 +1544,335 @@ $('#create-share').addEventListener('submit', async (e) => {
   });
   e.target.reset();
   await refreshAdmin();
+});
+
+
+/* ---- multi-select / bulk / link share / public ---- */
+
+const selectAllEl = $('#select-all');
+if (selectAllEl) {
+  selectAllEl.addEventListener('change', () => {
+    const on = selectAllEl.checked;
+    state.selected.clear();
+    if (on && state.entries) {
+      for (const e of state.entries) state.selected.add(e.path);
+    }
+    const canWrite = state.perm === 'write';
+    renderEntries(sortEntries(state.entries || []), canWrite);
+    updateBulkBar();
+  });
+}
+
+function selectedEntries() {
+  const set = state.selected;
+  return (state.entries || []).filter((e) => set.has(e.path));
+}
+
+$('#btn-bulk-clear')?.addEventListener('click', () => {
+  state.selected.clear();
+  const canWrite = state.perm === 'write';
+  renderEntries(sortEntries(state.entries || []), canWrite);
+  updateBulkBar();
+});
+
+$('#btn-bulk-delete')?.addEventListener('click', async () => {
+  const paths = [...state.selected];
+  if (!paths.length) return;
+  if (!confirm(`Delete ${paths.length} item(s)?`)) return;
+  try {
+    const res = await api('/api/batch/delete', {
+      method: 'POST',
+      body: JSON.stringify({ root: state.root, paths }),
+    });
+    if (res.failed && res.failed.length) {
+      alert('Some deletes failed:\n' + res.failed.map((f) => f.path + ': ' + f.error).join('\n'));
+    }
+    invalidateTreeCache(state.root);
+    await loadRoots();
+    await loadList();
+    try { await refreshMe(); } catch { /* ignore */ }
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+function openTransferDialog(mode) {
+  state.transferMode = mode;
+  const dlg = $('#transfer-dialog');
+  $('#transfer-title').textContent = mode === 'copy' ? 'Copy items' : 'Move items';
+  $('#transfer-submit').textContent = mode === 'copy' ? 'Copy' : 'Move';
+  $('#transfer-error').hidden = true;
+  const sel = $('#transfer-root');
+  sel.innerHTML = '';
+  for (const r of state.roots || []) {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = r.name + (r.perm === 'read' ? ' (read-only)' : '');
+    opt.disabled = r.perm !== 'write';
+    if (r.id === state.root) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  $('#transfer-path').value = state.path || '';
+  dlg.showModal();
+}
+
+$('#btn-bulk-move')?.addEventListener('click', () => openTransferDialog('move'));
+$('#btn-bulk-copy')?.addEventListener('click', () => openTransferDialog('copy'));
+
+$('#transfer-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const paths = [...state.selected];
+  if (!paths.length) return;
+  const destRoot = $('#transfer-root').value;
+  const destPath = $('#transfer-path').value.trim();
+  const errEl = $('#transfer-error');
+  errEl.hidden = true;
+  const endpoint = state.transferMode === 'copy' ? '/api/batch/copy' : '/api/batch/move';
+  try {
+    const res = await api(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ root: state.root, paths, destRoot, destPath }),
+    });
+    if (res.failed && res.failed.length) {
+      errEl.textContent = res.failed.map((f) => f.path + ': ' + f.error).join('; ');
+      errEl.hidden = false;
+      return;
+    }
+    $('#transfer-dialog').close();
+    invalidateTreeCache(state.root);
+    invalidateTreeCache(destRoot);
+    await loadRoots();
+    await loadList();
+    try { await refreshMe(); } catch { /* ignore */ }
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
+
+function openShareDialog(target) {
+  state.shareTarget = target;
+  $('#share-target').textContent = (target.isDir ? 'Folder: ' : 'File: ') + target.path;
+  $('#share-label').value = target.name || '';
+  $('#share-expires').value = '';
+  $('#share-password').value = '';
+  $('#share-error').hidden = true;
+  $('#share-result').hidden = true;
+  $('#share-form').hidden = false;
+  $('#share-dialog').showModal();
+}
+
+$('#btn-bulk-share')?.addEventListener('click', () => {
+  const items = selectedEntries();
+  if (items.length !== 1) return;
+  const e = items[0];
+  openShareDialog({ path: e.path, isDir: e.isDir, name: e.name });
+});
+
+function expiresToRFC3339(v) {
+  if (!v) return '';
+  const days = v === '1d' ? 1 : v === '7d' ? 7 : v === '30d' ? 30 : 0;
+  if (!days) return '';
+  return new Date(Date.now() + days * 86400000).toISOString();
+}
+
+$('#share-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const t = state.shareTarget;
+  if (!t) return;
+  const errEl = $('#share-error');
+  errEl.hidden = true;
+  try {
+    const res = await api('/api/links', {
+      method: 'POST',
+      body: JSON.stringify({
+        root: state.root,
+        path: t.path,
+        label: $('#share-label').value.trim(),
+        password: $('#share-password').value,
+        expiresAt: expiresToRFC3339($('#share-expires').value),
+      }),
+    });
+    const url = location.origin + (res.url || ('/s/' + res.link.token));
+    $('#share-url').value = url;
+    $('#share-form').hidden = true;
+    $('#share-result').hidden = false;
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+});
+
+$('#btn-copy-share-url')?.addEventListener('click', async () => {
+  const inp = $('#share-url');
+  try {
+    await navigator.clipboard.writeText(inp.value);
+    $('#btn-copy-share-url').textContent = 'Copied';
+    setTimeout(() => { $('#btn-copy-share-url').textContent = 'Copy URL'; }, 1500);
+  } catch {
+    inp.select();
+    document.execCommand('copy');
+  }
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function refreshLinks() {
+  const data = await api('/api/links');
+  const body = $('#link-list');
+  if (!body) return;
+  body.innerHTML = '';
+  const links = data.links || [];
+  if (!links.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4" class="muted">No link shares yet. Use the share button on a file or folder.</td>';
+    body.appendChild(tr);
+    return;
+  }
+  for (const l of links) {
+    const tr = document.createElement('tr');
+    const status = [];
+    if (l.revoked) status.push('revoked');
+    else if (l.expiresAt && new Date(l.expiresAt) < new Date()) status.push('expired');
+    else status.push('active');
+    if (l.hasPassword) status.push('password');
+    if (l.isDir) status.push('folder');
+    else status.push('file');
+    const url = location.origin + '/s/' + l.token;
+    tr.innerHTML =
+      '<td><strong>' + escapeHtml(l.label || '') + '</strong><div class="meta"><a href="' + url + '" target="_blank" rel="noopener">' + escapeHtml(url) + '</a></div></td>' +
+      '<td class="path-cell"><code>' + escapeHtml(l.rootId + ':' + l.path) + '</code></td>' +
+      '<td>' + status.map((s) => '<span class="badge">' + s + '</span>').join(' ') + '</td>' +
+      '<td class="row-actions"></td>';
+    const btns = tr.querySelector('.row-actions');
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'ghost';
+    copy.textContent = 'Copy';
+    copy.onclick = async () => {
+      try { await navigator.clipboard.writeText(url); copy.textContent = 'OK'; setTimeout(() => { copy.textContent = 'Copy'; }, 1000); } catch { /* ignore */ }
+    };
+    const rev = document.createElement('button');
+    rev.type = 'button';
+    rev.className = 'ghost danger';
+    rev.textContent = 'Revoke';
+    rev.disabled = !!l.revoked;
+    rev.onclick = async () => {
+      if (!confirm('Revoke this link?')) return;
+      await api('/api/links/' + l.id, { method: 'DELETE' });
+      await refreshLinks();
+    };
+    btns.appendChild(copy);
+    btns.appendChild(rev);
+    body.appendChild(tr);
+  }
+}
+
+async function loadPublicShare() {
+  const token = state.publicToken;
+  const errEl = $('#public-share-error');
+  errEl.hidden = true;
+  try {
+    const meta = await api('/api/public/links/' + token + '/meta');
+    $('#public-share-label').textContent = meta.label || meta.pathName || 'Shared item';
+    if (meta.needPassword) {
+      $('#public-share-unlock').hidden = false;
+      $('#public-share-browser').hidden = true;
+      return;
+    }
+    $('#public-share-unlock').hidden = true;
+    $('#public-share-browser').hidden = false;
+    await loadPublicList();
+  } catch (err) {
+    $('#public-share-label').textContent = 'Link unavailable';
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+    $('#public-share-unlock').hidden = true;
+    $('#public-share-browser').hidden = true;
+  }
+}
+
+async function loadPublicList() {
+  const token = state.publicToken;
+  const path = state.publicPath || '';
+  const data = await api('/api/public/links/' + token + '/list?path=' + encodeURIComponent(path));
+  const crumbs = $('#public-breadcrumbs');
+  crumbs.innerHTML = '';
+  const rootBtn = document.createElement('button');
+  rootBtn.type = 'button';
+  rootBtn.className = 'ghost';
+  rootBtn.textContent = 'Shared';
+  rootBtn.onclick = async () => { state.publicPath = ''; await loadPublicList(); };
+  crumbs.appendChild(rootBtn);
+  if (path) {
+    const parts = path.split('/');
+    let acc = '';
+    for (const part of parts) {
+      acc = acc ? acc + '/' + part : part;
+      const sep = document.createElement('span');
+      sep.textContent = ' / ';
+      crumbs.appendChild(sep);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ghost';
+      b.textContent = part;
+      const capture = acc;
+      b.onclick = async () => { state.publicPath = capture; await loadPublicList(); };
+      crumbs.appendChild(b);
+    }
+  }
+  const ul = $('#public-file-list');
+  ul.innerHTML = '';
+  for (const e of (data.entries || [])) {
+    const li = document.createElement('li');
+    const icon = e.isDir ? '📁' : e.kind === 'image' ? '🖼️' : e.kind === 'video' ? '🎬' : '📄';
+    const name = document.createElement('button');
+    name.type = 'button';
+    name.className = 'ghost name-btn';
+    name.textContent = icon + ' ' + e.name;
+    name.onclick = async () => {
+      if (e.isDir) {
+        state.publicPath = e.path;
+        await loadPublicList();
+      } else {
+        window.location = '/api/public/links/' + token + '/download?path=' + encodeURIComponent(e.path);
+      }
+    };
+    li.appendChild(name);
+    if (!e.isDir) {
+      const dl = document.createElement('a');
+      dl.href = '/api/public/links/' + token + '/download?path=' + encodeURIComponent(e.path);
+      dl.textContent = 'Download';
+      dl.className = 'ghost';
+      li.appendChild(dl);
+    }
+    ul.appendChild(li);
+  }
+  if (!(data.entries || []).length) {
+    const li = document.createElement('li');
+    li.className = 'muted';
+    li.textContent = 'Empty';
+    ul.appendChild(li);
+  }
+}
+
+$('#public-share-unlock')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = $('#public-share-error');
+  errEl.hidden = true;
+  const fd = new FormData(e.target);
+  try {
+    await api('/api/public/links/' + state.publicToken + '/unlock', {
+      method: 'POST',
+      body: JSON.stringify({ password: fd.get('password') }),
+    });
+    await loadPublicShare();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
 });
 
 bootstrap();

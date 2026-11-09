@@ -122,7 +122,10 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureUserColumns(); err != nil {
 		return err
 	}
-	return d.ensurePendingLoginColumns()
+	if err := d.ensurePendingLoginColumns(); err != nil {
+		return err
+	}
+	return d.ensureLinkShareTables()
 }
 
 func (d *DB) ensureUserColumns() error {
@@ -537,6 +540,7 @@ func (d *DB) CleanupSessions() {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, _ = d.SQL.Exec(`DELETE FROM sessions WHERE expires_at < ?`, now)
 	_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE expires_at < ?`, now)
+	d.CleanupLinkUnlocks()
 }
 
 func (d *DB) CreateShare(name, path string, createdBy int64) (*Share, error) {

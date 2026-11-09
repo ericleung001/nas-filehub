@@ -21,13 +21,15 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
-- **File ops** — browse, upload (with per-file progress), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps Name/Size/Modified/actions aligned (clickable headers); long names ellipsize; compact action icons keep Delete visible
+- **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password; recipients browse/download without an account; revoke anytime from Settings → Link shares
+- **File ops** — browse, upload (with per-file progress), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image preview and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
 - **Settings** — one top-bar entry; left vertical menu, right content panel
   - **Account** — username, home, quota used/limit
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
+  - **Link shares** — list and revoke public links you created (admins see all)
   - **Users / Shares / System** (admins only) — user/share tables; System includes Force 2FA and **password policy** (min length, letters/digits/symbols)
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
@@ -88,9 +90,10 @@ Sign in → **Settings** (single top-bar button):
 1. **Account** (everyone) — username, admin badge (if any), home path, storage used / quota
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
-4. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts; per-user require 2FA
-5. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
-6. **System** (admins) — `DATA_ROOT` notes; **Force 2FA for all users**; **Password policy** (minimum length, require letters / digits / symbols). Saving a tighter policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
+4. **Link shares** — copy or revoke public file/folder links
+5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set quota; reset passwords; disable accounts; per-user require 2FA
+6. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
+7. **System** (admins) — `DATA_ROOT` notes; **Force 2FA for all users**; **Password policy** (minimum length, require letters / digits / symbols). Saving a tighter policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -105,6 +108,29 @@ Disabled users cannot log in. Uploads / mkdir that would exceed home quota are r
 5. Set `SECURE_COOKIES=true`
 
 **Do not** port-forward the app port directly to the public internet.
+
+
+## Releases
+
+Tagged releases are published on GitHub: [ericleung001/nas-filehub/releases](https://github.com/ericleung001/nas-filehub/releases).
+
+Each release includes:
+
+- **Changelog** notes for that version
+- **Downloadable binaries** for Linux (amd64), and often Windows/macOS when built for that tag
+- **Docker** install notes (see Quick start — `docker compose up -d --build` from the tagged source)
+
+### Install from a release binary
+
+```bash
+# example: Linux amd64 from the latest release assets
+chmod +x nas-filehub-linux-amd64
+export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/thumbs
+export ADMIN_USER=admin ADMIN_PASSWORD='your-strong-password' LISTEN_ADDR=:8080
+./nas-filehub-linux-amd64
+```
+
+Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front).
 
 ## Unraid + Intel VAAPI (optional)
 

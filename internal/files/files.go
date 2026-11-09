@@ -234,3 +234,126 @@ func DirSize(root, rel string) (int64, error) {
 	return total, err
 }
 
+
+// CopyEntry copies a file or directory from srcRoot/srcRel to dstRoot/dstNameRel
+// (dstNameRel is the full destination path including the final name).
+func CopyEntry(srcRoot, srcRel, dstRoot, dstNameRel string) error {
+	src, err := SafeJoin(srcRoot, srcRel)
+	if err != nil {
+		return err
+	}
+	dst, err := SafeJoin(dstRoot, dstNameRel)
+	if err != nil {
+		return err
+	}
+	st, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	// Prevent copying a directory into itself or a subdirectory.
+	if st.IsDir() {
+		absSrc, _ := filepath.Abs(src)
+		absDst, _ := filepath.Abs(dst)
+		if absDst == absSrc || strings.HasPrefix(absDst+string(os.PathSeparator), absSrc+string(os.PathSeparator)) {
+			return fmt.Errorf("cannot copy a folder into itself")
+		}
+	}
+	if st.IsDir() {
+		return copyDir(src, dst)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return copyFile(src, dst, st.Mode())
+}
+
+// MoveEntry moves src to dst (full dest path including name). Same-root uses rename;
+// cross-root copies then deletes.
+func MoveEntry(srcRoot, srcRel, dstRoot, dstNameRel string) error {
+	src, err := SafeJoin(srcRoot, srcRel)
+	if err != nil {
+		return err
+	}
+	dst, err := SafeJoin(dstRoot, dstNameRel)
+	if err != nil {
+		return err
+	}
+	if src == dst {
+		return nil
+	}
+	st, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if st.IsDir() {
+		absSrc, _ := filepath.Abs(src)
+		absDst, _ := filepath.Abs(dst)
+		if absDst == absSrc || strings.HasPrefix(absDst+string(os.PathSeparator), absSrc+string(os.PathSeparator)) {
+			return fmt.Errorf("cannot move a folder into itself")
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	// Cross-device fallback
+	if err := CopyEntry(srcRoot, srcRel, dstRoot, dstNameRel); err != nil {
+		return err
+	}
+	return Delete(srcRoot, srcRel)
+}
+
+func copyFile(src, dst string, mode fs.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm())
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+func copyDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		s := filepath.Join(src, e.Name())
+		d := filepath.Join(dst, e.Name())
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		if e.IsDir() {
+			if err := copyDir(s, d); err != nil {
+				return err
+			}
+			continue
+		}
+		if e.Type()&fs.ModeSymlink != 0 {
+			continue
+		}
+		if err := copyFile(s, d, info.Mode()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EntrySize returns size of a file, or recursive dir size for quota checks.
+func EntrySize(root, rel string) (int64, error) {
+	return DirSize(root, rel)
+}

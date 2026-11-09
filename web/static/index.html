@@ -79,6 +79,14 @@
               <button id="btn-refresh" class="ghost">Refresh</button>
             </div>
           </div>
+          <div id="bulk-bar" class="bulk-bar" hidden>
+            <span id="bulk-count" class="muted">0 selected</span>
+            <button type="button" id="btn-bulk-delete" class="ghost danger">Delete</button>
+            <button type="button" id="btn-bulk-move" class="ghost">Move…</button>
+            <button type="button" id="btn-bulk-copy" class="ghost">Copy…</button>
+            <button type="button" id="btn-bulk-share" class="ghost">Share link…</button>
+            <button type="button" id="btn-bulk-clear" class="ghost">Clear</button>
+          </div>
           <div id="upload-status" class="upload-status" hidden>
             <div class="upload-status-head">
               <strong>Uploads</strong>
@@ -90,6 +98,7 @@
             <div id="drop-hint" class="drop-hint" hidden>Drop files to upload here</div>
             <table class="files" id="files-table">
               <colgroup>
+                <col class="col-check" />
                 <col class="col-icon" />
                 <col class="col-name" />
                 <col class="col-size" />
@@ -98,6 +107,7 @@
               </colgroup>
               <thead>
                 <tr>
+                  <th class="check-h"><input type="checkbox" id="select-all" title="Select all" aria-label="Select all" /></th>
                   <th class="icon-h" aria-hidden="true"></th>
                   <th class="name-h"><button type="button" class="th-sort" data-sort="name" title="Sort by name">Name</button></th>
                   <th class="size-h"><button type="button" class="th-sort" data-sort="size" title="Sort by size">Size</button></th>
@@ -125,6 +135,7 @@
           <button type="button" class="settings-nav-item active" data-tab="account">Account</button>
           <button type="button" class="settings-nav-item" data-tab="password">Change password</button>
           <button type="button" class="settings-nav-item" data-tab="2fa">2FA</button>
+          <button type="button" class="settings-nav-item" data-tab="links">Link shares</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="users" hidden>Users</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="shares" hidden>Shares</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="system" hidden>System</button>
@@ -177,6 +188,31 @@
                 <p id="totp-disable-msg" class="muted" hidden></p>
               </form>
               <p id="totp-msg" class="muted" hidden></p>
+            </div>
+          </div>
+          <div id="tab-links" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section">
+              <h3>Link shares</h3>
+              <p class="muted">Public links you created for files or folders. Recipients do not need an account. Revoke to disable a link immediately.</p>
+              <div class="admin-table-wrap">
+                <table class="admin-table" aria-label="Link shares">
+                  <colgroup>
+                    <col class="col-share-name" />
+                    <col class="col-share-path" />
+                    <col class="col-share-grants" />
+                    <col class="col-actions" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">Label</th>
+                      <th scope="col" class="path-h">Target</th>
+                      <th scope="col">Status</th>
+                      <th scope="col" class="actions-h">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="link-list"></tbody>
+                </table>
+              </div>
             </div>
           </div>
           <div id="tab-users" class="settings-panel" role="tabpanel" hidden>
@@ -299,10 +335,65 @@
       </div>
     </section>
 
+  <dialog id="transfer-dialog">
+    <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
+    <h3 id="transfer-title">Move items</h3>
+    <form id="transfer-form" class="admin-form">
+      <label>Destination root
+        <select id="transfer-root"></select>
+      </label>
+      <label>Destination folder path
+        <input id="transfer-path" placeholder="blank = root of selected destination" />
+      </label>
+      <button type="submit" id="transfer-submit">Move</button>
+      <p id="transfer-error" class="error" hidden></p>
+    </form>
+  </dialog>
+
+  <dialog id="share-dialog">
+    <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
+    <h3>Share link</h3>
+    <form id="share-form" class="admin-form">
+      <p id="share-target" class="meta"></p>
+      <label>Label (optional)<input id="share-label" placeholder="display name" /></label>
+      <label>Expires
+        <select id="share-expires">
+          <option value="">Never</option>
+          <option value="1d">1 day</option>
+          <option value="7d">7 days</option>
+          <option value="30d">30 days</option>
+        </select>
+      </label>
+      <label>Password (optional)<input id="share-password" type="password" autocomplete="new-password" /></label>
+      <button type="submit">Create link</button>
+      <p id="share-error" class="error" hidden></p>
+    </form>
+    <div id="share-result" hidden>
+      <p class="muted">Copy this link. Anyone with it can download / browse (read-only).</p>
+      <input id="share-url" readonly />
+      <button type="button" id="btn-copy-share-url" class="ghost">Copy URL</button>
+    </div>
+  </dialog>
+
   <dialog id="preview">
     <form method="dialog"><button class="close">✕</button></form>
     <div id="preview-body"></div>
   </dialog>
+
+  <section id="public-share-view" class="panel center" hidden>
+    <h1>Filehub</h1>
+    <p id="public-share-label" class="muted"></p>
+    <form id="public-share-unlock" hidden>
+      <p class="muted">This link is password-protected.</p>
+      <label>Password<input name="password" type="password" required /></label>
+      <button type="submit">Unlock</button>
+      <p id="public-share-error" class="error" hidden></p>
+    </form>
+    <div id="public-share-browser" hidden>
+      <nav id="public-breadcrumbs" class="public-crumbs"></nav>
+      <ul id="public-file-list" class="public-file-list"></ul>
+    </div>
+  </section>
 
   <script src="/app.js"></script>
 </body>
