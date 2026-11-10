@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-11-10
+
+### Changed
+- **Move and Copy** — destination is chosen with a folder picker instead of typing a path. After picking a writable destination (My Files or a shared folder you can write to), browse folders with a breadcrumb, **Up**, and a scrollable folder list. The current location is **This folder** (same as a blank path in earlier versions). Read-only shares are not listed as destinations. The dialog blocks moving or copying a folder into itself or a subfolder. Existing `/api/batch/move` and `/api/batch/copy` requests are unchanged. Copy can start from a read-only folder; Move still requires Allow delete (or owner/admin) on the source.
+
 ## [0.3.15] - 2026-11-10
 
 ### Added
@@ -177,7 +182,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.15...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.16...HEAD
+[0.3.16]: https://github.com/ericleung001/nas-filehub/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/ericleung001/nas-filehub/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/ericleung001/nas-filehub/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/ericleung001/nas-filehub/compare/v0.3.12...v0.3.13

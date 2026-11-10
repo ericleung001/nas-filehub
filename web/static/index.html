@@ -466,12 +466,12 @@
     <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
     <h3 id="transfer-title">Move items</h3>
     <form id="transfer-form" class="admin-form">
-      <label>Destination root
+      <label>Destination
         <select id="transfer-root"></select>
       </label>
-      <label>Destination folder path
-        <input id="transfer-path" placeholder="blank = root of selected destination" />
-      </label>
+      <nav id="transfer-crumbs" class="transfer-crumbs" aria-label="Destination path"></nav>
+      <p id="transfer-dest-hint" class="meta"></p>
+      <div id="transfer-folders" class="transfer-folders" role="listbox" aria-label="Folders"></div>
       <button type="submit" id="transfer-submit">Move</button>
       <p id="transfer-error" class="error" hidden></p>
     </form>

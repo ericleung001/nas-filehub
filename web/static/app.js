@@ -34,6 +34,8 @@ const state = {
   selected: new Set(),
   /** @type {'move'|'copy'|null} */
   transferMode: null,
+  transferDestRoot: 'home',
+  transferDestPath: '',
   /** pending share target { path, isDir, name } */
   shareTarget: null,
   /** true while POST /api/links is in flight */
@@ -896,8 +898,8 @@ function updateBulkBar() {
   if (count) count.textContent = n + ' selected';
   const shareBtn = $('#btn-bulk-share');
   if (shareBtn) shareBtn.disabled = n !== 1;
-  const canWrite = state.perm === 'write';
   const canDelete = !!state.canDelete;
+
   ['btn-bulk-delete', 'btn-bulk-move'].forEach((id) => {
     const el = $('#' + id);
     if (!el) return;
@@ -905,7 +907,8 @@ function updateBulkBar() {
     el.disabled = !canDelete;
   });
   const copyBtn = $('#btn-bulk-copy');
-  if (copyBtn) copyBtn.disabled = !canWrite;
+  // Copy only needs write on the destination, which the picker lists.
+  if (copyBtn) copyBtn.disabled = false;
   const sa = $('#select-all');
   if (sa && state.entries) {
     const total = state.entries.length;
@@ -2127,40 +2130,223 @@ $('#btn-bulk-delete')?.addEventListener('click', async () => {
   }
 });
 
-function openTransferDialog(mode) {
+function transferRootName(id) {
+  const r = (state.roots || []).find((x) => x.id === id);
+  return r ? r.name : (id || 'Destination');
+}
+
+function transferNormalizePath(p) {
+  return String(p || '').replace(/^\/+|\/+$/g, '');
+}
+
+function transferParentPath(path) {
+  const norm = transferNormalizePath(path);
+  if (!norm) return '';
+  const i = norm.lastIndexOf('/');
+  return i === -1 ? '' : norm.slice(0, i);
+}
+
+function transferDestLabel() {
+  const name = transferRootName(state.transferDestRoot);
+  const path = transferNormalizePath(state.transferDestPath);
+  if (!path) return name;
+  return name + ' / ' + path.split('/').join(' / ');
+}
+
+/** Returns a selected folder path if dest is that folder or a descendant of it. */
+function transferSelfTarget() {
+  if (state.transferDestRoot !== state.root) return null;
+  const dest = transferNormalizePath(state.transferDestPath);
+  for (const p of state.selected) {
+    const src = transferNormalizePath(p);
+    if (!src) continue;
+    if (dest === src || dest.startsWith(src + '/')) return src;
+  }
+  return null;
+}
+
+function renderTransferCrumbs() {
+  const nav = $('#transfer-crumbs');
+  if (!nav) return;
+  nav.innerHTML = '';
+  const rootId = state.transferDestRoot;
+  const path = transferNormalizePath(state.transferDestPath);
+  const parts = path ? path.split('/') : [];
+  const addSep = () => {
+    const sep = document.createElement('span');
+    sep.className = 'transfer-crumb-sep';
+    sep.textContent = '/';
+    sep.setAttribute('aria-hidden', 'true');
+    nav.appendChild(sep);
+  };
+  const addCrumb = (label, destPath, isCurrent) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ghost transfer-crumb';
+    btn.textContent = label;
+    btn.title = label;
+    if (isCurrent) {
+      btn.setAttribute('aria-current', 'location');
+    } else {
+      btn.addEventListener('click', () => {
+        state.transferDestPath = destPath;
+        $('#transfer-error').hidden = true;
+        loadTransferFolders();
+      });
+    }
+    nav.appendChild(btn);
+  };
+  addCrumb(transferRootName(rootId), '', parts.length === 0);
+  let acc = '';
+  parts.forEach((part, i) => {
+    acc = acc ? acc + '/' + part : part;
+    addSep();
+    addCrumb(part, acc, i === parts.length - 1);
+  });
+}
+
+function renderTransferFolderList(dirs) {
+  const box = $('#transfer-folders');
+  box.innerHTML = '';
+  const current = document.createElement('p');
+  current.className = 'transfer-folder-current';
+  current.setAttribute('role', 'option');
+  current.setAttribute('aria-selected', 'true');
+  current.innerHTML = '<span aria-hidden="true">✓</span><span class="transfer-folder-name">This folder</span>';
+  box.appendChild(current);
+  const destPath = transferNormalizePath(state.transferDestPath);
+  if (destPath) {
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'ghost transfer-folder-btn';
+    up.innerHTML = '<span aria-hidden="true">↑</span><span class="transfer-folder-name">Up</span>';
+    up.addEventListener('click', () => {
+      state.transferDestPath = transferParentPath(destPath);
+      $('#transfer-error').hidden = true;
+      loadTransferFolders();
+    });
+    box.appendChild(up);
+  }
+  if (!dirs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'meta transfer-folders-empty';
+    empty.textContent = destPath ? 'No subfolders in this folder.' : 'No folders in this location.';
+    box.appendChild(empty);
+    return;
+  }
+  for (const d of dirs) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ghost transfer-folder-btn';
+    btn.setAttribute('role', 'option');
+    const name = document.createElement('span');
+    name.className = 'transfer-folder-name';
+    name.textContent = d.name;
+    const icon = document.createElement('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '📁';
+    btn.appendChild(icon);
+    btn.appendChild(name);
+    btn.title = d.name;
+    btn.addEventListener('click', () => {
+      state.transferDestPath = transferNormalizePath(d.path || (destPath ? destPath + '/' + d.name : d.name));
+      $('#transfer-error').hidden = true;
+      loadTransferFolders();
+    });
+    box.appendChild(btn);
+  }
+}
+
+let transferListGen = 0;
+
+async function loadTransferFolders() {
+  const gen = ++transferListGen;
+  const box = $('#transfer-folders');
+  const hint = $('#transfer-dest-hint');
+  const errEl = $('#transfer-error');
+  hint.textContent = 'Destination: ' + transferDestLabel();
+  renderTransferCrumbs();
+  box.innerHTML = '<p class="meta transfer-folders-empty">Loading…</p>';
+  try {
+    const data = await api(`/api/list?root=${encodeURIComponent(state.transferDestRoot)}&path=${encodeURIComponent(state.transferDestPath || '')}`);
+    if (gen !== transferListGen) return;
+    const dirs = (data.entries || []).filter((e) => e.isDir).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    renderTransferFolderList(dirs);
+  } catch (err) {
+    if (gen !== transferListGen) return;
+    box.innerHTML = '<p class="meta transfer-folders-empty">Could not load folders.</p>';
+    errEl.textContent = err.message;
+    errEl.hidden = false;
+  }
+}
+
+async function openTransferDialog(mode) {
   if (mode === 'move' && !state.canDelete) return;
-  if (mode === 'copy' && state.perm !== 'write') return;
   state.transferMode = mode;
   const dlg = $('#transfer-dialog');
   $('#transfer-title').textContent = mode === 'copy' ? 'Copy items' : 'Move items';
   $('#transfer-submit').textContent = mode === 'copy' ? 'Copy' : 'Move';
-  $('#transfer-error').hidden = true;
+  const errEl = $('#transfer-error');
+  errEl.hidden = true;
+  errEl.textContent = '';
+  try {
+    const data = await api('/api/roots');
+    if (data && Array.isArray(data.roots)) state.roots = data.roots;
+  } catch { /* keep cached roots */ }
+  const writable = (state.roots || []).filter((r) => r.perm === 'write');
   const sel = $('#transfer-root');
   sel.innerHTML = '';
-  for (const r of state.roots || []) {
+  if (!writable.length) {
+    state.transferDestRoot = '';
+    state.transferDestPath = '';
+    $('#transfer-crumbs').innerHTML = '';
+    $('#transfer-dest-hint').textContent = '';
+    $('#transfer-folders').innerHTML = '';
+    errEl.textContent = 'No writable destination is available.';
+    errEl.hidden = false;
+    dlg.showModal();
+    return;
+  }
+  const preferred = writable.some((r) => r.id === state.root) ? state.root : writable[0].id;
+  for (const r of writable) {
     const opt = document.createElement('option');
     opt.value = r.id;
-    opt.textContent = r.name + (r.perm === 'read' ? ' (read-only)' : '');
-    opt.disabled = r.perm !== 'write';
-    if (r.id === state.root) opt.selected = true;
+    opt.textContent = r.name;
+    if (r.id === preferred) opt.selected = true;
     sel.appendChild(opt);
   }
-  $('#transfer-path').value = state.path || '';
+  state.transferDestRoot = preferred;
+  state.transferDestPath = preferred === state.root ? (state.path || '') : '';
+  await loadTransferFolders();
   dlg.showModal();
 }
 
 $('#btn-bulk-move')?.addEventListener('click', () => openTransferDialog('move'));
 $('#btn-bulk-copy')?.addEventListener('click', () => openTransferDialog('copy'));
 
+$('#transfer-root')?.addEventListener('change', () => {
+  state.transferDestRoot = $('#transfer-root').value;
+  state.transferDestPath = '';
+  $('#transfer-error').hidden = true;
+  loadTransferFolders();
+});
+
 $('#transfer-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const paths = [...state.selected];
   if (!paths.length) return;
   if (state.transferMode === 'move' && !state.canDelete) return;
-  const destRoot = $('#transfer-root').value;
-  const destPath = $('#transfer-path').value.trim();
+  const destRoot = state.transferDestRoot || $('#transfer-root').value;
+  const destPath = transferNormalizePath(state.transferDestPath);
   const errEl = $('#transfer-error');
   errEl.hidden = true;
+  const selfTarget = transferSelfTarget();
+  if (selfTarget) {
+    const verb = state.transferMode === 'copy' ? 'copy' : 'move';
+    errEl.textContent = 'Cannot ' + verb + ' a folder into itself or one of its subfolders.';
+    errEl.hidden = false;
+    return;
+  }
   const endpoint = state.transferMode === 'copy' ? '/api/batch/copy' : '/api/batch/move';
   try {
     const res = await api(endpoint, {
@@ -2168,7 +2354,12 @@ $('#transfer-form')?.addEventListener('submit', async (e) => {
       body: JSON.stringify({ root: state.root, paths, destRoot, destPath }),
     });
     if (res.failed && res.failed.length) {
-      errEl.textContent = res.failed.map((f) => f.path + ': ' + f.error).join('; ');
+      errEl.textContent = res.failed.map((f) => {
+        const msg = f.error === 'cannot move/copy into itself'
+          ? 'cannot ' + (state.transferMode === 'copy' ? 'copy' : 'move') + ' a folder into itself or one of its subfolders'
+          : f.error;
+        return f.path + ': ' + msg;
+      }).join('; ');
       errEl.hidden = false;
       return;
     }
