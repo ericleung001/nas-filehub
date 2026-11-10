@@ -37,6 +37,10 @@ const state = {
   shareTarget: null,
   /** true while POST /api/links is in flight */
   shareCreating: false,
+  /** @type {Array} cached admin user list for share grants */
+  adminUsers: [],
+  /** @type {Array} cached admin share list */
+  adminShares: [],
   /** public link token when on /s/:token */
   publicToken: null,
   publicPath: '',
@@ -1650,10 +1654,128 @@ $('#password-policy-form').addEventListener('submit', async (e) => {
   }
 });
 
+function grantUserName(userId) {
+  const u = (state.adminUsers || []).find((x) => Number(x.id) === Number(userId));
+  return u ? u.username : ('user#' + userId);
+}
+
+function renderShareGrantList(s) {
+  const grants = s.grants || [];
+  if (!grants.length) return '<span class="muted">No grants</span>';
+  return '<div class="grant-list">' + grants.map((g) => {
+    const name = escapeHtml(g.username || grantUserName(g.userId));
+    const readSel = g.perm === 'read' ? ' selected' : '';
+    const writeSel = g.perm === 'write' ? ' selected' : '';
+    return '<div class="grant-row">' +
+      '<span class="grant-name" title="' + name + '">' + name + '</span>' +
+      '<select class="grant-perm" data-share-id="' + s.id + '" data-user-id="' + g.userId + '" aria-label="Permission for ' + name + '">' +
+        '<option value="read"' + readSel + '>Read</option>' +
+        '<option value="write"' + writeSel + '>Write</option>' +
+      '</select>' +
+      '<button type="button" class="ghost danger grant-revoke" data-share-id="' + s.id + '" data-user-id="' + g.userId + '" data-username="' + name + '" title="Revoke grant">Revoke</button>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+function fillGrantUserSelect(share) {
+  const sel = $('#share-grant-user');
+  if (!sel) return;
+  const granted = new Set((share.grants || []).map((g) => Number(g.userId)));
+  const users = (state.adminUsers || []).filter((u) => !u.disabled && !granted.has(Number(u.id)));
+  sel.innerHTML = '';
+  if (!users.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No users available';
+    sel.appendChild(opt);
+    sel.disabled = true;
+    const submit = $('#share-grant-form') && $('#share-grant-form').querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Select a user';
+  sel.appendChild(placeholder);
+  for (const u of users) {
+    const opt = document.createElement('option');
+    opt.value = String(u.id);
+    opt.textContent = u.username + (u.isAdmin ? ' (admin)' : '');
+    sel.appendChild(opt);
+  }
+  const submit = $('#share-grant-form') && $('#share-grant-form').querySelector('button[type="submit"]');
+  if (submit) submit.disabled = false;
+}
+
+function renderDialogGrants(share) {
+  const box = $('#share-grant-current');
+  const empty = $('#share-grant-empty');
+  if (!box || !empty) return;
+  const grants = share.grants || [];
+  if (!grants.length) {
+    box.innerHTML = '';
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  box.innerHTML = renderShareGrantList(share);
+}
+
+function openShareGrantDialog(share) {
+  state.grantShareId = share.id;
+  const dlg = $('#share-grant-dialog');
+  if (!dlg) return;
+  const title = $('#share-grant-title');
+  if (title) title.textContent = 'Grant access';
+  const target = $('#share-grant-target');
+  if (target) target.textContent = (share.name || '') + (share.path ? ' — ' + share.path : '');
+  const form = $('#share-grant-form');
+  if (form) {
+    form.shareId.value = share.id;
+    form.perm.value = 'read';
+  }
+  const err = $('#share-grant-error');
+  if (err) { err.hidden = true; err.textContent = ''; err.classList.remove('error'); }
+  fillGrantUserSelect(share);
+  renderDialogGrants(share);
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.setAttribute('open', '');
+}
+
+async function afterShareGrantChange(shareId) {
+  await refreshAdmin();
+  try { await loadRoots(); } catch { /* ignore */ }
+  const dlg = $('#share-grant-dialog');
+  if (dlg && dlg.open) {
+    const s = (state.adminShares || []).find((x) => Number(x.id) === Number(shareId));
+    if (s) {
+      fillGrantUserSelect(s);
+      renderDialogGrants(s);
+    } else {
+      dlg.close();
+    }
+  }
+}
+
+async function changeShareGrantPerm(shareId, userId, perm) {
+  await api('/api/admin/shares/' + shareId + '/grants', {
+    method: 'POST',
+    body: JSON.stringify({ userId: Number(userId), perm }),
+  });
+  await afterShareGrantChange(shareId);
+}
+
+async function revokeShareGrant(shareId, userId, username) {
+  const who = username || grantUserName(userId);
+  if (!confirm('Revoke ' + who + "'s access to this share?")) return;
+  await api('/api/admin/shares/' + shareId + '/grants?userId=' + encodeURIComponent(userId), { method: 'DELETE' });
+  await afterShareGrantChange(shareId);
+}
+
 async function refreshAdmin() {
   const users = await api('/api/admin/users');
-  const byId = {};
-  for (const u of users.users) byId[u.id] = u.username;
+  state.adminUsers = users.users || [];
   const ul = $('#user-list');
   ul.innerHTML = '';
   for (const u of users.users) {
@@ -1681,9 +1803,9 @@ async function refreshAdmin() {
         ${quota ? `<div class="quota-bar${used > quota ? ' over' : ''}"><span style="width:${pct}%"></span></div>` : ''}
       </td>
       <td class="status-cell">${badges.join(' ')}</td>
-      <td class="row-actions"></td>
+      <td class="row-actions"><div class="row-actions-inner"></div></td>
     `;
-    const btns = tr.querySelector('.row-actions');
+    const btns = tr.querySelector('.row-actions-inner');
     const edit = document.createElement('button');
     edit.textContent = 'Edit';
     edit.className = 'ghost';
@@ -1717,36 +1839,26 @@ async function refreshAdmin() {
   }
 
   const shares = await api('/api/admin/shares');
+  state.adminShares = shares.shares || [];
   const sl = $('#share-list');
   sl.innerHTML = '';
   for (const s of shares.shares) {
     const tr = document.createElement('tr');
-    const grants = (s.grants || []).map((g) => {
-      const name = byId[g.userId] || ('user#' + g.userId);
-      return `<span class="grant-chip">${name}:${g.perm}</span>`;
-    }).join(' ') || '<span class="muted">no grants</span>';
     tr.innerHTML = `
       <td class="share-name-cell"><div class="user-name" title="${s.name}">${s.name}</div><div class="meta">#${s.id}</div></td>
       <td class="home-cell"><code title="${s.path}">${s.path}</code></td>
-      <td class="grants-cell">${grants}</td>
+      <td class="grants-cell">${renderShareGrantList(s)}</td>
       <td class="row-actions"></td>
     `;
     const btns = tr.querySelector('.row-actions');
     const grantBtn = document.createElement('button');
+    grantBtn.type = 'button';
     grantBtn.textContent = 'Grant';
     grantBtn.className = 'ghost';
     grantBtn.title = 'Grant access';
-    grantBtn.onclick = async () => {
-      const userId = Number(prompt('User ID'));
-      const perm = prompt('perm: read or write', 'read');
-      if (!userId || !perm) return;
-      await api(`/api/admin/shares/${s.id}/grants`, {
-        method: 'POST',
-        body: JSON.stringify({ userId, perm }),
-      });
-      await refreshAdmin();
-    };
+    grantBtn.onclick = () => openShareGrantDialog(s);
     const del = document.createElement('button');
+    del.type = 'button';
     del.textContent = 'Del';
     del.className = 'ghost danger';
     del.title = 'Delete share';
@@ -1764,6 +1876,88 @@ async function refreshAdmin() {
     tr.innerHTML = '<td colspan="4" class="empty-row muted">No shared folders</td>';
     sl.appendChild(tr);
   }
+}
+
+const shareListBody = $('#share-list');
+if (shareListBody && !shareListBody.dataset.grantBound) {
+  shareListBody.dataset.grantBound = '1';
+  shareListBody.addEventListener('change', async (e) => {
+    const sel = e.target.closest && e.target.closest('select.grant-perm');
+    if (!sel) return;
+    const shareId = sel.getAttribute('data-share-id');
+    const userId = sel.getAttribute('data-user-id');
+    const perm = sel.value;
+    sel.disabled = true;
+    try {
+      await changeShareGrantPerm(shareId, userId, perm);
+    } catch (err) {
+      alert(err.message || 'Could not update grant');
+      await refreshAdmin();
+    }
+  });
+  shareListBody.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('button.grant-revoke');
+    if (!btn) return;
+    try {
+      await revokeShareGrant(btn.getAttribute('data-share-id'), btn.getAttribute('data-user-id'), btn.getAttribute('data-username'));
+    } catch (err) {
+      alert(err.message || 'Could not revoke grant');
+    }
+  });
+}
+const shareGrantCurrent = $('#share-grant-current');
+if (shareGrantCurrent && !shareGrantCurrent.dataset.grantBound) {
+  shareGrantCurrent.dataset.grantBound = '1';
+  shareGrantCurrent.addEventListener('change', async (e) => {
+    const sel = e.target.closest && e.target.closest('select.grant-perm');
+    if (!sel) return;
+    sel.disabled = true;
+    try {
+      await changeShareGrantPerm(sel.getAttribute('data-share-id'), sel.getAttribute('data-user-id'), sel.value);
+    } catch (err) {
+      alert(err.message || 'Could not update grant');
+      await refreshAdmin();
+    }
+  });
+  shareGrantCurrent.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('button.grant-revoke');
+    if (!btn) return;
+    try {
+      await revokeShareGrant(btn.getAttribute('data-share-id'), btn.getAttribute('data-user-id'), btn.getAttribute('data-username'));
+    } catch (err) {
+      alert(err.message || 'Could not revoke grant');
+    }
+  });
+}
+const shareGrantForm = $('#share-grant-form');
+if (shareGrantForm && !shareGrantForm.dataset.bound) {
+  shareGrantForm.dataset.bound = '1';
+  shareGrantForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = $('#share-grant-error');
+    if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+    const shareId = Number(shareGrantForm.shareId.value);
+    const userId = Number(shareGrantForm.userId.value);
+    const perm = shareGrantForm.perm.value;
+    if (!shareId || !userId) {
+      if (errEl) { errEl.textContent = 'Select a user'; errEl.hidden = false; }
+      return;
+    }
+    const submit = shareGrantForm.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+      await api('/api/admin/shares/' + shareId + '/grants', {
+        method: 'POST',
+        body: JSON.stringify({ userId, perm }),
+      });
+      shareGrantForm.userId.value = '';
+      await afterShareGrantChange(shareId);
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message || 'Could not add grant'; errEl.hidden = false; }
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
 }
 
 $('#create-user').addEventListener('submit', async (e) => {
@@ -2054,6 +2248,58 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function selectedLinkIds() {
+  return [...document.querySelectorAll('#link-list .link-check:checked')]
+    .map((el) => Number(el.value))
+    .filter((id) => id > 0);
+}
+
+function updateLinksSelection() {
+  const boxes = [...document.querySelectorAll('#link-list .link-check')];
+  const checked = boxes.filter((b) => b.checked);
+  const btn = $('#btn-links-bulk-delete');
+  if (btn) btn.disabled = checked.length === 0;
+  const all = $('#link-select-all');
+  if (all) {
+    all.disabled = boxes.length === 0;
+    all.indeterminate = checked.length > 0 && checked.length < boxes.length;
+    all.checked = boxes.length > 0 && checked.length === boxes.length;
+  }
+}
+
+async function deleteSelectedLinks() {
+  const ids = selectedLinkIds();
+  if (!ids.length) return;
+  const n = ids.length;
+  if (!confirm('Delete ' + n + ' link(s)? This cannot be undone.')) return;
+  const btn = $('#btn-links-bulk-delete');
+  const msg = $('#links-bulk-msg');
+  if (btn) btn.disabled = true;
+  if (msg) { msg.hidden = true; msg.textContent = ''; msg.classList.remove('error'); }
+  let ok = 0;
+  let failed = 0;
+  const errors = [];
+  for (const id of ids) {
+    try {
+      await api('/api/links/' + id, { method: 'DELETE' });
+      ok++;
+    } catch (err) {
+      failed++;
+      errors.push('#' + id + ': ' + (err.message || 'error'));
+    }
+  }
+  await refreshLinks();
+  if (msg) {
+    if (failed) {
+      msg.textContent = 'Deleted ' + ok + ' link(s); ' + failed + ' failed.' + (errors.length ? ' ' + errors.join('; ') : '');
+      msg.classList.add('error');
+    } else {
+      msg.textContent = 'Deleted ' + ok + ' link(s).';
+    }
+    msg.hidden = false;
+  }
+}
+
 async function refreshLinks() {
   const data = await api('/api/links');
   const body = $('#link-list');
@@ -2062,8 +2308,9 @@ async function refreshLinks() {
   const links = data.links || [];
   if (!links.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="5" class="muted empty-row">No link shares yet. Use the share button on a file or folder.</td>';
+    tr.innerHTML = '<td colspan="6" class="muted empty-row">No link shares yet. Use the share button on a file or folder.</td>';
     body.appendChild(tr);
+    updateLinksSelection();
     return;
   }
   for (const l of links) {
@@ -2078,6 +2325,7 @@ async function refreshLinks() {
     const url = location.origin + '/s/' + l.token;
     const label = l.label || (l.isDir ? 'Folder' : 'File');
     tr.innerHTML =
+      '<td class="check-cell"><input type="checkbox" class="link-check" value="' + l.id + '" aria-label="Select ' + escapeHtml(label) + '" /></td>' +
       '<td class="link-label-cell" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</td>' +
       '<td class="path-cell link-target-cell" title="' + escapeHtml(l.rootId + ':' + l.path) + '"><code>' + escapeHtml(l.rootId + ':' + l.path) + '</code></td>' +
       '<td class="link-url-cell" title="' + escapeHtml(url) + '"><a href="' + url + '" target="_blank" rel="noopener">' + escapeHtml(url) + '</a></td>' +
@@ -2105,6 +2353,26 @@ async function refreshLinks() {
     btns.appendChild(rev);
     body.appendChild(tr);
   }
+  updateLinksSelection();
+}
+
+const linkSelectAll = $('#link-select-all');
+if (linkSelectAll) {
+  linkSelectAll.addEventListener('change', () => {
+    const on = linkSelectAll.checked;
+    document.querySelectorAll('#link-list .link-check').forEach((b) => { b.checked = on; });
+    updateLinksSelection();
+  });
+}
+const linkListBody = $('#link-list');
+if (linkListBody) {
+  linkListBody.addEventListener('change', (e) => {
+    if (e.target && e.target.classList.contains('link-check')) updateLinksSelection();
+  });
+}
+const btnLinksBulkDelete = $('#btn-links-bulk-delete');
+if (btnLinksBulkDelete) {
+  btnLinksBulkDelete.addEventListener('click', () => { deleteSelectedLinks(); });
 }
 
 function publicRawURL(path) {

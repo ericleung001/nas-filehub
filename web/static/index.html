@@ -206,10 +206,15 @@
           <div id="tab-links" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section">
               <h3>Link shares</h3>
-              <p class="muted">Public links you created for files or folders. Recipients do not need an account. Revoke permanently deletes the link and removes it from this list.</p>
+              <p class="muted">Public links you created for files or folders. Recipients do not need an account. Revoke or Delete selected permanently deletes the link and removes it from this list.</p>
+              <div class="links-toolbar">
+                <button type="button" id="btn-links-bulk-delete" class="ghost danger" disabled>Delete selected</button>
+                <p id="links-bulk-msg" class="muted" hidden></p>
+              </div>
               <div class="admin-table-wrap">
                 <table class="admin-table links-table" aria-label="Link shares">
                   <colgroup>
+                    <col class="col-check" />
                     <col class="col-link-label" />
                     <col class="col-link-target" />
                     <col class="col-link-url" />
@@ -218,6 +223,7 @@
                   </colgroup>
                   <thead>
                     <tr>
+                      <th scope="col" class="check-h"><input type="checkbox" id="link-select-all" title="Select all" aria-label="Select all" /></th>
                       <th scope="col">Label</th>
                       <th scope="col" class="path-h">Target</th>
                       <th scope="col" class="url-h">URL</th>
@@ -317,6 +323,31 @@
                   <tbody id="share-list"></tbody>
                 </table>
               </div>
+              <dialog id="share-grant-dialog">
+                <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
+                <h3 id="share-grant-title">Grant access</h3>
+                <p id="share-grant-target" class="meta"></p>
+                <form id="share-grant-form" class="admin-form">
+                  <input type="hidden" name="shareId" />
+                  <label>User
+                    <select name="userId" id="share-grant-user" required>
+                      <option value="">Select a user</option>
+                    </select>
+                  </label>
+                  <label>Permission
+                    <select name="perm" id="share-grant-perm" required>
+                      <option value="read">Read</option>
+                      <option value="write">Write (includes read)</option>
+                    </select>
+                  </label>
+                  <button type="submit">Add grant</button>
+                  <p id="share-grant-error" class="error" hidden></p>
+                </form>
+                <hr class="sep" />
+                <h3>Current grants</h3>
+                <div id="share-grant-current" class="grant-list"></div>
+                <p id="share-grant-empty" class="muted" hidden>No grants yet.</p>
+              </dialog>
             </div>
           </div>
           <div id="tab-sessions" class="settings-panel" role="tabpanel" hidden>

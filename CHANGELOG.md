@@ -8,6 +8,17 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-11-10
+
+### Added
+- **Link shares multi-select delete** — checkbox per row, header select-all, and **Delete selected** (enabled when at least one is checked). Confirms with “Delete N link(s)? This cannot be undone.” then hard-deletes via existing `DELETE /api/links/:id`. Partial failures are reported; the list refreshes and the selection is cleared. Single-row **Revoke** is unchanged. Admins can still delete any listed link; non-admins only their own (same API auth as today).
+
+### Changed
+- **Shared folders grants** — Grant no longer asks for a numeric user ID in a `prompt()` (typing a username became `NaN` and the request was skipped, so the other user never received a grant and could not see the share). A dialog lists users in a dropdown, then **Read** or **Write** (write includes read). Current grants show username + permission in the table and dialog, and can be changed or revoked. The API rejects unknown users and normalizes permission values.
+
+### Fixed
+- **Users storage bar** — the usage track no longer overflows from the Storage column under Status / Actions. Cause: `display: grid` on the Actions `td` took that cell out of table layout, so the quota bar was sized too wide and painted across later columns. The Actions cell stays `table-cell`; Edit/Del alignment uses an inner two-slot grid. The Storage cell clips overflow on desktop and mobile.
+
 ## [0.3.13] - 2026-11-10
 
 ### Added
@@ -157,7 +168,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.13...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.14...HEAD
+[0.3.14]: https://github.com/ericleung001/nas-filehub/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/ericleung001/nas-filehub/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/ericleung001/nas-filehub/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/ericleung001/nas-filehub/compare/v0.3.10...v0.3.11

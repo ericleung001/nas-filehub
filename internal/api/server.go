@@ -949,6 +949,11 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 400, "bad json")
 				return
 			}
+			body.Perm = strings.ToLower(strings.TrimSpace(body.Perm))
+			if body.UserID <= 0 {
+				writeErr(w, 400, "user required")
+				return
+			}
 			if err := s.DB.SetShareGrant(id, body.UserID, body.Perm); err != nil {
 				writeErr(w, 400, err.Error())
 				return

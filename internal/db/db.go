@@ -43,9 +43,10 @@ type Share struct {
 }
 
 type ShareGrant struct {
-	ShareID int64  `json:"shareId"`
-	UserID  int64  `json:"userId"`
-	Perm    string `json:"perm"` // "read" or "write"
+	ShareID  int64  `json:"shareId"`
+	UserID   int64  `json:"userId"`
+	Perm     string `json:"perm"` // "read" or "write"
+	Username string `json:"username,omitempty"`
 }
 
 func Open(path string) (*DB, error) {
@@ -628,10 +629,28 @@ func (d *DB) DeleteShare(id int64) error {
 }
 
 func (d *DB) SetShareGrant(shareID, userID int64, perm string) error {
+	perm = strings.ToLower(strings.TrimSpace(perm))
 	if perm != "read" && perm != "write" {
 		return fmt.Errorf("perm must be read or write")
 	}
-	_, err := d.SQL.Exec(
+	if userID <= 0 {
+		return fmt.Errorf("user required")
+	}
+	u, err := d.GetUserByID(userID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return fmt.Errorf("user not found")
+	}
+	sh, err := d.GetShare(shareID)
+	if err != nil {
+		return err
+	}
+	if sh == nil {
+		return fmt.Errorf("share not found")
+	}
+	_, err = d.SQL.Exec(
 		`INSERT INTO share_grants(share_id, user_id, perm) VALUES(?,?,?)
 		 ON CONFLICT(share_id, user_id) DO UPDATE SET perm=excluded.perm`,
 		shareID, userID, perm,
@@ -694,7 +713,12 @@ func (d *DB) GrantPerm(shareID, userID int64) (string, error) {
 }
 
 func (d *DB) ListGrants(shareID int64) ([]ShareGrant, error) {
-	rows, err := d.SQL.Query(`SELECT share_id, user_id, perm FROM share_grants WHERE share_id=?`, shareID)
+	rows, err := d.SQL.Query(`
+		SELECT g.share_id, g.user_id, g.perm, COALESCE(u.username, '')
+		FROM share_grants g
+		LEFT JOIN users u ON u.id = g.user_id
+		WHERE g.share_id=?
+		ORDER BY u.username`, shareID)
 	if err != nil {
 		return nil, err
 	}
@@ -702,7 +726,7 @@ func (d *DB) ListGrants(shareID int64) ([]ShareGrant, error) {
 	out := make([]ShareGrant, 0)
 	for rows.Next() {
 		var g ShareGrant
-		if err := rows.Scan(&g.ShareID, &g.UserID, &g.Perm); err != nil {
+		if err := rows.Scan(&g.ShareID, &g.UserID, &g.Perm, &g.Username); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
