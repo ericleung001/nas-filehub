@@ -450,6 +450,41 @@
           <div id="tab-system" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>System</h3>
+              <div id="system-status" class="system-status">
+                <h4>Server status</h4>
+                <p id="system-status-error" class="error" hidden></p>
+                <div class="status-metric">
+                  <div class="status-head">
+                    <span class="status-label">CPU</span>
+                    <span class="status-value" id="system-cpu-text">Loading…</span>
+                  </div>
+                  <div class="quota-bar" id="system-cpu-bar" hidden><span></span></div>
+                </div>
+                <div class="status-metric">
+                  <div class="status-head">
+                    <span class="status-label">RAM</span>
+                    <span class="status-value" id="system-ram-text">Loading…</span>
+                  </div>
+                  <div class="quota-bar" id="system-ram-bar" hidden><span></span></div>
+                </div>
+                <div class="status-metric">
+                  <div class="status-head">
+                    <span class="status-label">User storage</span>
+                    <span class="status-value" id="system-quota-text">Loading…</span>
+                  </div>
+                  <div class="quota-bar" id="system-quota-bar" hidden><span></span></div>
+                  <p class="meta" id="system-quota-note"></p>
+                </div>
+                <div class="status-metric">
+                  <div class="status-head">
+                    <span class="status-label">DATA_ROOT disk</span>
+                    <span class="status-value" id="system-disk-text">Loading…</span>
+                  </div>
+                  <div class="quota-bar" id="system-disk-bar" hidden><span></span></div>
+                  <p class="meta" id="system-disk-path"></p>
+                </div>
+                <p class="meta" id="system-status-updated"></p>
+              </div>
               <p class="muted">File storage root and listen address are set via server environment variables (see README).</p>
               <ul class="system-notes muted">
                 <li>Homes: <code>DATA_ROOT/homes/&lt;user&gt;</code></li>

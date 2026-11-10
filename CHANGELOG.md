@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-11-10
+
+### Added
+- **System server status** — Settings → System shows live **CPU** (usage percent, load averages, core count), **RAM** (used / total and percent), **user storage** totals (sum of home used bytes vs assigned quotas; users with quota `0` / unlimited are counted separately and are not added into the assigned total), and **DATA_ROOT disk** used / total / free. Values refresh every 5 seconds while the page is open. Data comes from `GET /api/admin/system/status` (admin only).
+
 ## [0.3.19] - 2026-11-10
 
 ### Changed
@@ -198,7 +203,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.19...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.20...HEAD
+[0.3.20]: https://github.com/ericleung001/nas-filehub/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/ericleung001/nas-filehub/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/ericleung001/nas-filehub/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/ericleung001/nas-filehub/compare/v0.3.16...v0.3.17

@@ -93,6 +93,7 @@ function show(view) {
   if (pub) pub.hidden = view !== 'public';
   if (view !== 'settings' && view !== 'main' && view !== 'public') stopPreviewMedia();
   if (view !== 'public') clearPublicInlinePreview();
+  if (view !== 'settings') stopSystemStatusPoll();
 }
 
 async function bootstrap() {
@@ -367,6 +368,118 @@ function setSettingsTab(tab) {
     panel.classList.toggle('active', on);
     panel.hidden = !on;
   });
+  if (tab === 'system') startSystemStatusPoll();
+  else stopSystemStatusPoll();
+}
+
+let systemStatusTimer = null;
+let systemStatusBusy = false;
+
+function stopSystemStatusPoll() {
+  if (systemStatusTimer) {
+    clearInterval(systemStatusTimer);
+    systemStatusTimer = null;
+  }
+}
+
+function startSystemStatusPoll() {
+  stopSystemStatusPoll();
+  loadSystemStatus();
+  systemStatusTimer = setInterval(loadSystemStatus, 5000);
+}
+
+function setStatusBar(id, pct) {
+  const bar = $('#' + id);
+  if (!bar) return;
+  if (pct == null || Number.isNaN(Number(pct))) {
+    bar.hidden = true;
+    return;
+  }
+  const n = Math.max(0, Number(pct));
+  bar.hidden = false;
+  bar.classList.toggle('over', n > 100);
+  const span = bar.querySelector('span');
+  if (span) span.style.width = Math.min(100, n) + '%';
+}
+
+function load1Decimal(n) {
+  const v = Number(n);
+  if (Number.isNaN(v)) return '';
+  return v.toFixed(1);
+}
+
+async function loadSystemStatus() {
+  if (systemStatusBusy) return;
+  const errEl = $('#system-status-error');
+  if (!errEl) return;
+  systemStatusBusy = true;
+  try {
+    const data = await api('/api/admin/system/status');
+    errEl.hidden = true;
+    const cpu = data.cpu || {};
+    const cpuParts = [];
+    if (cpu.percent != null) cpuParts.push(load1Decimal(cpu.percent) + '%');
+    if (cpu.load1 != null) {
+      cpuParts.push('load ' + load1Decimal(cpu.load1) + ' / ' + load1Decimal(cpu.load5) + ' / ' + load1Decimal(cpu.load15));
+    }
+    if (cpu.cores) cpuParts.push(cpu.cores + (cpu.cores === 1 ? ' core' : ' cores'));
+    $('#system-cpu-text').textContent = cpuParts.join(' · ') || 'Unavailable';
+    setStatusBar('system-cpu-bar', cpu.percent);
+
+    const mem = data.memory || {};
+    if (mem.totalBytes) {
+      const pct = mem.percent != null ? load1Decimal(mem.percent) + '%' : '';
+      $('#system-ram-text').textContent = fmtSize(mem.usedBytes) + ' / ' + fmtSize(mem.totalBytes) + (pct ? ' (' + pct + ')' : '');
+      setStatusBar('system-ram-bar', mem.percent);
+    } else {
+      $('#system-ram-text').textContent = 'Unavailable';
+      setStatusBar('system-ram-bar', null);
+    }
+
+    const q = data.quotas || {};
+    const used = q.usedBytes || 0;
+    const assigned = q.assignedBytes || 0;
+    const unlimited = q.unlimitedUsers || 0;
+    const totalUsers = q.userCount || 0;
+    if (assigned > 0) {
+      const pct = q.percent != null ? load1Decimal(q.percent) + '%' : '';
+      $('#system-quota-text').textContent = fmtSize(used) + ' used / ' + fmtSize(assigned) + ' assigned' + (pct ? ' (' + pct + ')' : '');
+      setStatusBar('system-quota-bar', q.percent);
+    } else {
+      $('#system-quota-text').textContent = fmtSize(used) + ' used · no assigned quota total';
+      setStatusBar('system-quota-bar', null);
+    }
+    const note = $('#system-quota-note');
+    if (unlimited && totalUsers) {
+      if (unlimited === totalUsers) {
+        note.textContent = 'All ' + totalUsers + ' users have unlimited quota (0), so they are not included in the assigned total.';
+      } else {
+        note.textContent = unlimited + ' of ' + totalUsers + ' users have unlimited quota (0) and are not included in the assigned total. Homes used still includes everyone.';
+      }
+    } else {
+      note.textContent = totalUsers ? 'Quota applies to each user’s home only (shared folders are not billed).' : '';
+    }
+
+    const disk = data.disk || {};
+    const diskPath = $('#system-disk-path');
+    if (disk.ok) {
+      const pct = disk.percent != null ? load1Decimal(disk.percent) + '%' : '';
+      $('#system-disk-text').textContent = fmtSize(disk.usedBytes) + ' used / ' + fmtSize(disk.totalBytes) + ' total' + (pct ? ' (' + pct + ')' : '') + ', ' + fmtSize(disk.freeBytes) + ' free';
+      setStatusBar('system-disk-bar', disk.percent);
+      diskPath.textContent = disk.path ? ('Path: ' + disk.path) : '';
+    } else {
+      $('#system-disk-text').textContent = 'Unavailable';
+      setStatusBar('system-disk-bar', null);
+      diskPath.textContent = disk.path ? ('Path: ' + disk.path) : '';
+    }
+    const updated = $('#system-status-updated');
+    if (updated) updated.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    errEl.textContent = err.message || 'Could not load server status';
+    errEl.hidden = false;
+  } finally {
+    systemStatusBusy = false;
+  }
 }
 
 function applySettingsGate() {

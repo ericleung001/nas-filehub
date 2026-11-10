@@ -658,6 +658,14 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 .system-notes { padding-left: 1.1rem; margin: .5rem 0 0; list-style: disc; }
 .system-notes li { margin: .35rem 0; background: transparent; border: none; padding: 0; }
+.system-status { margin: 0 0 1.15rem; }
+.system-status h4 { margin: 0 0 .75rem; font-size: 1rem; }
+.status-metric { margin: 0 0 .85rem; }
+.status-head { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; margin-bottom: .3rem; flex-wrap: wrap; }
+.status-label { font-weight: 600; color: var(--text); }
+.status-value { color: var(--muted); font-size: .9rem; text-align: right; min-width: 0; word-break: break-word; }
+#system-quota-note, #system-disk-path, #system-status-updated { margin: .3rem 0 0; }
+#system-status-error[hidden], #system-cpu-bar[hidden], #system-ram-bar[hidden], #system-quota-bar[hidden], #system-disk-bar[hidden] { display: none !important; }
 #global-quota-form { margin-top: .75rem; }
 .admin-form-note { grid-column: 1 / -1; margin: 0; }
 #create-user-quota-note[hidden], #edit-user-quota-note[hidden], #global-quota-msg[hidden] { display: none !important; }

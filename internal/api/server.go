@@ -79,6 +79,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/admin/shares/", s.requireAdmin(s.handleAdminShareID))
 	mux.HandleFunc("/api/admin/settings", s.requireAdmin(s.handleAdminSettings))
 	mux.HandleFunc("/api/admin/smtp/test", s.requireAdmin(s.handleAdminSMTPTest))
+	mux.HandleFunc("/api/admin/system/status", s.requireAdmin(s.handleAdminSystemStatus))
 
 	mux.Handle("/", s.spaHandler())
 	return s.securityHeaders(mux)
