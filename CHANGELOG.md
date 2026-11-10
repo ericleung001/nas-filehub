@@ -12,7 +12,7 @@ where version tags are used.
 - **README screenshots** — the GitHub README now includes current login and file-browser screenshots.
 
 ### Changed
-- **TrueNAS Community App packaging** — revised `truenas/` to match catalog conventions after review: required initial admin password, consts for the run-as user and data path, boolean environment values, user-provided WebUI listen port, and hardware thumbnails enabled when a GPU is selected. The catalog image pin remains `0.3.22`.
+- **TrueNAS Community App packaging** — revised `truenas/` to match catalog conventions after review: required initial admin password, configurable run-as user and group (default 568), boolean environment values, user-provided WebUI listen port, and VAAPI thumbnails when an Intel or AMD GPU is selected. The catalog image pin is `0.4.4`. The default WebUI port is `30568` so it does not collide with other community apps.
 
 ## [0.4.4] - 2026-11-10
 
