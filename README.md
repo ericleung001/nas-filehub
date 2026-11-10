@@ -25,12 +25,14 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
+- **App icon** — favicon and Apple touch icon; mark on the login / auth pages and in the top bar after sign-in
 - **Settings** — one top-bar entry; left vertical menu, right content panel
   - **Account** — username, home, quota used/limit
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all)
   - **Users / Shares / Sessions / Registration / Security / Email / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **System** (DATA_ROOT notes)
+  - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
@@ -128,6 +130,7 @@ Sign in → **Settings** (single top-bar button):
 9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 10. **Email** (admins) — SMTP for forgot-password
 11. **System** (admins) — `DATA_ROOT` / homes / shares / quota notes
+12. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -243,6 +246,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 4. The login page links to **Forgot password?** (`/forgot`) when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
 
 SMTP credentials can also be supplied via env (`SMTP_*`); env values override the DB for the running process. The API never returns the SMTP password — only `passwordSet: true|false`.
+
+## Support
+
+Filehub is open source: [ericleung001/nas-filehub](https://github.com/ericleung001/nas-filehub).
+
+If Filehub is useful, you can [buy me a coffee](https://buymeacoffee.com/filehub).
 
 ## License
 

@@ -4,12 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Filehub</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <div id="app">
     <section id="login-view" class="panel center">
-      <h1>Filehub</h1>
+      <div class="brand-lockup brand-lockup-lg">
+        <img src="/icon.png" alt="" class="brand-logo" width="64" height="64" />
+        <h1>Filehub</h1>
+      </div>
       <p class="muted">多用戶檔案瀏覽器 · Multi-user file manager</p>
       <form id="login-form">
         <label>Username<input name="username" autocomplete="username" required /></label>
@@ -44,7 +51,10 @@
 
     <section id="main-view" hidden>
       <header class="topbar">
-        <div class="brand">Filehub</div>
+        <div class="brand">
+          <img src="/icon.png" alt="" class="brand-logo" width="32" height="32" />
+          Filehub
+        </div>
         <div class="spacer"></div>
         <span id="whoami" class="muted"></span>
         <button id="btn-settings" class="ghost">Settings</button>
@@ -141,6 +151,7 @@
           <button type="button" class="settings-nav-item admin-only" data-tab="security" hidden>Security</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="email" hidden>Email</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="system" hidden>System</button>
+          <button type="button" class="settings-nav-item" data-tab="about">About</button>
         </nav>
         <div class="settings-content">
           <div id="tab-account" class="settings-panel active" role="tabpanel">
@@ -400,6 +411,21 @@
               </ul>
             </div>
           </div>
+          <div id="tab-about" class="settings-panel" role="tabpanel" hidden>
+            <div class="settings-card about-card">
+              <h3>About</h3>
+              <p>Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server (similar in spirit to File Browser + Nextcloud-style multi-user homes/shares).</p>
+              <p>Open source under Apache-2.0.</p>
+              <p><a href="https://github.com/ericleung001/nas-filehub" target="_blank" rel="noopener noreferrer">GitHub: ericleung001/nas-filehub</a></p>
+              <p>If Filehub is useful, you can buy me a coffee.</p>
+              <a class="bmc-button" href="https://buymeacoffee.com/filehub" target="_blank" rel="noopener noreferrer">
+                <svg class="bmc-cup" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M2.5 6.25c0-.41.34-.75.75-.75h13.5c.41 0 .75.34.75.75v1.15h.85A3.4 3.4 0 0 1 21.75 10.8v.4A3.4 3.4 0 0 1 18.35 14.6H17.3v.15c0 2.62-2.13 4.75-4.75 4.75H8.2A4.75 4.75 0 0 1 3.45 14.75V6.25zm14.25 6.6h1.6c1.05 0 1.9-.85 1.9-1.9v-.4c0-1.05-.85-1.9-1.9-1.9h-1.6v4.2zM6.2 3.15c.2-.38.68-.52 1.06-.32.7.37 1.22.5 1.74.5s1.04-.13 1.74-.5a.75.75 0 1 1 .74 1.31c-.86.48-1.66.69-2.48.69-.82 0-1.62-.21-2.48-.69a.75.75 0 0 1-.32-1z"/>
+                </svg>
+                <span>Buy me a coffee</span>
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -454,7 +480,10 @@
   </dialog>
 
   <section id="public-share-view" class="panel center" hidden>
-    <h1>Filehub</h1>
+    <div class="brand-lockup brand-lockup-lg">
+      <img src="/icon.png" alt="" class="brand-logo" width="64" height="64" />
+      <h1>Filehub</h1>
+    </div>
     <p id="public-share-label" class="muted"></p>
     <p id="public-share-error" class="error" hidden></p>
     <form id="public-share-unlock" hidden>
@@ -478,7 +507,10 @@
   </aside>
 
   <section id="register-view" class="panel center" hidden>
-    <h1>Filehub</h1>
+    <div class="brand-lockup brand-lockup-lg">
+      <img src="/icon.png" alt="" class="brand-logo" width="64" height="64" />
+      <h1>Filehub</h1>
+    </div>
     <p class="muted">Create an account</p>
     <form id="signup-form">
       <p class="muted">Password must meet the server policy.</p>
@@ -495,7 +527,10 @@
   </section>
 
   <section id="forgot-view" class="panel center" hidden>
-    <h1>Filehub</h1>
+    <div class="brand-lockup brand-lockup-lg">
+      <img src="/icon.png" alt="" class="brand-logo" width="64" height="64" />
+      <h1>Filehub</h1>
+    </div>
     <p class="muted">Forgot password</p>
     <form id="forgot-form">
       <p class="muted">Enter your username or email. If an account exists and mail is configured, we will send a reset link.</p>
@@ -508,7 +543,10 @@
   </section>
 
   <section id="reset-view" class="panel center" hidden>
-    <h1>Filehub</h1>
+    <div class="brand-lockup brand-lockup-lg">
+      <img src="/icon.png" alt="" class="brand-logo" width="64" height="64" />
+      <h1>Filehub</h1>
+    </div>
     <p class="muted">Set a new password</p>
     <p id="reset-user" class="meta"></p>
     <form id="reset-form">
