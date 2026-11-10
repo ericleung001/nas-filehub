@@ -8,6 +8,12 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-11-10
+
+### Added
+- **Unraid Community Apps template** — `ca_profile.xml` at the repository root and `templates/filehub.xml` (Docker app) so the GitHub repo can be scanned and submitted to Community Apps. The template uses `ghcr.io/ericleung001/nas-filehub:latest`, maps appdata to `/data`, optionally maps Unraid shares to `/data/files/shares`, and includes an optional `/dev/dri` device for Intel VAAPI thumbnails. First boot still leaves `ADMIN_PASSWORD` unset; the generated password is in `admin-credentials.txt` under appdata.
+- **GHCR image workflow** — `.github/workflows/docker.yml` builds and publishes `ghcr.io/ericleung001/nas-filehub` on pushes to `main`, version tags `v*`, and manual dispatch (`latest` on the default branch, semver on tags, and a sha tag). The image is `linux/amd64`. A `.dockerignore` keeps the build context free of local data, binaries, and secrets.
+
 ## [0.3.16] - 2026-11-10
 
 ### Changed
@@ -182,7 +188,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.16...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.17...HEAD
+[0.3.17]: https://github.com/ericleung001/nas-filehub/compare/v0.3.16...v0.3.17
 [0.3.16]: https://github.com/ericleung001/nas-filehub/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/ericleung001/nas-filehub/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/ericleung001/nas-filehub/compare/v0.3.13...v0.3.14

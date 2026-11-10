@@ -1,0 +1,48 @@
+<Container version="2">
+  <Name>Filehub</Name>
+  <Repository>ghcr.io/ericleung001/nas-filehub:latest</Repository>
+  <Registry>https://ghcr.io/ericleung001/nas-filehub</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Icon>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/web/static/icon.png</Icon>
+  <WebUI>http://[IP]:[PORT:8080]</WebUI>
+  <Overview>Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server.</Overview>
+  <Description>
+    Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server.
+
+    Features include per-user home folders, shared folders with read/write access and an optional Allow delete flag, public link shares, image/PDF/video previews, ffmpeg thumbnails, and optional TOTP 2FA.
+
+    First boot: leave ADMIN_PASSWORD unset. After the container starts, open /mnt/user/appdata/nas-filehub/admin-credentials.txt for the generated admin password, sign in, then change it under Settings → Change password. That credentials file is written once and is never overwritten.
+
+    Prefer a reverse proxy with HTTPS, and set SECURE_COOKIES=true once you are behind HTTPS. Do not expose the WebUI port directly to the public internet.
+
+    Optional Intel VAAPI thumbnails: keep the /dev/dri device mapping and set THUMB_VAAPI=true. If your server has no /dev/dri, remove the device mapping and leave THUMB_VAAPI=false.
+
+    The optional Unraid shares path is mounted at /data/files/shares so you can create shared folders with paths such as shares/Movies. You can remove that mapping if you do not need it.
+  </Description>
+  <Support>https://github.com/ericleung001/nas-filehub/issues</Support>
+  <Project>https://github.com/ericleung001/nas-filehub</Project>
+  <TemplateURL>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/filehub.xml</TemplateURL>
+  <ReadMe>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/README.md</ReadMe>
+  <Category>Cloud Tools:Utilities</Category>
+  <ExtraSearchTerms>filehub nas files shares</ExtraSearchTerms>
+  <License>Apache-2.0</License>
+  <DonateLink>https://buymeacoffee.com/filehub</DonateLink>
+  <DonateText>Buy me a coffee</DonateText>
+  <Date>2026-11-10</Date>
+  <Requires>After the first start, read the generated admin password in /mnt/user/appdata/nas-filehub/admin-credentials.txt, then change it under Settings → Change password. Prefer a reverse proxy; do not expose the WebUI port to the public internet. For Intel VAAPI thumbnails, keep /dev/dri mapped and set THUMB_VAAPI=true. If /dev/dri is not present, remove the device mapping.</Requires>
+  <Changes>Community Apps template and GHCR image for Filehub. Leave ADMIN_PASSWORD unset on first boot and read the generated password from appdata/nas-filehub/admin-credentials.txt.</Changes>
+
+  <Config Name="WebUI" Target="8080" Default="8088" Mode="tcp" Description="HTTP WebUI port (container 8080). Prefer a reverse proxy; do not expose this port directly to the public internet." Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/nas-filehub" Mode="rw" Description="Database, thumbnails, generated admin-credentials.txt, and default files under /data/files." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Unraid shares" Target="/data/files/shares" Default="/mnt/user" Mode="rw" Description="Optional mapping so Shared folders can use paths like shares/Movies. You can remove this mapping if you do not need host shares." Type="Path" Display="always" Required="false" Mask="false"/>
+  <Config Name="Intel GPU (/dev/dri)" Target="/dev/dri" Default="/dev/dri" Mode="" Description="Optional Intel iGPU for VAAPI thumbnail acceleration. If /dev/dri is not present on the host, remove this mapping and leave THUMB_VAAPI=false." Type="Device" Display="advanced" Required="false" Mask="false">/dev/dri</Config>
+  <Config Name="ADMIN_USER" Target="ADMIN_USER" Default="admin" Description="Seed admin username on first boot only." Type="Variable" Display="advanced" Required="false" Mask="false">admin</Config>
+  <Config Name="ADMIN_PASSWORD" Target="ADMIN_PASSWORD" Default="" Description="Optional. Leave empty on first boot so the entrypoint generates a password into /data/admin-credentials.txt. Only seeds the first boot; later changes must be made in Settings." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="SECURE_COOKIES" Target="SECURE_COOKIES" Default="false" Description="Set true when the WebUI is served over HTTPS (reverse proxy). Leave false so http://IP:port login works on a first Unraid install." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
+  <Config Name="THUMB_ENABLE" Target="THUMB_ENABLE" Default="true" Description="Generate image and video thumbnails with ffmpeg." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+  <Config Name="THUMB_VAAPI" Target="THUMB_VAAPI" Default="false" Description="Set true only when /dev/dri is mapped and you want Intel VAAPI thumbnail acceleration." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="PUBLIC_BASE_URL" Target="PUBLIC_BASE_URL" Default="" Description="Optional public site URL used in password-reset emails (for example https://filehub.example.com)." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="2048" Description="Maximum upload size in MiB (application default is 2048)." Type="Variable" Display="advanced" Required="false" Mask="false">2048</Config>
+</Container>

@@ -1,0 +1,13 @@
+<CommunityApplications>
+  <Profile>
+    This repository contains the **Filehub** Docker app template for Unraid Community Apps, and the Filehub project source.
+
+    Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server.
+
+    Support is through GitHub Issues: https://github.com/ericleung001/nas-filehub/issues
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/web/static/icon.png</Icon>
+  <WebPage>https://github.com/ericleung001/nas-filehub</WebPage>
+  <DonateLink>https://buymeacoffee.com/filehub</DonateLink>
+  <DonateText>Buy me a coffee</DonateText>
+</CommunityApplications>

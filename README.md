@@ -155,7 +155,7 @@ Each release includes:
 
 - **Changelog** notes for that version
 - **Downloadable binaries** for Linux (amd64), and often Windows/macOS when built for that tag
-- **Docker** install notes (see Quick start — `docker compose up -d --build` from the tagged source)
+- **Docker** install notes (see Quick start — `docker compose up -d --build` from the tagged source, or pull `ghcr.io/ericleung001/nas-filehub`)
 
 ### Install from a release binary
 
@@ -170,6 +170,29 @@ export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/t
 ```
 
 Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the one you exported), then change it under **Settings → Change password**. Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front) — first `docker compose up` auto-writes that credentials file when `ADMIN_PASSWORD` is unset.
+
+## Install on Unraid (Community Apps)
+
+Filehub can be installed on Unraid from a Community Apps template in this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`).
+
+This is **not** a claim that Filehub is already listed in the official Community Apps catalog — that listing is a separate submission step. Until the catalog accepts the repository, you can add it yourself in **Apps** → the CA settings / **Add a new Repository URL**, using:
+
+`https://github.com/ericleung001/nas-filehub`
+
+Then search for **Filehub** and install the template. After the official listing is accepted, searching **Filehub** in Community Apps should be enough.
+
+First boot:
+
+- Leave `ADMIN_PASSWORD` empty so the entrypoint generates one.
+- Open `/mnt/user/appdata/nas-filehub/admin-credentials.txt` (or the appdata path you chose) for the admin password.
+- Sign in, then change the password under **Settings → Change password**.
+
+Notes:
+
+- The WebUI listens on container port **8080** (template default host port **8088**). Prefer a reverse proxy with HTTPS, then set `SECURE_COOKIES=true`. **Do not** expose the WebUI port directly to the public internet.
+- The optional **Unraid shares** path is mounted at `/data/files/shares` so you can create shared folders with paths such as `shares/Movies`. Remove that mapping if you do not need it.
+- Optional Intel VAAPI thumbnails: keep the `/dev/dri` device mapping and set `THUMB_VAAPI=true`. If `/dev/dri` is not present, remove the device mapping and leave `THUMB_VAAPI=false`. See also [Unraid + Intel VAAPI](#unraid--intel-vaapi-optional).
+- The GHCR package must be **public** so Unraid can pull `ghcr.io/ericleung001/nas-filehub:latest` without a login.
 
 ## Unraid + Intel VAAPI (optional)
 
