@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.22] - 2026-11-10
+
+### Changed
+- **Login** — removed the Chinese tagline on the login page. The line under the Filehub title is now English only: “Multi-user file manager”.
+
 ## [0.3.21] - 2026-11-10
 
 ### Added
@@ -208,7 +213,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.21...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.22...HEAD
+[0.3.22]: https://github.com/ericleung001/nas-filehub/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/ericleung001/nas-filehub/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/ericleung001/nas-filehub/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/ericleung001/nas-filehub/compare/v0.3.18...v0.3.19
