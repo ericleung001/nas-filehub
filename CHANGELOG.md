@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-10
+
+### Fixed
+- **Mobile Settings spacing** — on narrow screens the Settings section tabs no longer stretch to fill the viewport, which had left large empty gaps above and below the tab row.
+
 ## [0.4.3] - 2026-11-10
 
 ### Added
