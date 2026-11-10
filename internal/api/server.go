@@ -29,12 +29,16 @@ type Server struct {
 }
 
 type scope struct {
-	Root string // absolute filesystem root for this scope
-	Rel  string // relative path inside that root (requested)
-	Perm string // read|write
-	Kind string // home|share
-	ID   int64  // share id if share
+	Root      string // absolute filesystem root for this scope
+	Rel       string // relative path inside that root (requested)
+	Perm      string // read|write
+	CanDelete bool
+	Kind      string // home|share
+	ID        int64  // share id if share
 }
+
+func (sc *scope) canWrite() bool  { return sc != nil && sc.Perm == "write" }
+func (sc *scope) canDelete() bool { return sc != nil && sc.CanDelete }
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -461,12 +465,13 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
 	u := s.currentUser(r)
 	type root struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		Kind string `json:"kind"`
-		Perm string `json:"perm"`
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Kind      string `json:"kind"`
+		Perm      string `json:"perm"`
+		CanDelete bool   `json:"canDelete"`
 	}
-	out := []root{{ID: "home", Name: "My Files", Kind: "home", Perm: "write"}}
+	out := []root{{ID: "home", Name: "My Files", Kind: "home", Perm: "write", CanDelete: true}}
 	shares, err := s.DB.SharesForUser(u.ID, u.IsAdmin)
 	if err != nil {
 		writeErr(w, 500, "db error")
@@ -474,10 +479,11 @@ func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, sa := range shares {
 		out = append(out, root{
-			ID:   "share:" + strconv.FormatInt(sa.Share.ID, 10),
-			Name: sa.Share.Name,
-			Kind: "share",
-			Perm: sa.Perm,
+			ID:        "share:" + strconv.FormatInt(sa.Share.ID, 10),
+			Name:      sa.Share.Name,
+			Kind:      "share",
+			Perm:      sa.Perm,
+			CanDelete: sa.CanDelete,
 		})
 	}
 	writeJSON(w, 200, map[string]any{"roots": out})
@@ -490,7 +496,7 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &scope{Root: abs, Rel: rel, Perm: "write", Kind: "home"}, nil
+		return &scope{Root: abs, Rel: rel, Perm: "write", CanDelete: true, Kind: "home"}, nil
 	}
 	if strings.HasPrefix(rootID, "share:") {
 		idStr := strings.TrimPrefix(rootID, "share:")
@@ -503,18 +509,20 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 			return nil, os.ErrNotExist
 		}
 		perm := "write"
+		canDelete := true
 		if !u.IsAdmin {
-			p, err := s.DB.GrantPerm(id, u.ID)
+			p, del, err := s.DB.GrantAccess(id, u.ID)
 			if err != nil || p == "" {
 				return nil, os.ErrPermission
 			}
 			perm = p
+			canDelete = del
 		}
 		abs, err := files.SafeJoin(s.Cfg.DataRoot, share.Path)
 		if err != nil {
 			return nil, err
 		}
-		return &scope{Root: abs, Rel: rel, Perm: perm, Kind: "share", ID: id}, nil
+		return &scope{Root: abs, Rel: rel, Perm: perm, CanDelete: canDelete, Kind: "share", ID: id}, nil
 	}
 	return nil, os.ErrNotExist
 }
@@ -533,7 +541,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"path": sc.Rel, "perm": sc.Perm, "entries": entries})
+	writeJSON(w, 200, map[string]any{"path": sc.Rel, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries})
 }
 
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
@@ -551,7 +559,7 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, body.Path)
-	if err != nil || sc.Perm != "write" {
+	if err != nil || !sc.canWrite() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -584,7 +592,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, body.From)
-	if err != nil || sc.Perm != "write" {
+	if err != nil || !sc.canWrite() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -610,7 +618,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, body.Path)
-	if err != nil || sc.Perm != "write" {
+	if err != nil || !sc.canDelete() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -641,7 +649,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	rootID := r.FormValue("root")
 	dir := r.FormValue("path")
 	sc, err := s.resolveScope(u, rootID, dir)
-	if err != nil || sc.Perm != "write" {
+	if err != nil || !sc.canWrite() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -942,8 +950,9 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
 			var body struct {
-				UserID int64  `json:"userId"`
-				Perm   string `json:"perm"`
+				UserID    int64  `json:"userId"`
+				Perm      string `json:"perm"`
+				CanDelete *bool  `json:"canDelete"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				writeErr(w, 400, "bad json")
@@ -954,7 +963,7 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 400, "user required")
 				return
 			}
-			if err := s.DB.SetShareGrant(id, body.UserID, body.Perm); err != nil {
+			if err := s.DB.SetShareGrant(id, body.UserID, body.Perm, body.CanDelete); err != nil {
 				writeErr(w, 400, err.Error())
 				return
 			}

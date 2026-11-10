@@ -334,12 +334,13 @@
                       <option value="">Select a user</option>
                     </select>
                   </label>
-                  <label>Permission
+                  <label>Access
                     <select name="perm" id="share-grant-perm" required>
                       <option value="read">Read</option>
                       <option value="write">Write (includes read)</option>
                     </select>
                   </label>
+                  <label class="check"><input name="canDelete" type="checkbox" id="share-grant-can-delete" /> Allow delete</label>
                   <button type="submit">Add grant</button>
                   <p id="share-grant-error" class="error" hidden></p>
                 </form>
@@ -445,7 +446,7 @@
           <div id="tab-about" class="settings-panel" role="tabpanel" hidden>
             <div class="settings-card about-card">
               <h3>About</h3>
-              <p>Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server (similar in spirit to File Browser + Nextcloud-style multi-user homes/shares).</p>
+              <p>Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server.</p>
               <p>Open source under Apache-2.0.</p>
               <p><a href="https://github.com/ericleung001/nas-filehub" target="_blank" rel="noopener noreferrer">GitHub: ericleung001/nas-filehub</a></p>
               <p>If Filehub is useful, you can buy me a coffee.</p>

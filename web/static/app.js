@@ -16,6 +16,7 @@ const state = {
   root: 'home',
   path: '',
   perm: 'write',
+  canDelete: true,
   roots: [],
   /** @type {'list'|'icons'} */
   viewMode: (localStorage.getItem('filehub-view') === 'icons' ? 'icons' : 'list'),
@@ -685,6 +686,7 @@ function cycleSortHeader(by) {
 async function loadList() {
   const data = await api(`/api/list?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(state.path)}`);
   state.perm = data.perm;
+  state.canDelete = !!data.canDelete;
   const canWrite = state.perm === 'write';
   $('#btn-mkdir').disabled = !canWrite;
   $('#file-input').disabled = !canWrite;
@@ -852,6 +854,9 @@ function appendEntryActions(container, e, canWrite, compact) {
       await loadRoots();
       await loadList();
     };
+    container.appendChild(ren);
+  }
+  if (state.canDelete) {
     const del = document.createElement('button');
     del.type = 'button';
     del.textContent = '🗑';
@@ -867,7 +872,6 @@ function appendEntryActions(container, e, canWrite, compact) {
       await loadList();
       try { await refreshMe(); } catch { /* ignore */ }
     };
-    container.appendChild(ren);
     container.appendChild(del);
   }
 }
@@ -893,10 +897,15 @@ function updateBulkBar() {
   const shareBtn = $('#btn-bulk-share');
   if (shareBtn) shareBtn.disabled = n !== 1;
   const canWrite = state.perm === 'write';
+  const canDelete = !!state.canDelete;
   ['btn-bulk-delete', 'btn-bulk-move'].forEach((id) => {
     const el = $('#' + id);
-    if (el) el.disabled = !canWrite;
+    if (!el) return;
+    el.hidden = !canDelete;
+    el.disabled = !canDelete;
   });
+  const copyBtn = $('#btn-bulk-copy');
+  if (copyBtn) copyBtn.disabled = !canWrite;
   const sa = $('#select-all');
   if (sa && state.entries) {
     const total = state.entries.length;
@@ -1659,19 +1668,29 @@ function grantUserName(userId) {
   return u ? u.username : ('user#' + userId);
 }
 
+function grantAccessSummary(g) {
+  const parts = [g.perm === 'write' ? 'write' : 'read'];
+  if (g.canDelete) parts.push('delete');
+  return parts.join(', ');
+}
+
 function renderShareGrantList(s) {
   const grants = s.grants || [];
   if (!grants.length) return '<span class="muted">No grants</span>';
   return '<div class="grant-list">' + grants.map((g) => {
     const name = escapeHtml(g.username || grantUserName(g.userId));
+    const summary = escapeHtml(grantAccessSummary(g));
     const readSel = g.perm === 'read' ? ' selected' : '';
     const writeSel = g.perm === 'write' ? ' selected' : '';
+    const delChk = g.canDelete ? ' checked' : '';
     return '<div class="grant-row">' +
       '<span class="grant-name" title="' + name + '">' + name + '</span>' +
-      '<select class="grant-perm" data-share-id="' + s.id + '" data-user-id="' + g.userId + '" aria-label="Permission for ' + name + '">' +
+      '<span class="grant-summary">' + summary + '</span>' +
+      '<select class="grant-perm" data-share-id="' + s.id + '" data-user-id="' + g.userId + '" aria-label="Access for ' + name + '">' +
         '<option value="read"' + readSel + '>Read</option>' +
         '<option value="write"' + writeSel + '>Write</option>' +
       '</select>' +
+      '<label class="check grant-delete-flag"><input type="checkbox" class="grant-can-delete" data-share-id="' + s.id + '" data-user-id="' + g.userId + '" aria-label="Allow delete for ' + name + '"' + delChk + ' /> Allow delete</label>' +
       '<button type="button" class="ghost danger grant-revoke" data-share-id="' + s.id + '" data-user-id="' + g.userId + '" data-username="' + name + '" title="Revoke grant">Revoke</button>' +
     '</div>';
   }).join('') + '</div>';
@@ -1734,6 +1753,7 @@ function openShareGrantDialog(share) {
   if (form) {
     form.shareId.value = share.id;
     form.perm.value = 'read';
+    if (form.canDelete) form.canDelete.checked = false;
   }
   const err = $('#share-grant-error');
   if (err) { err.hidden = true; err.textContent = ''; err.classList.remove('error'); }
@@ -1758,12 +1778,27 @@ async function afterShareGrantChange(shareId) {
   }
 }
 
-async function changeShareGrantPerm(shareId, userId, perm) {
+async function changeShareGrant(shareId, userId, perm, canDelete) {
   await api('/api/admin/shares/' + shareId + '/grants', {
     method: 'POST',
-    body: JSON.stringify({ userId: Number(userId), perm }),
+    body: JSON.stringify({ userId: Number(userId), perm, canDelete: !!canDelete }),
   });
   await afterShareGrantChange(shareId);
+}
+
+function grantControlsFrom(el) {
+  const row = el.closest('.grant-row');
+  if (!row) return null;
+  const sel = row.querySelector('select.grant-perm');
+  const box = row.querySelector('input.grant-can-delete');
+  if (!sel) return null;
+  return {
+    shareId: sel.getAttribute('data-share-id'),
+    userId: sel.getAttribute('data-user-id'),
+    perm: sel.value,
+    canDelete: !!(box && box.checked),
+    controls: [sel, box],
+  };
 }
 
 async function revokeShareGrant(shareId, userId, username) {
@@ -1882,14 +1917,13 @@ const shareListBody = $('#share-list');
 if (shareListBody && !shareListBody.dataset.grantBound) {
   shareListBody.dataset.grantBound = '1';
   shareListBody.addEventListener('change', async (e) => {
-    const sel = e.target.closest && e.target.closest('select.grant-perm');
-    if (!sel) return;
-    const shareId = sel.getAttribute('data-share-id');
-    const userId = sel.getAttribute('data-user-id');
-    const perm = sel.value;
-    sel.disabled = true;
+    const el = e.target.closest && (e.target.closest('select.grant-perm') || e.target.closest('input.grant-can-delete'));
+    if (!el) return;
+    const vals = grantControlsFrom(el);
+    if (!vals) return;
+    vals.controls.forEach((c) => { if (c) c.disabled = true; });
     try {
-      await changeShareGrantPerm(shareId, userId, perm);
+      await changeShareGrant(vals.shareId, vals.userId, vals.perm, vals.canDelete);
     } catch (err) {
       alert(err.message || 'Could not update grant');
       await refreshAdmin();
@@ -1909,11 +1943,13 @@ const shareGrantCurrent = $('#share-grant-current');
 if (shareGrantCurrent && !shareGrantCurrent.dataset.grantBound) {
   shareGrantCurrent.dataset.grantBound = '1';
   shareGrantCurrent.addEventListener('change', async (e) => {
-    const sel = e.target.closest && e.target.closest('select.grant-perm');
-    if (!sel) return;
-    sel.disabled = true;
+    const el = e.target.closest && (e.target.closest('select.grant-perm') || e.target.closest('input.grant-can-delete'));
+    if (!el) return;
+    const vals = grantControlsFrom(el);
+    if (!vals) return;
+    vals.controls.forEach((c) => { if (c) c.disabled = true; });
     try {
-      await changeShareGrantPerm(sel.getAttribute('data-share-id'), sel.getAttribute('data-user-id'), sel.value);
+      await changeShareGrant(vals.shareId, vals.userId, vals.perm, vals.canDelete);
     } catch (err) {
       alert(err.message || 'Could not update grant');
       await refreshAdmin();
@@ -1939,6 +1975,7 @@ if (shareGrantForm && !shareGrantForm.dataset.bound) {
     const shareId = Number(shareGrantForm.shareId.value);
     const userId = Number(shareGrantForm.userId.value);
     const perm = shareGrantForm.perm.value;
+    const canDelete = !!(shareGrantForm.canDelete && shareGrantForm.canDelete.checked);
     if (!shareId || !userId) {
       if (errEl) { errEl.textContent = 'Select a user'; errEl.hidden = false; }
       return;
@@ -1948,7 +1985,7 @@ if (shareGrantForm && !shareGrantForm.dataset.bound) {
     try {
       await api('/api/admin/shares/' + shareId + '/grants', {
         method: 'POST',
-        body: JSON.stringify({ userId, perm }),
+        body: JSON.stringify({ userId, perm, canDelete }),
       });
       shareGrantForm.userId.value = '';
       await afterShareGrantChange(shareId);
@@ -2071,7 +2108,7 @@ $('#btn-bulk-clear')?.addEventListener('click', () => {
 
 $('#btn-bulk-delete')?.addEventListener('click', async () => {
   const paths = [...state.selected];
-  if (!paths.length) return;
+  if (!paths.length || !state.canDelete) return;
   if (!confirm(`Delete ${paths.length} item(s)?`)) return;
   try {
     const res = await api('/api/batch/delete', {
@@ -2091,6 +2128,8 @@ $('#btn-bulk-delete')?.addEventListener('click', async () => {
 });
 
 function openTransferDialog(mode) {
+  if (mode === 'move' && !state.canDelete) return;
+  if (mode === 'copy' && state.perm !== 'write') return;
   state.transferMode = mode;
   const dlg = $('#transfer-dialog');
   $('#transfer-title').textContent = mode === 'copy' ? 'Copy items' : 'Move items';
@@ -2117,6 +2156,7 @@ $('#transfer-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const paths = [...state.selected];
   if (!paths.length) return;
+  if (state.transferMode === 'move' && !state.canDelete) return;
   const destRoot = $('#transfer-root').value;
   const destPath = $('#transfer-path').value.trim();
   const errEl = $('#transfer-error');

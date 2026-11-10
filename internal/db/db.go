@@ -43,10 +43,11 @@ type Share struct {
 }
 
 type ShareGrant struct {
-	ShareID  int64  `json:"shareId"`
-	UserID   int64  `json:"userId"`
-	Perm     string `json:"perm"` // "read" or "write"
-	Username string `json:"username,omitempty"`
+	ShareID   int64  `json:"shareId"`
+	UserID    int64  `json:"userId"`
+	Perm      string `json:"perm"` // "read" or "write"
+	CanDelete bool   `json:"canDelete"`
+	Username  string `json:"username,omitempty"`
 }
 
 func Open(path string) (*DB, error) {
@@ -96,6 +97,7 @@ CREATE TABLE IF NOT EXISTS share_grants (
   share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   perm TEXT NOT NULL CHECK(perm IN ('read','write')),
+  can_delete INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (share_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -129,6 +131,9 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 		return err
 	}
 	if err := d.ensureLinkShareTables(); err != nil {
+		return err
+	}
+	if err := d.ensureShareGrantColumns(); err != nil {
 		return err
 	}
 	return d.ensurePasswordResetTable()
@@ -209,6 +214,37 @@ func (d *DB) ensurePendingLoginColumns() error {
 		}
 	}
 	return nil
+}
+
+func (d *DB) ensureShareGrantColumns() error {
+	cols := map[string]bool{}
+	rows, err := d.SQL.Query(`PRAGMA table_info(share_grants)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if cols["can_delete"] {
+		return nil
+	}
+	if _, err := d.SQL.Exec(`ALTER TABLE share_grants ADD COLUMN can_delete INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	// Existing write grants could delete; keep that behavior.
+	_, err = d.SQL.Exec(`UPDATE share_grants SET can_delete=1 WHERE perm='write'`)
+	return err
 }
 
 func HashPassword(pw string) (string, error) {
@@ -628,7 +664,7 @@ func (d *DB) DeleteShare(id int64) error {
 	return err
 }
 
-func (d *DB) SetShareGrant(shareID, userID int64, perm string) error {
+func (d *DB) SetShareGrant(shareID, userID int64, perm string, canDelete *bool) error {
 	perm = strings.ToLower(strings.TrimSpace(perm))
 	if perm != "read" && perm != "write" {
 		return fmt.Errorf("perm must be read or write")
@@ -650,10 +686,29 @@ func (d *DB) SetShareGrant(shareID, userID int64, perm string) error {
 	if sh == nil {
 		return fmt.Errorf("share not found")
 	}
+	deleteFlag := 0
+	if canDelete != nil {
+		if *canDelete {
+			deleteFlag = 1
+		}
+	} else {
+		var existing int
+		err = d.SQL.QueryRow(`SELECT can_delete FROM share_grants WHERE share_id=? AND user_id=?`, shareID, userID).Scan(&existing)
+		if err == sql.ErrNoRows {
+			// New grant with flag omitted: keep historical write=can-delete default.
+			if perm == "write" {
+				deleteFlag = 1
+			}
+		} else if err != nil {
+			return err
+		} else {
+			deleteFlag = existing
+		}
+	}
 	_, err = d.SQL.Exec(
-		`INSERT INTO share_grants(share_id, user_id, perm) VALUES(?,?,?)
-		 ON CONFLICT(share_id, user_id) DO UPDATE SET perm=excluded.perm`,
-		shareID, userID, perm,
+		`INSERT INTO share_grants(share_id, user_id, perm, can_delete) VALUES(?,?,?,?)
+		 ON CONFLICT(share_id, user_id) DO UPDATE SET perm=excluded.perm, can_delete=excluded.can_delete`,
+		shareID, userID, perm, deleteFlag,
 	)
 	return err
 }
@@ -664,8 +719,9 @@ func (d *DB) RemoveShareGrant(shareID, userID int64) error {
 }
 
 type ShareAccess struct {
-	Share Share
-	Perm  string
+	Share     Share
+	Perm      string
+	CanDelete bool
 }
 
 func (d *DB) SharesForUser(userID int64, isAdmin bool) ([]ShareAccess, error) {
@@ -676,12 +732,12 @@ func (d *DB) SharesForUser(userID int64, isAdmin bool) ([]ShareAccess, error) {
 		}
 		out := make([]ShareAccess, 0, len(shares))
 		for _, s := range shares {
-			out = append(out, ShareAccess{Share: s, Perm: "write"})
+			out = append(out, ShareAccess{Share: s, Perm: "write", CanDelete: true})
 		}
 		return out, nil
 	}
 	rows, err := d.SQL.Query(`
-		SELECT s.id, s.name, s.path, s.created_by, s.created_at, g.perm
+		SELECT s.id, s.name, s.path, s.created_by, s.created_at, g.perm, g.can_delete
 		FROM share_grants g
 		JOIN shares s ON s.id = g.share_id
 		WHERE g.user_id=?
@@ -694,27 +750,32 @@ func (d *DB) SharesForUser(userID int64, isAdmin bool) ([]ShareAccess, error) {
 	for rows.Next() {
 		var sa ShareAccess
 		var created string
-		if err := rows.Scan(&sa.Share.ID, &sa.Share.Name, &sa.Share.Path, &sa.Share.CreatedBy, &created, &sa.Perm); err != nil {
+		var canDel int
+		if err := rows.Scan(&sa.Share.ID, &sa.Share.Name, &sa.Share.Path, &sa.Share.CreatedBy, &created, &sa.Perm, &canDel); err != nil {
 			return nil, err
 		}
+		sa.CanDelete = canDel != 0
 		sa.Share.CreatedAt, _ = time.Parse(time.RFC3339, created)
 		out = append(out, sa)
 	}
 	return out, rows.Err()
 }
 
-func (d *DB) GrantPerm(shareID, userID int64) (string, error) {
-	var perm string
-	err := d.SQL.QueryRow(`SELECT perm FROM share_grants WHERE share_id=? AND user_id=?`, shareID, userID).Scan(&perm)
+func (d *DB) GrantAccess(shareID, userID int64) (perm string, canDelete bool, err error) {
+	var canDel int
+	err = d.SQL.QueryRow(`SELECT perm, can_delete FROM share_grants WHERE share_id=? AND user_id=?`, shareID, userID).Scan(&perm, &canDel)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return "", false, nil
 	}
-	return perm, err
+	if err != nil {
+		return "", false, err
+	}
+	return perm, canDel != 0, nil
 }
 
 func (d *DB) ListGrants(shareID int64) ([]ShareGrant, error) {
 	rows, err := d.SQL.Query(`
-		SELECT g.share_id, g.user_id, g.perm, COALESCE(u.username, '')
+		SELECT g.share_id, g.user_id, g.perm, g.can_delete, COALESCE(u.username, '')
 		FROM share_grants g
 		LEFT JOIN users u ON u.id = g.user_id
 		WHERE g.share_id=?
@@ -726,9 +787,11 @@ func (d *DB) ListGrants(shareID int64) ([]ShareGrant, error) {
 	out := make([]ShareGrant, 0)
 	for rows.Next() {
 		var g ShareGrant
-		if err := rows.Scan(&g.ShareID, &g.UserID, &g.Perm, &g.Username); err != nil {
+		var canDel int
+		if err := rows.Scan(&g.ShareID, &g.UserID, &g.Perm, &canDel, &g.Username); err != nil {
 			return nil, err
 		}
+		g.CanDelete = canDel != 0
 		out = append(out, g)
 	}
 	return out, rows.Err()

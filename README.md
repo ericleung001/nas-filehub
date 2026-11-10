@@ -2,8 +2,6 @@
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
-Inspired by File Browser (simple UI) and Nextcloud-style per-user homes and shared folders.
-
 **License:** Apache-2.0
 
 ## Where it runs
@@ -20,7 +18,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 ## Features
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
-- **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants (admin picks a user from a dropdown and Read or Write; existing grants can be changed or revoked)
+- **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` access and an independent **Allow delete** flag (admin picks a user from a dropdown; existing grants can be changed or revoked)
 - **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke (hard-delete) anytime from Settings → Link shares, or select several and **Delete selected**
 - **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
@@ -124,7 +122,7 @@ Sign in → **Settings** (single top-bar button):
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke (permanently delete) public file/folder links, or select several and **Delete selected**; deleted rows leave the list
 5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota; reset passwords; disable accounts; per-user require 2FA
-6. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown and Read or Write (write includes read); change or revoke existing grants
+6. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
 7. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
 8. **Registration** (admins) — allow open registration
 9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)

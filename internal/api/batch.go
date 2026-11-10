@@ -75,7 +75,7 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, "")
-	if err != nil || sc.Perm != "write" {
+	if err != nil || !sc.canDelete() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -129,7 +129,7 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	if move && srcScope.Perm != "write" {
+	if move && !srcScope.canDelete() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -138,7 +138,7 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 		destRoot = body.Root
 	}
 	dstScope, err := s.resolveScope(u, destRoot, body.DestPath)
-	if err != nil || dstScope.Perm != "write" {
+	if err != nil || !dstScope.canWrite() {
 		writeErr(w, 403, "forbidden")
 		return
 	}
