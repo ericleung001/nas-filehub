@@ -29,7 +29,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all); select multiple to delete together
-  - **Users / Shares / Sessions / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **Storage quota** (optional same quota for all users); **System** (DATA_ROOT notes and live CPU / RAM / storage status)
+  - **Users / Shares / Sessions / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **Storage quota** (optional same quota for all users); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
   - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
@@ -128,7 +128,7 @@ Sign in → **Settings** (single top-bar button):
 9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 10. **Email** (admins) — SMTP for forgot-password
 11. **Storage quota** (admins) — optional **Apply the same quota to all users** setting and the quota value
-12. **System** (admins) — live server CPU, RAM, home-quota totals, and `DATA_ROOT` disk usage, plus `DATA_ROOT` / homes / shares notes
+12. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
 13. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
@@ -210,7 +210,7 @@ environment:
   THUMB_VAAPI: "true"
 ```
 
-Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls back to software; if that fails, the original image is used.
+Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls back to software; if that fails, the original image is used. Settings → System lists the detected GPU and whether the current `THUMB_VAAPI` thumbnail path can use it.
 
 (Full transcode streaming belongs in products like Jellyfin; Filehub stays intentionally light.)
 

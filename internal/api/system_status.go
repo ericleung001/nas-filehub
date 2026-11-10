@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/eric/nas-filehub/internal/hwinfo"
 )
 
 type quotaTotals struct {
@@ -287,5 +289,6 @@ func (s *Server) handleAdminSystemStatus(w http.ResponseWriter, r *http.Request)
 		"memory": mem,
 		"quotas": s.collectQuotaTotals(),
 		"disk":   disk,
+		"gpu":    hwinfo.Detect("/", s.Cfg.ThumbVAAPI),
 	})
 }

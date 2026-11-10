@@ -408,6 +408,50 @@ function load1Decimal(n) {
   return v.toFixed(1);
 }
 
+
+function renderGPUStatus(gpu) {
+  const text = $('#system-gpu-text');
+  const flags = $('#system-gpu-flags');
+  const list = $('#system-gpu-list');
+  const note = $('#system-gpu-note');
+  if (!text) return;
+  if (!gpu) {
+    text.textContent = 'Unavailable';
+    if (flags) flags.textContent = '';
+    if (list) list.innerHTML = '';
+    if (note) note.textContent = '';
+    return;
+  }
+  text.textContent = gpu.summary || 'No GPU acceleration device found';
+  const parts = [];
+  parts.push('/dev/dri: ' + (gpu.devDri ? 'present' : 'not found'));
+  parts.push('renderD128: ' + (gpu.renderD128 ? 'present' : 'not found'));
+  if (gpu.thumbVAAPI) {
+    parts.push(gpu.canUseVAAPI ? 'THUMB_VAAPI can use this GPU' : 'THUMB_VAAPI cannot use this GPU');
+  } else {
+    parts.push('THUMB_VAAPI is off');
+  }
+  if (flags) flags.textContent = parts.join(' · ');
+  if (list) {
+    list.innerHTML = '';
+    (gpu.devices || []).forEach((d) => {
+      const li = document.createElement('li');
+      const bits = [];
+      const vendor = d.vendorName || 'Unknown';
+      bits.push(vendor + (d.type && d.type !== 'unknown' ? ' (' + d.type + ')' : ''));
+      if (d.name) bits.push(d.name);
+      if (d.driver) bits.push('driver ' + d.driver);
+      if (d.pciId) bits.push(d.pciId);
+      if (d.card) bits.push(d.card);
+      if (d.render) bits.push('/dev/dri/' + d.render);
+      bits.push(d.vaapiCapable ? 'VAAPI-capable' : 'not used by current VAAPI thumb path');
+      li.textContent = bits.join(' · ');
+      list.appendChild(li);
+    });
+  }
+  if (note) note.textContent = gpu.thumbNote || '';
+}
+
 async function loadSystemStatus() {
   if (systemStatusBusy) return;
   const errEl = $('#system-status-error');
@@ -472,6 +516,7 @@ async function loadSystemStatus() {
       setStatusBar('system-disk-bar', null);
       diskPath.textContent = disk.path ? ('Path: ' + disk.path) : '';
     }
+    renderGPUStatus(data.gpu);
     const updated = $('#system-status-updated');
     if (updated) updated.textContent = 'Updated ' + new Date().toLocaleTimeString();
   } catch (err) {

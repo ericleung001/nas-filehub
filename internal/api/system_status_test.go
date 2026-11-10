@@ -136,4 +136,26 @@ func TestAdminSystemStatusAuthAndPayload(t *testing.T) {
 	if disk["totalBytes"] == nil || disk["freeBytes"] == nil || disk["usedBytes"] == nil {
 		t.Fatalf("disk incomplete: %v", disk)
 	}
+	gpu, _ := data["gpu"].(map[string]any)
+	if gpu == nil {
+		t.Fatalf("missing gpu: %v", data)
+	}
+	if _, ok := gpu["thumbVAAPI"].(bool); !ok {
+		t.Fatalf("gpu.thumbVAAPI missing: %v", gpu)
+	}
+	if gpu["thumbVAAPI"] != srv.Cfg.ThumbVAAPI {
+		t.Fatalf("gpu.thumbVAAPI %v, want %v", gpu["thumbVAAPI"], srv.Cfg.ThumbVAAPI)
+	}
+	if _, ok := gpu["devDri"].(bool); !ok {
+		t.Fatalf("gpu.devDri missing: %v", gpu)
+	}
+	if _, ok := gpu["renderD128"].(bool); !ok {
+		t.Fatalf("gpu.renderD128 missing: %v", gpu)
+	}
+	if gpu["summary"] == nil || gpu["thumbNote"] == nil {
+		t.Fatalf("gpu summary/note missing: %v", gpu)
+	}
+	if _, ok := gpu["devices"].([]any); !ok && gpu["devices"] != nil {
+		t.Fatalf("gpu.devices type: %T", gpu["devices"])
+	}
 }

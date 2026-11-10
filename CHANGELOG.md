@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-11-10
+
+### Added
+- **Settings → System** — auto-detects GPU / hardware-decode type from `/dev/dri` and sysfs (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none). Multiple GPUs are listed with vendor/type, device name when known, whether `/dev/dri` and `renderD128` exist, and whether the current `THUMB_VAAPI` thumbnail path can use it. When no device is found, a short note explains that thumbnails stay on software ffmpeg. Exposed on the existing admin-only `GET /api/admin/system/status` as `gpu`. The ffmpeg VAAPI command is unchanged.
+
 ## [0.3.20] - 2026-11-10
 
 ### Added
@@ -203,7 +208,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.20...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.21...HEAD
+[0.3.21]: https://github.com/ericleung001/nas-filehub/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/ericleung001/nas-filehub/compare/v0.3.19...v0.3.20
 [0.3.19]: https://github.com/ericleung001/nas-filehub/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/ericleung001/nas-filehub/compare/v0.3.17...v0.3.18

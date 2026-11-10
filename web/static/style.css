@@ -664,7 +664,10 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .status-head { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; margin-bottom: .3rem; flex-wrap: wrap; }
 .status-label { font-weight: 600; color: var(--text); }
 .status-value { color: var(--muted); font-size: .9rem; text-align: right; min-width: 0; word-break: break-word; }
-#system-quota-note, #system-disk-path, #system-status-updated { margin: .3rem 0 0; }
+#system-quota-note, #system-disk-path, #system-gpu-flags, #system-gpu-note, #system-status-updated { margin: .3rem 0 0; }
+.system-gpu-list { margin: .35rem 0 0; padding-left: 1.1rem; list-style: disc; }
+.system-gpu-list:empty { display: none; }
+.system-gpu-list li { margin: .25rem 0; background: transparent; border: none; padding: 0; color: var(--muted); font-size: .9rem; word-break: break-word; }
 #system-status-error[hidden], #system-cpu-bar[hidden], #system-ram-bar[hidden], #system-quota-bar[hidden], #system-disk-bar[hidden] { display: none !important; }
 #global-quota-form { margin-top: .75rem; }
 .admin-form-note { grid-column: 1 / -1; margin: 0; }
