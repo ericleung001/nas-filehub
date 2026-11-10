@@ -14,6 +14,7 @@ import (
 
 	"github.com/eric/nas-filehub/internal/db"
 	"github.com/eric/nas-filehub/internal/files"
+	"github.com/eric/nas-filehub/internal/version"
 )
 
 func loginAs(t *testing.T, tsURL, user, pass string) []*http.Cookie {
@@ -62,8 +63,8 @@ func TestHealthVersion(t *testing.T) {
 	if st != 200 || data["ok"] != true {
 		t.Fatalf("health %d %v", st, data)
 	}
-	if data["version"] != "0.4.0" {
-		t.Fatalf("version %v", data["version"])
+	if data["version"] != version.Version {
+		t.Fatalf("version %v want %s", data["version"], version.Version)
 	}
 }
 
