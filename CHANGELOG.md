@@ -8,6 +8,10 @@ where version tags are used.
 
 ## [Unreleased]
 
+### Added
+- **CasaOS / ZimaOS App Store packaging** — files under `casaos/` for the official store submission (PR to IceWhaleTech/CasaOS-AppStore). Image pin `ghcr.io/ericleung001/nas-filehub:0.3.22`.
+
+
 ## [0.3.22] - 2026-11-10
 
 ### Changed
