@@ -658,6 +658,9 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 .system-notes { padding-left: 1.1rem; margin: .5rem 0 0; list-style: disc; }
 .system-notes li { margin: .35rem 0; background: transparent; border: none; padding: 0; }
+#global-quota-form { margin-top: .75rem; }
+.admin-form-note { grid-column: 1 / -1; margin: 0; }
+#create-user-quota-note[hidden], #edit-user-quota-note[hidden], #global-quota-msg[hidden] { display: none !important; }
 @media (max-width: 900px) {
   .admin-table col.col-home,
   .admin-table col.col-share-path,

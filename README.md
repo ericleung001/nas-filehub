@@ -39,7 +39,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Session duration** — admin sets normal login lifetime (default **7 days**) and may allow **Stay signed in** (default **30 days**); applies to new logins only; existing sessions keep their expiry
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
-Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
+Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota). Admins can turn on **Apply the same quota to all users** under Settings → System so every existing user and every new account uses one quota; per-user quota editing is disabled while that setting is on.
 
 ## Quick start
 
@@ -121,13 +121,13 @@ Sign in → **Settings** (single top-bar button):
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke (permanently delete) public file/folder links, or select several and **Delete selected**; deleted rows leave the list
-5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota; reset passwords; disable accounts; per-user require 2FA
+5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while the System global quota is on); reset passwords; disable accounts; per-user require 2FA
 6. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
 7. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
 8. **Registration** (admins) — allow open registration
 9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 10. **Email** (admins) — SMTP for forgot-password
-11. **System** (admins) — `DATA_ROOT` / homes / shares / quota notes
+11. **System** (admins) — `DATA_ROOT` / homes / shares / quota notes, and an optional **Apply the same quota to all users** setting
 12. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
@@ -242,7 +242,7 @@ Admin (requires admin session):
 - `GET|POST /api/admin/users` (email on create)
 - `PATCH|DELETE /api/admin/users/{id}` (email on patch)
 - `POST /api/admin/users/{id}/password`
-- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, password policy, SMTP — password write-only)
+- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, `globalQuotaEnabled`, `globalQuotaBytes`, password policy, SMTP — password write-only)
 - `POST /api/admin/smtp/test`
 - `GET|POST /api/admin/shares`
 - `DELETE /api/admin/shares/{id}`
@@ -298,7 +298,7 @@ Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Aut
 | POST | `/api/me/totp/setup` | session | Start enrollment → QR/secret |
 | POST | `/api/me/totp/confirm` | session | `{code}` enable + `{backupCodes}` |
 | POST | `/api/me/totp/disable` | session | `{password}` or `{code}` |
-| GET/PUT | `/api/admin/settings` | admin | `{force2faAll,openRegistration,sessionTtlSeconds,rememberMeTtlSeconds,allowRememberMe,…}` |
+| GET/PUT | `/api/admin/settings` | admin | `{force2faAll,openRegistration,sessionTtlSeconds,rememberMeTtlSeconds,allowRememberMe,globalQuotaEnabled,globalQuotaBytes,…}` |
 | PATCH | `/api/admin/users/{id}` | admin | accepts `totpRequired` |
 
 SQLite: `users.totp_secret`, `users.totp_enabled`, `users.totp_required`; `settings.force_2fa_all`, `session_ttl_seconds`, `remember_me_ttl_seconds`, `allow_remember_me`; `pending_logins` (includes `remember_me`); `totp_backup_codes`.

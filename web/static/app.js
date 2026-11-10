@@ -36,6 +36,8 @@ const state = {
   transferMode: null,
   transferDestRoot: 'home',
   transferDestPath: '',
+  globalQuotaEnabled: false,
+  globalQuotaBytes: 0,
   /** pending share target { path, isDir, name } */
   shareTarget: null,
   /** true while POST /api/links is in flight */
@@ -1329,6 +1331,7 @@ function openUserEdit(u) {
   if (form.email) form.email.value = u.email || '';
   form.homePath.value = u.homePath;
   form.quota.value = u.quotaBytes ? fmtQuota(u.quotaBytes).replace(' ', '') : '0';
+  applyGlobalQuotaUI();
   form.isAdmin.checked = !!u.isAdmin;
   form.disabled.checked = !!u.disabled;
   form.totpRequired.checked = !!u.totpRequired;
@@ -1558,6 +1561,19 @@ async function loadSystemSettings() {
     sessMsg.hidden = true;
     sessMsg.classList.remove('error');
   }
+  state.globalQuotaEnabled = !!data.globalQuotaEnabled;
+  state.globalQuotaBytes = Number(data.globalQuotaBytes) || 0;
+  const gqForm = $('#global-quota-form');
+  if (gqForm) {
+    gqForm.globalQuotaEnabled.checked = state.globalQuotaEnabled;
+    gqForm.globalQuota.value = state.globalQuotaBytes ? fmtQuota(state.globalQuotaBytes).replace(' ', '') : '0';
+  }
+  const gqMsg = $('#global-quota-msg');
+  if (gqMsg) {
+    gqMsg.hidden = true;
+    gqMsg.classList.remove('error');
+  }
+  applyGlobalQuotaUI();
 }
 
 $('#allow-remember-me')?.addEventListener('change', (e) => {
@@ -1586,6 +1602,70 @@ $('#session-settings-form')?.addEventListener('submit', async (e) => {
     if (wrap) wrap.hidden = !e.target.allowRememberMe.checked;
     msg.textContent = 'Session settings saved (applies to new logins only)';
     msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+function applyGlobalQuotaUI() {
+  const on = !!state.globalQuotaEnabled;
+  const createQuota = $('#create-user-quota');
+  const createNote = $('#create-user-quota-note');
+  if (createQuota) {
+    createQuota.disabled = on;
+    createQuota.hidden = on;
+  }
+  if (createNote) createNote.hidden = !on;
+  const editQuota = $('#edit-user')?.quota;
+  if (editQuota) {
+    editQuota.disabled = on;
+    editQuota.readOnly = on;
+  }
+  const editNote = $('#edit-user-quota-note');
+  if (editNote) editNote.hidden = !on;
+}
+
+$('#global-quota-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#global-quota-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  const enabled = !!e.target.globalQuotaEnabled.checked;
+  const raw = (e.target.globalQuota.value || '').trim();
+  if (enabled && !raw) {
+    msg.textContent = 'Enter a quota (e.g. 5GB, 500MB, or 0 for unlimited).';
+    msg.classList.add('error');
+    msg.hidden = false;
+    return;
+  }
+  let globalQuotaBytes = state.globalQuotaBytes || 0;
+  if (raw) {
+    try { globalQuotaBytes = parseQuotaInput(raw); }
+    catch (err) {
+      msg.textContent = err.message;
+      msg.classList.add('error');
+      msg.hidden = false;
+      return;
+    }
+  }
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ globalQuotaEnabled: enabled, globalQuotaBytes }),
+    });
+    state.globalQuotaEnabled = !!data.globalQuotaEnabled;
+    state.globalQuotaBytes = Number(data.globalQuotaBytes) || 0;
+    e.target.globalQuotaEnabled.checked = state.globalQuotaEnabled;
+    e.target.globalQuota.value = state.globalQuotaBytes ? fmtQuota(state.globalQuotaBytes).replace(' ', '') : '0';
+    applyGlobalQuotaUI();
+    msg.textContent = state.globalQuotaEnabled
+      ? 'Saved — all users now have this quota'
+      : 'Saved — per-user quotas can be edited again';
+    msg.hidden = false;
+    try { await refreshAdmin(); } catch { /* ignore */ }
+    try { await refreshMe(); } catch { /* ignore */ }
   } catch (err) {
     msg.textContent = err.message;
     msg.classList.add('error');
@@ -2004,20 +2084,24 @@ $('#create-user').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
   let quotaBytes = 0;
-  try { quotaBytes = parseQuotaInput(fd.get('quota')); }
-  catch (err) { alert(err.message); return; }
+  if (!state.globalQuotaEnabled) {
+    try { quotaBytes = parseQuotaInput(fd.get('quota')); }
+    catch (err) { alert(err.message); return; }
+  }
+  const body = {
+    username: fd.get('username'),
+    email: fd.get('email') || '',
+    password: fd.get('password'),
+    homePath: fd.get('homePath') || '',
+    isAdmin: !!fd.get('isAdmin'),
+  };
+  if (!state.globalQuotaEnabled) body.quotaBytes = quotaBytes;
   await api('/api/admin/users', {
     method: 'POST',
-    body: JSON.stringify({
-      username: fd.get('username'),
-      email: fd.get('email') || '',
-      password: fd.get('password'),
-      homePath: fd.get('homePath') || '',
-      isAdmin: !!fd.get('isAdmin'),
-      quotaBytes,
-    }),
+    body: JSON.stringify(body),
   });
   e.target.reset();
+  applyGlobalQuotaUI();
   await refreshAdmin();
 });
 
@@ -2027,20 +2111,23 @@ $('#edit-user').addEventListener('submit', async (e) => {
   const errEl = $('#edit-user-error');
   errEl.hidden = true;
   let quotaBytes = 0;
-  try { quotaBytes = parseQuotaInput(fd.get('quota')); }
-  catch (err) { errEl.textContent = err.message; errEl.hidden = false; return; }
+  if (!state.globalQuotaEnabled) {
+    try { quotaBytes = parseQuotaInput(fd.get('quota')); }
+    catch (err) { errEl.textContent = err.message; errEl.hidden = false; return; }
+  }
   try {
+    const body = {
+      username: fd.get('username'),
+      email: fd.get('email') || '',
+      homePath: fd.get('homePath'),
+      isAdmin: !!fd.get('isAdmin'),
+      disabled: !!fd.get('disabled'),
+      totpRequired: !!fd.get('totpRequired'),
+    };
+    if (!state.globalQuotaEnabled) body.quotaBytes = quotaBytes;
     await api('/api/admin/users/' + fd.get('id'), {
       method: 'PATCH',
-      body: JSON.stringify({
-        username: fd.get('username'),
-        email: fd.get('email') || '',
-        homePath: fd.get('homePath'),
-        isAdmin: !!fd.get('isAdmin'),
-        disabled: !!fd.get('disabled'),
-        totpRequired: !!fd.get('totpRequired'),
-        quotaBytes,
-      }),
+      body: JSON.stringify(body),
     });
     $('#user-edit-dialog').close();
     await refreshAdmin();

@@ -369,6 +369,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		pol := s.passwordPolicy()
 		smtpCfg, _ := s.effectiveSMTP()
 		sess := s.sessionSettings()
+		gq, _ := s.DB.GetGlobalQuotaSettings()
 		return map[string]any{
 			"force2faAll":          s.force2FAAll(),
 			"force2faAllEnv":       s.Cfg.Force2FAAll,
@@ -376,6 +377,8 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			"sessionTtlSeconds":    sess.SessionTTLSeconds,
 			"rememberMeTtlSeconds": sess.RememberMeTTLSeconds,
 			"allowRememberMe":      sess.AllowRememberMe,
+			"globalQuotaEnabled":   gq.Enabled,
+			"globalQuotaBytes":     gq.Bytes,
 			"passwordPolicy":       pol,
 			"passwordPolicyHint":   db.PasswordPolicySummary(pol),
 			"smtp":                 s.smtpPublic(smtpCfg),
@@ -402,9 +405,16 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			SMTPUsername         *string `json:"smtpUsername"`
 			SMTPPassword         *string `json:"smtpPassword"`
 			SMTPFrom             *string `json:"smtpFrom"`
+			GlobalQuotaEnabled   *bool   `json:"globalQuotaEnabled"`
+			GlobalQuotaBytes     *int64  `json:"globalQuotaBytes"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
+			return
+		}
+		quotaTouch := body.GlobalQuotaEnabled != nil || body.GlobalQuotaBytes != nil
+		if quotaTouch && body.GlobalQuotaBytes != nil && *body.GlobalQuotaBytes < 0 {
+			writeErr(w, 400, "invalid quota: quotaBytes must be >= 0")
 			return
 		}
 		touched := false
@@ -490,6 +500,13 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 				pw = body.SMTPPassword
 			}
 			if _, err := s.DB.SetSMTPSettings(cur, pw); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			touched = true
+		}
+		if quotaTouch {
+			if _, err := s.DB.SetGlobalQuotaSettings(body.GlobalQuotaEnabled, body.GlobalQuotaBytes); err != nil {
 				writeErr(w, 400, err.Error())
 				return
 			}

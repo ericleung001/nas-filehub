@@ -369,6 +369,11 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	if quotaBytes < 0 {
 		return nil, fmt.Errorf("quotaBytes must be >= 0")
 	}
+	if gq, err := d.GetGlobalQuotaSettings(); err != nil {
+		return nil, err
+	} else if gq.Enabled {
+		quotaBytes = gq.Bytes
+	}
 	if err := validateEmailOptional(email); err != nil {
 		return nil, err
 	}
@@ -450,6 +455,11 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 	}
 	quota := cur.QuotaBytes
 	if upd.QuotaBytes != nil {
+		if gq, err := d.GetGlobalQuotaSettings(); err != nil {
+			return nil, err
+		} else if gq.Enabled {
+			return nil, fmt.Errorf("per-user quota cannot be changed while the global quota setting is enabled")
+		}
 		if *upd.QuotaBytes < 0 {
 			return nil, fmt.Errorf("quotaBytes must be >= 0")
 		}

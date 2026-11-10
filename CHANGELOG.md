@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-11-10
+
+### Added
+- **Global user quota** — Settings → System has **Apply the same quota to all users** and a quota field (same units as the per-user field, e.g. `5GB` / `1G` / `0` = unlimited). Off by default. Turning it on, or changing the value while it is on, updates every existing user’s stored quota in the same save (including admins). New accounts from admin Create user and open registration get that quota. Per-user quota fields are disabled, and the API rejects a per-user quota change, while the setting is on. Turning it off leaves each user’s current quota in place and allows individual edits again. Invalid values are rejected and nothing is written. Quota still counts only each user’s home.
+
 ## [0.3.17] - 2026-11-10
 
 ### Added
@@ -188,7 +193,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.17...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.18...HEAD
+[0.3.18]: https://github.com/ericleung001/nas-filehub/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/ericleung001/nas-filehub/compare/v0.3.16...v0.3.17
 [0.3.16]: https://github.com/ericleung001/nas-filehub/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/ericleung001/nas-filehub/compare/v0.3.14...v0.3.15
