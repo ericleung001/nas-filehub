@@ -11,6 +11,9 @@ where version tags are used.
 ### Added
 - **README screenshots** — the GitHub README now includes current login and file-browser screenshots.
 
+### Changed
+- **TrueNAS Community App packaging** — revised `truenas/` to match catalog conventions after review: required initial admin password, consts for the run-as user and data path, boolean environment values, user-provided WebUI listen port, and hardware thumbnails enabled when a GPU is selected. The catalog image pin remains `0.3.22`.
+
 ## [0.4.4] - 2026-11-10
 
 ### Fixed
