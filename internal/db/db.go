@@ -31,6 +31,7 @@ type User struct {
 	TotpRequired          bool      `json:"totpRequired"`
 	PasswordChangedAt     time.Time `json:"passwordChangedAt,omitempty"`
 	PasswordPolicyVersion int       `json:"passwordPolicyVersion"`
+	Status                string    `json:"status"` // active|pending|rejected
 	CreatedAt             time.Time `json:"createdAt"`
 }
 
@@ -136,6 +137,9 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureShareGrantColumns(); err != nil {
 		return err
 	}
+	if err := d.ensureFileOwnerTable(); err != nil {
+		return err
+	}
 	return d.ensurePasswordResetTable()
 }
 
@@ -171,6 +175,7 @@ func (d *DB) ensureUserColumns() error {
 		{"password_changed_at", `ALTER TABLE users ADD COLUMN password_changed_at TEXT NOT NULL DEFAULT ''`},
 		{"password_policy_version", `ALTER TABLE users ADD COLUMN password_policy_version INTEGER NOT NULL DEFAULT 0`},
 		{"email", `ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`},
+		{"status", `ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`},
 	}
 	for _, a := range alters {
 		if cols[a.name] {
@@ -180,7 +185,8 @@ func (d *DB) ensureUserColumns() error {
 			return err
 		}
 	}
-	return nil
+	_, err = d.SQL.Exec(`UPDATE users SET status='active' WHERE status IS NULL OR status=''`)
+	return err
 }
 
 func (d *DB) ensurePendingLoginColumns() error {
@@ -287,10 +293,11 @@ func scanUser(scanner interface {
 	u := &User{}
 	var admin, disabled, totpEnabled, totpRequired int
 	var created, pwChanged string
-	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &created)
+	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created)
 	if err != nil {
 		return nil, err
 	}
+	u.Status = NormalizeUserStatus(u.Status)
 	u.IsAdmin = admin == 1
 	u.Disabled = disabled == 1
 	u.TotpEnabled = totpEnabled == 1
@@ -302,7 +309,7 @@ func scanUser(scanner interface {
 	return u, nil
 }
 
-const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, created_at`
+const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, status, created_at`
 
 func (d *DB) GetUserByUsername(username string) (*User, error) {
 	row := d.SQL.QueryRow(
@@ -393,8 +400,8 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	now := time.Now().UTC().Format(time.RFC3339)
 	pol, _ := d.GetPasswordPolicy()
 	res, err := d.SQL.Exec(
-		`INSERT INTO users(username, email, password_hash, is_admin, home_path, quota_bytes, disabled, password_changed_at, password_policy_version, created_at) VALUES(?,?,?,?,?,?,0,?,?,?)`,
-		username, email, hash, admin, homePath, quotaBytes, now, pol.Version, now,
+		`INSERT INTO users(username, email, password_hash, is_admin, home_path, quota_bytes, disabled, password_changed_at, password_policy_version, status, created_at) VALUES(?,?,?,?,?,?,0,?,?,?,?)`,
+		username, email, hash, admin, homePath, quotaBytes, now, pol.Version, UserStatusActive, now,
 	)
 	if err != nil {
 		return nil, err
@@ -403,7 +410,7 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	return &User{
 		ID: id, Username: username, Email: email, IsAdmin: isAdmin, HomePath: homePath,
 		QuotaBytes: quotaBytes, PasswordChangedAt: time.Now().UTC(),
-		PasswordPolicyVersion: pol.Version, CreatedAt: time.Now().UTC(),
+		PasswordPolicyVersion: pol.Version, Status: UserStatusActive, CreatedAt: time.Now().UTC(),
 	}, nil
 }
 

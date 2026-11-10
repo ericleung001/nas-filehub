@@ -17,7 +17,7 @@
 
     Prefer a reverse proxy with HTTPS, and set SECURE_COOKIES=true once you are behind HTTPS. Do not expose the WebUI port directly to the public internet.
 
-    Optional Intel VAAPI thumbnails: keep the /dev/dri device mapping and set THUMB_VAAPI=true. If your server has no /dev/dri, remove the device mapping and leave THUMB_VAAPI=false.
+    Optional hardware thumbnails: keep the /dev/dri device mapping (and NVIDIA runtime if you use an NVIDIA GPU) and set THUMB_HWACCEL=auto (or leave THUMB_VAAPI=true for the same auto path). If no GPU device is present, leave hardware acceleration off. The image supports linux/amd64 and linux/arm64. Set PUID/PGID to the host UID/GID that should own /data (default 1000:1000).
 
     The optional Unraid shares path is mounted at /data/files/shares so you can create shared folders with paths such as shares/Movies. You can remove that mapping if you do not need it.
   </Description>
@@ -31,18 +31,22 @@
   <DonateLink>https://buymeacoffee.com/filehub</DonateLink>
   <DonateText>Buy me a coffee</DonateText>
   <Date>2026-11-10</Date>
-  <Requires>After the first start, read the generated admin password in /mnt/user/appdata/nas-filehub/admin-credentials.txt, then change it under Settings → Change password. Prefer a reverse proxy; do not expose the WebUI port to the public internet. For Intel VAAPI thumbnails, keep /dev/dri mapped and set THUMB_VAAPI=true. If /dev/dri is not present, remove the device mapping.</Requires>
+  <Requires>After the first start, read the generated admin password in /mnt/user/appdata/nas-filehub/admin-credentials.txt, then change it under Settings → Change password. Prefer a reverse proxy; do not expose the WebUI port to the public internet. For hardware thumbnails, keep /dev/dri mapped (or an NVIDIA runtime) and set THUMB_HWACCEL=auto, or THUMB_VAAPI=true for the same auto path. If no GPU device is present, remove the device mapping. PUID/PGID default to 1000:1000.</Requires>
   <Changes>Community Apps template and GHCR image for Filehub. Leave ADMIN_PASSWORD unset on first boot and read the generated password from appdata/nas-filehub/admin-credentials.txt.</Changes>
 
   <Config Name="WebUI" Target="8080" Default="8088" Mode="tcp" Description="HTTP WebUI port (container 8080). Prefer a reverse proxy; do not expose this port directly to the public internet." Type="Port" Display="always" Required="true" Mask="false"/>
   <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/nas-filehub" Mode="rw" Description="Database, thumbnails, generated admin-credentials.txt, and default files under /data/files." Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="Unraid shares" Target="/data/files/shares" Default="/mnt/user" Mode="rw" Description="Optional mapping so Shared folders can use paths like shares/Movies. You can remove this mapping if you do not need host shares." Type="Path" Display="always" Required="false" Mask="false"/>
-  <Config Name="Intel GPU (/dev/dri)" Target="/dev/dri" Default="/dev/dri" Mode="" Description="Optional Intel iGPU for VAAPI thumbnail acceleration. If /dev/dri is not present on the host, remove this mapping and leave THUMB_VAAPI=false." Type="Device" Display="advanced" Required="false" Mask="false">/dev/dri</Config>
+  <Config Name="Intel GPU (/dev/dri)" Target="/dev/dri" Default="/dev/dri" Mode="" Description="Optional GPU devices for thumbnail acceleration (Intel/AMD VAAPI via /dev/dri). If not present on the host, remove this mapping and leave THUMB_HWACCEL empty / THUMB_VAAPI=false." Type="Device" Display="advanced" Required="false" Mask="false">/dev/dri</Config>
   <Config Name="ADMIN_USER" Target="ADMIN_USER" Default="admin" Description="Seed admin username on first boot only." Type="Variable" Display="advanced" Required="false" Mask="false">admin</Config>
   <Config Name="ADMIN_PASSWORD" Target="ADMIN_PASSWORD" Default="" Description="Optional. Leave empty on first boot so the entrypoint generates a password into /data/admin-credentials.txt. Only seeds the first boot; later changes must be made in Settings." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="SECURE_COOKIES" Target="SECURE_COOKIES" Default="false" Description="Set true when the WebUI is served over HTTPS (reverse proxy). Leave false so http://IP:port login works on a first Unraid install." Type="Variable" Display="always" Required="false" Mask="false">false</Config>
   <Config Name="THUMB_ENABLE" Target="THUMB_ENABLE" Default="true" Description="Generate image and video thumbnails with ffmpeg." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
-  <Config Name="THUMB_VAAPI" Target="THUMB_VAAPI" Default="false" Description="Set true only when /dev/dri is mapped and you want Intel VAAPI thumbnail acceleration." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="THUMB_VAAPI" Target="THUMB_VAAPI" Default="false" Description="Legacy flag. true enables auto hardware thumbnail acceleration (same as THUMB_HWACCEL=auto). Honored when THUMB_HWACCEL is unset." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="THUMB_HWACCEL" Target="THUMB_HWACCEL" Default="" Description="auto, off, vaapi, or nvdec. Empty defers to THUMB_VAAPI. ffmpeg always falls back to software on failure." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="PUID" Target="PUID" Default="1000" Description="UID the container uses after start, and the owner of /data. Default 1000 matches previous images." Type="Variable" Display="always" Required="false" Mask="false">1000</Config>
+  <Config Name="PGID" Target="PGID" Default="1000" Description="GID the container uses after start, and the group owner of /data. Default 1000." Type="Variable" Display="always" Required="false" Mask="false">1000</Config>
+  <Config Name="UMASK" Target="UMASK" Default="" Description="Optional umask for created files (for example 002). Leave empty to use the default." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="PUBLIC_BASE_URL" Target="PUBLIC_BASE_URL" Default="" Description="Optional public site URL used in password-reset emails (for example https://filehub.example.com)." Type="Variable" Display="always" Required="false" Mask="false"/>
   <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="2048" Description="Maximum upload size in MiB (application default is 2048)." Type="Variable" Display="advanced" Required="false" Mask="false">2048</Config>
 </Container>

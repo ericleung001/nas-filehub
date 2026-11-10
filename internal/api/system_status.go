@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/eric/nas-filehub/internal/hwinfo"
+	"github.com/eric/nas-filehub/internal/thumb"
 )
 
 type quotaTotals struct {
@@ -266,6 +267,30 @@ func (s *Server) handleAdminSystemStatus(w http.ResponseWriter, r *http.Request)
 		"memory": mem,
 		"quotas": s.collectQuotaTotals(),
 		"disk":   disk,
-		"gpu":    hwinfo.Detect("/", s.Cfg.ThumbVAAPI),
+		"gpu":    s.gpuStatus(),
 	})
+}
+
+func (s *Server) gpuStatus() map[string]any {
+	mode := thumb.ParseMode(s.Cfg.ThumbHWAccel, s.Cfg.ThumbVAAPI)
+	st := hwinfo.Detect("/", mode != thumb.ModeOff)
+	plan := thumb.SelectPlan(mode, st)
+	if plan.Note(mode) != "" {
+		st.ThumbNote = plan.Note(mode)
+	}
+	return map[string]any{
+		"thumbVAAPI":      st.ThumbVAAPI,
+		"thumbHWAccel":    string(mode),
+		"devDri":          st.DevDri,
+		"renderD128":      st.RenderD128,
+		"renderNodes":     st.RenderNodes,
+		"devices":         st.Devices,
+		"summary":         st.Summary,
+		"thumbNote":       st.ThumbNote,
+		"canUseVAAPI":     st.CanUseVAAPI && plan.Backend == "vaapi",
+		"canUseHardware":  plan.CanUseHardware(),
+		"selectedBackend": plan.Backend,
+		"selectedDevice":  plan.Device,
+		"selectedVendor":  plan.Vendor,
+	}
 }

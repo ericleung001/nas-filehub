@@ -8,10 +8,23 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
 ### Added
-- **Docker Hub image** — public repository [`ericleung001/nas-filehub`](https://hub.docker.com/r/ericleung001/nas-filehub). Tags `0.3.22` and `latest` match GHCR digest `sha256:e9adea9b9e5e0222107aa3fc841270d7ede6da2d4ceae8209d819c622d6f5e77` (linux/amd64).
-- **TrueNAS Apps packaging** — files under `truenas/` for the official catalog submission (community train PR to truenas/apps). Image pin `ghcr.io/ericleung001/nas-filehub:0.3.22`.
-- **CasaOS / ZimaOS App Store packaging** — files under `casaos/` for the official store submission (PR to IceWhaleTech/CasaOS-AppStore). Image pin `ghcr.io/ericleung001/nas-filehub:0.3.22`.
+- **linux/arm64 container images** — the Docker workflow builds `linux/amd64` and `linux/arm64` (QEMU + Buildx). Version tags still omit the `v` prefix (`0.4.0`, plus `0.4`, `latest` on the default branch, and a sha tag). The Debian `ffmpeg` package in the image is multi-arch.
+- **Docker Hub publish** — the same workflow can also push `ericleung001/nas-filehub` to Docker Hub with the same tags when `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are set. If those secrets are missing, Hub login and tags are skipped and GHCR still publishes.
+- **Share-aware quotas** — usage is the user’s home plus files in shares attributed to that user as the acting writer (upload, copy, or replace). A share is never billed in full to every grantee. Enforcement on upload and copy into a share checks the acting user’s quota. Settings → System totals and the Users storage bar use the same definition.
+- **Hardware thumbnail acceleration** — `THUMB_HWACCEL=auto|off|vaapi|nvdec` (aliases `cuda`/`cuvid`/`nvidia` map to nvdec). Legacy `THUMB_VAAPI=true` still means auto. Filehub selects Intel or AMD VAAPI on the matching render node, or NVIDIA CUDA/NVDEC when that device is detected, then falls back to software ffmpeg and finally the original image. Settings → System reports the selected backend and whether the current path can use a detected GPU. Argument selection is unit-tested; live GPU decode is not claimed without a working ffmpeg build and device.
+- **PUID / PGID** — the image starts as root, chowns `/data`, optional `UMASK`, then drops privileges with `gosu`. Defaults remain `1000:1000` when unset. Documented in README, compose, and the Unraid template.
+- **Registration approval** — new self-registered accounts are pending until an admin approves or rejects them (Settings → Users and Registration). The “require admin approval” toggle defaults to on. Pending users cannot sign in. Rejecting a pending account deletes it so the username can be reused. Already-active users and admin-created users are unchanged. Email notification is optional and is not required.
+- **File search** — filename search across My Files and shares the user can read (`GET /api/search`), with a search box in the file browser (desktop and mobile).
+- **Recycle bin** — delete (single and bulk), including in shares when Allow delete / owner / admin applies, moves items to `DATA_ROOT/.filehub-trash/<id>/` instead of a permanent delete. Users can restore or permanently purge; Empty recycle bin purges that user’s items. Trashed files still count toward the owner’s quota until purged. Link-share revoke stays a hard-delete of the link row, not a file-trash operation.
+- **Folder zip download** — download a readable folder (including a share) as a streamed zip (`GET /api/zip` or the download button on a folder), with size and time safeguards. Paths stay inside the allowed tree.
+- **Docker Hub docs** — public repository [`ericleung001/nas-filehub`](https://hub.docker.com/r/ericleung001/nas-filehub) (added while 0.3.22 was current; 0.4.0 continues the same name).
+- **Catalog packaging snapshots** — `casaos/` and `truenas/` still document the official catalog submissions that pin **amd64** `ghcr.io/ericleung001/nas-filehub:0.3.22`. Those catalog PRs were not updated in this release and should be followed up later.
+
+### Changed
+- Quota documentation and System storage notes describe the share-writer and recycle-bin rules. Legacy share files with **no recorded writer stay unbilled** until a Filehub user writes or replaces them (they are not assigned to the share creator and are not billed to every member).
 
 
 ## [0.3.22] - 2026-11-10

@@ -14,6 +14,7 @@ import (
 	"github.com/eric/nas-filehub/internal/db"
 	"github.com/eric/nas-filehub/internal/files"
 	"github.com/eric/nas-filehub/internal/thumb"
+	"github.com/eric/nas-filehub/internal/version"
 	"github.com/eric/nas-filehub/web"
 )
 
@@ -67,13 +68,13 @@ func main() {
 	srv := &api.Server{
 		Cfg:          cfg,
 		DB:           database,
-		Thumbs:       &thumb.Generator{CacheDir: cfg.ThumbCacheDir, Enable: cfg.ThumbEnable, VAAPI: cfg.ThumbVAAPI},
+		Thumbs:       &thumb.Generator{CacheDir: cfg.ThumbCacheDir, Enable: cfg.ThumbEnable, VAAPI: cfg.ThumbVAAPI, Mode: thumb.ParseMode(cfg.ThumbHWAccel, cfg.ThumbVAAPI)},
 		Limiter:      auth.NewLoginLimiter(cfg.RateLimitPerMin),
 		ResetLimiter: auth.NewLoginLimiter(5), // password-reset requests per IP per minute
 		Static:       staticRoot,
 	}
 
-	log.Printf("nas-filehub listening on %s (data=%s)", cfg.ListenAddr, cfg.DataRoot)
+	log.Printf("nas-filehub %s listening on %s (data=%s)", version.Version, cfg.ListenAddr, cfg.DataRoot)
 	if err := http.ListenAndServe(cfg.ListenAddr, srv.Handler()); err != nil {
 		log.Fatal(err)
 	}

@@ -22,6 +22,12 @@ services:
       THUMB_CACHE_DIR: /data/thumbs
       THUMB_ENABLE: "true"
       THUMB_VAAPI: "false"
+      # auto|off|vaapi|nvdec — empty defers to THUMB_VAAPI (true acts as auto)
+      THUMB_HWACCEL: ${THUMB_HWACCEL:-}
+      # Host UID/GID for /data (default 1000:1000). Optional UMASK e.g. 002.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # UMASK: ${UMASK:-}
       LOGIN_RATE_LIMIT: "10"
       MAX_UPLOAD_MB: "4096"
       CREDENTIALS_FILE: /data/admin-credentials.txt

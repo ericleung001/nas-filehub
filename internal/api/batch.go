@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/eric/nas-filehub/internal/files"
+	"github.com/eric/nas-filehub/internal/trash"
 )
 
 type batchBody struct {
@@ -79,22 +80,40 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
+	rootID := body.Root
+	if rootID == "" {
+		rootID = "home"
+	}
 	var failed []map[string]string
 	ok := 0
-	for _, p := range paths {
-		if _, err := s.resolveScope(u, body.Root, p); err != nil {
-			failed = append(failed, map[string]string{"path": p, "error": "forbidden"})
+	for _, pth := range paths {
+		itemScope, err := s.resolveScope(u, body.Root, pth)
+		if err != nil {
+			failed = append(failed, map[string]string{"path": pth, "error": "forbidden"})
 			continue
 		}
-		if err := files.Delete(sc.Root, p); err != nil {
-			failed = append(failed, map[string]string{"path": p, "error": err.Error()})
+		if sc.Kind == "trash" {
+			it, err := trash.Load(s.Cfg.DataRoot, pth)
+			if err != nil {
+				failed = append(failed, map[string]string{"path": pth, "error": "not found"})
+				continue
+			}
+			if !u.IsAdmin && it.OwnerID != u.ID && it.DeletedBy != u.ID {
+				failed = append(failed, map[string]string{"path": pth, "error": "forbidden"})
+				continue
+			}
+			if _, err := trash.Purge(s.Cfg.DataRoot, pth); err != nil {
+				failed = append(failed, map[string]string{"path": pth, "error": err.Error()})
+				continue
+			}
+			_ = s.DB.DeleteFileOwnerPrefix(trash.DirName + "/" + pth)
+			ok++
 			continue
 		}
-		rootID := body.Root
-		if rootID == "" {
-			rootID = "home"
+		if err := s.trashDelete(u, itemScope, pth, rootID); err != nil {
+			failed = append(failed, map[string]string{"path": pth, "error": err.Error()})
+			continue
 		}
-		_, _ = s.DB.DeleteLinkSharesForPath(rootID, p)
 		ok++
 	}
 	writeJSON(w, 200, map[string]any{"ok": ok, "failed": failed})
@@ -161,18 +180,22 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 				continue
 			}
 		}
-		if dstScope.Kind == "home" {
+		if dstScope.Kind == "trash" || srcScope.Kind == "trash" {
+			failed = append(failed, map[string]string{"path": p, "error": "cannot move or copy recycle bin items here"})
+			continue
+		}
+		sameHomeMove := move && body.Root == destRoot && srcScope.Kind == "home" && dstScope.Kind == "home"
+		shareToShareMove := move && srcScope.Kind == "share" && dstScope.Kind == "share"
+		homeToShareMove := move && srcScope.Kind == "home" && dstScope.Kind == "share"
+		if !sameHomeMove && !shareToShareMove && !homeToShareMove {
 			extra, err := files.EntrySize(srcScope.Root, p)
 			if err != nil {
 				failed = append(failed, map[string]string{"path": p, "error": err.Error()})
 				continue
 			}
-			// Move within same home does not grow usage.
-			if !(move && body.Root == destRoot && srcScope.Kind == "home") {
-				if err := s.checkHomeQuota(u, extra); err != nil {
-					failed = append(failed, map[string]string{"path": p, "error": err.Error()})
-					continue
-				}
+			if err := s.checkUserQuota(u, extra); err != nil {
+				failed = append(failed, map[string]string{"path": p, "error": err.Error()})
+				continue
 			}
 		}
 		var opErr error
@@ -185,6 +208,7 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 			failed = append(failed, map[string]string{"path": p, "error": opErr.Error()})
 			continue
 		}
+		s.afterTransfer(u, srcScope, dstScope, p, destName, move)
 		ok++
 	}
 	writeJSON(w, 200, map[string]any{"ok": ok, "failed": failed})

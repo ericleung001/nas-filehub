@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	"github.com/eric/nas-filehub/internal/db"
 	"github.com/eric/nas-filehub/internal/files"
 	"github.com/eric/nas-filehub/internal/thumb"
+	"github.com/eric/nas-filehub/internal/trash"
+	"github.com/eric/nas-filehub/internal/version"
 )
 
 type Server struct {
@@ -33,8 +34,9 @@ type scope struct {
 	Rel       string // relative path inside that root (requested)
 	Perm      string // read|write
 	CanDelete bool
-	Kind      string // home|share
+	Kind      string // home|share|trash
 	ID        int64  // share id if share
+	BaseRel   string // path of this root relative to DATA_ROOT
 }
 
 func (sc *scope) canWrite() bool  { return sc != nil && sc.Perm == "write" }
@@ -70,6 +72,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/download", s.requireAuth(s.handleDownload))
 	mux.HandleFunc("/api/raw", s.requireAuth(s.handleRaw))
 	mux.HandleFunc("/api/thumb", s.requireAuth(s.handleThumb))
+	mux.HandleFunc("/api/search", s.requireAuth(s.handleSearch))
+	mux.HandleFunc("/api/zip", s.requireAuth(s.handleZip))
+	mux.HandleFunc("/api/trash", s.requireAuth(s.handleTrash))
+	mux.HandleFunc("/api/trash/restore", s.requireAuth(s.handleTrashRestore))
+	mux.HandleFunc("/api/trash/purge", s.requireAuth(s.handleTrashPurge))
 	mux.HandleFunc("/api/links", s.requireAuth(s.handleLinks))
 	mux.HandleFunc("/api/links/", s.requireAuth(s.handleLinkID))
 	mux.HandleFunc("/api/public/links/", s.handlePublicLinks)
@@ -187,6 +194,14 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "account disabled")
 			return
 		}
+		if userPending(u) {
+			writeErr(w, http.StatusUnauthorized, "account pending approval")
+			return
+		}
+		if db.NormalizeUserStatus(u.Status) != db.UserStatusActive {
+			writeErr(w, http.StatusUnauthorized, "account is not active")
+			return
+		}
 		path := r.URL.Path
 		if s.userMustChangePassword(u) {
 			allowed := path == "/api/me" ||
@@ -251,7 +266,7 @@ func (s *Server) clearSessionCookie(w http.ResponseWriter) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "service": "nas-filehub"})
+	writeJSON(w, 200, map[string]any{"ok": true, "service": "nas-filehub", "version": version.Version})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -280,6 +295,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.Disabled {
 		writeErr(w, 401, "account disabled")
+		return
+	}
+	if userPending(u) {
+		writeErr(w, 403, "Your account is pending admin approval")
+		return
+	}
+	if db.NormalizeUserStatus(u.Status) != db.UserStatusActive {
+		writeErr(w, 403, "account is not active")
 		return
 	}
 	rememberMe := body.RememberMe && s.sessionSettings().AllowRememberMe
@@ -353,7 +376,7 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 	// Password gate takes priority over 2FA enroll for the flag the UI reads first.
 	return map[string]any{
 		"id": u.ID, "username": u.Username, "email": u.Email, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
-		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled,
+		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled, "status": db.NormalizeUserStatus(u.Status),
 		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
 		"force2faAll": forceAll, "mustEnrollTotp": mustEnroll && !mustChange,
 		"mustChangePassword": mustChange,
@@ -391,25 +414,6 @@ func (s *Server) passwordNeedsChange(u *db.User, plain string) bool {
 		return true
 	}
 	return false
-}
-
-func (s *Server) homeUsedBytes(u *db.User) int64 {
-	used, err := files.DirSize(s.Cfg.DataRoot, u.HomePath)
-	if err != nil {
-		return 0
-	}
-	return used
-}
-
-func (s *Server) checkHomeQuota(u *db.User, extra int64) error {
-	if u == nil || u.QuotaBytes <= 0 {
-		return nil
-	}
-	used := s.homeUsedBytes(u)
-	if used+extra > u.QuotaBytes {
-		return fmt.Errorf("quota exceeded: used %d + %d > limit %d bytes", used, extra, u.QuotaBytes)
-	}
-	return nil
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -487,6 +491,7 @@ func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
 			CanDelete: sa.CanDelete,
 		})
 	}
+	out = append(out, root{ID: "trash", Name: "Recycle bin", Kind: "trash", Perm: "write", CanDelete: true})
 	writeJSON(w, 200, map[string]any{"roots": out})
 }
 
@@ -497,7 +502,10 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &scope{Root: abs, Rel: rel, Perm: "write", CanDelete: true, Kind: "home"}, nil
+		return &scope{Root: abs, Rel: rel, Perm: "write", CanDelete: true, Kind: "home", BaseRel: u.HomePath}, nil
+	}
+	if rootID == "trash" {
+		return &scope{Root: trash.Root(s.Cfg.DataRoot), Rel: rel, Perm: "write", CanDelete: true, Kind: "trash", BaseRel: files.TrashDirName}, nil
 	}
 	if strings.HasPrefix(rootID, "share:") {
 		idStr := strings.TrimPrefix(rootID, "share:")
@@ -523,7 +531,7 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &scope{Root: abs, Rel: rel, Perm: perm, CanDelete: canDelete, Kind: "share", ID: id}, nil
+		return &scope{Root: abs, Rel: rel, Perm: perm, CanDelete: canDelete, Kind: "share", ID: id, BaseRel: share.Path}, nil
 	}
 	return nil, os.ErrNotExist
 }
@@ -535,6 +543,15 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	sc, err := s.resolveScope(u, rootID, rel)
 	if err != nil {
 		writeErr(w, 403, "forbidden")
+		return
+	}
+	if sc.Kind == "trash" {
+		entries, err := s.listTrashEntries(u)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]any{"path": "", "perm": "write", "canDelete": true, "entries": entries, "kind": "trash"})
 		return
 	}
 	entries, err := files.List(sc.Root, sc.Rel)
@@ -560,15 +577,13 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, body.Path)
-	if err != nil || !sc.canWrite() {
+	if err != nil || !sc.canWrite() || sc.Kind == "trash" {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	if sc.Kind == "home" {
-		if err := s.checkHomeQuota(u, 0); err != nil {
-			writeErr(w, 403, err.Error())
-			return
-		}
+	if err := s.checkUserQuota(u, 0); err != nil {
+		writeErr(w, 403, err.Error())
+		return
 	}
 	if err := files.Mkdir(sc.Root, sc.Rel); err != nil {
 		writeErr(w, 400, err.Error())
@@ -593,7 +608,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, body.From)
-	if err != nil || !sc.canWrite() {
+	if err != nil || !sc.canWrite() || sc.Kind == "trash" {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -601,6 +616,7 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	s.afterRename(sc, body.From, body.To)
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
@@ -623,15 +639,32 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	if err := files.Delete(sc.Root, sc.Rel); err != nil {
-		writeErr(w, 400, err.Error())
+	if sc.Kind == "trash" {
+		it, err := trash.Load(s.Cfg.DataRoot, sc.Rel)
+		if err != nil {
+			writeErr(w, 404, "not found")
+			return
+		}
+		if !u.IsAdmin && it.OwnerID != u.ID && it.DeletedBy != u.ID {
+			writeErr(w, 403, "forbidden")
+			return
+		}
+		if _, err := trash.Purge(s.Cfg.DataRoot, sc.Rel); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		_ = s.DB.DeleteFileOwnerPrefix(trash.DirName + "/" + sc.Rel)
+		writeJSON(w, 200, map[string]string{"ok": "1"})
 		return
 	}
 	rootID := body.Root
 	if rootID == "" {
 		rootID = "home"
 	}
-	_, _ = s.DB.DeleteLinkSharesForPath(rootID, sc.Rel)
+	if err := s.trashDelete(u, sc, sc.Rel, rootID); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
@@ -650,7 +683,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	rootID := r.FormValue("root")
 	dir := r.FormValue("path")
 	sc, err := s.resolveScope(u, rootID, dir)
-	if err != nil || !sc.canWrite() {
+	if err != nil || !sc.canWrite() || sc.Kind == "trash" {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -660,21 +693,20 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	if sc.Kind == "home" {
-		extra := hdr.Size
-		if extra < 0 {
-			extra = 0
-		}
-		if err := s.checkHomeQuota(u, extra); err != nil {
-			writeErr(w, 403, err.Error())
-			return
-		}
+	extra := hdr.Size
+	if extra < 0 {
+		extra = 0
+	}
+	if err := s.checkUserQuota(u, extra); err != nil {
+		writeErr(w, 403, err.Error())
+		return
 	}
 	saved, err := files.SaveUpload(sc.Root, sc.Rel, hdr.Filename, file)
 	if err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	s.attributeWrite(u, sc, saved)
 	writeJSON(w, 200, map[string]string{"path": saved})
 }
 
@@ -685,14 +717,28 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	f, st, err := files.Open(sc.Root, sc.Rel)
+	full, err := files.SafeJoin(sc.Root, sc.Rel)
+	if err != nil {
+		writeErr(w, 400, "bad path")
+		return
+	}
+	st, err := os.Lstat(full)
+	if err != nil {
+		writeErr(w, 404, "not found")
+		return
+	}
+	if st.IsDir() {
+		s.streamZip(w, sc)
+		return
+	}
+	f, st2, err := files.Open(sc.Root, sc.Rel)
 	if err != nil {
 		writeErr(w, 404, "not found")
 		return
 	}
 	defer f.Close()
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(st.Name())+`"`)
-	http.ServeContent(w, r, st.Name(), st.ModTime(), f)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(st2.Name())+`"`)
+	http.ServeContent(w, r, st2.Name(), st2.ModTime(), f)
 }
 
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
@@ -856,6 +902,39 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 		default:
 			writeErr(w, 405, "method not allowed")
 		}
+		return
+	}
+	if (parts[1] == "approve" || parts[1] == "reject") && len(parts) == 2 {
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "method not allowed")
+			return
+		}
+		u, err := s.DB.GetUserByID(id)
+		if err != nil || u == nil {
+			writeErr(w, 404, "not found")
+			return
+		}
+		if parts[1] == "approve" {
+			if err := s.DB.SetUserStatus(id, db.UserStatusActive); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			u.Status = db.UserStatusActive
+			m := s.userPublic(u)
+			m["usedBytes"] = s.homeUsedBytes(u)
+			writeJSON(w, 200, map[string]any{"user": m})
+			return
+		}
+		me := s.currentUser(r)
+		if me.ID == id {
+			writeErr(w, 400, "cannot reject yourself")
+			return
+		}
+		if err := s.DB.DeleteUser(id); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "rejected": true})
 		return
 	}
 	if parts[1] == "password" && len(parts) == 2 {

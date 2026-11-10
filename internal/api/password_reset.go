@@ -74,11 +74,12 @@ func (s *Server) handleAuthFeatures(w http.ResponseWriter, r *http.Request) {
 	pol := s.passwordPolicy()
 	sess := s.sessionSettings()
 	writeJSON(w, 200, map[string]any{
-		"forgotPassword":     cfg.Ready(),
-		"openRegistration":   s.openRegistration(),
-		"allowRememberMe":    sess.AllowRememberMe,
-		"passwordPolicy":     pol,
-		"passwordPolicyHint": db.PasswordPolicySummary(pol),
+		"forgotPassword":              cfg.Ready(),
+		"openRegistration":            s.openRegistration(),
+		"registrationRequireApproval": s.registrationRequireApproval(),
+		"allowRememberMe":             sess.AllowRememberMe,
+		"passwordPolicy":              pol,
+		"passwordPolicyHint":          db.PasswordPolicySummary(pol),
 	})
 }
 
@@ -127,14 +128,28 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, msg)
 		return
 	}
+	pending := s.registrationRequireApproval()
+	if pending {
+		if err := s.DB.SetUserStatus(u.ID, db.UserStatusPending); err != nil {
+			_ = s.DB.DeleteUser(u.ID)
+			writeErr(w, 500, "could not set account status")
+			return
+		}
+		u.Status = db.UserStatusPending
+	}
 	abs, err := files.SafeJoin(s.Cfg.DataRoot, u.HomePath)
 	if err == nil {
 		_ = files.EnsureDir(abs)
 	}
+	msg := "Account created. You can sign in now."
+	if pending {
+		msg = "Account created and is pending admin approval. You cannot sign in until an administrator approves it."
+	}
 	writeJSON(w, 201, map[string]any{
 		"ok":       true,
 		"username": u.Username,
-		"message":  "Account created. You can sign in now.",
+		"pending":  pending,
+		"message":  msg,
 	})
 }
 
@@ -171,7 +186,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, err := s.DB.FindUserByUsernameOrEmail(id)
-	if err != nil || u == nil || u.Disabled || strings.TrimSpace(u.Email) == "" {
+	if err != nil || u == nil || u.Disabled || !userActive(u) || strings.TrimSpace(u.Email) == "" {
 		writeJSON(w, 200, map[string]any{"ok": true, "message": generic})
 		return
 	}

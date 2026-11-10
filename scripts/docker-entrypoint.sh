@@ -138,4 +138,23 @@ export ADMIN_USER
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 export SESSION_SECRET="${SESSION_SECRET:-}"
 
+# PUID/PGID: start as root, chown /data, then drop privileges. Defaults
+# stay 1000:1000 so existing installs are unchanged when the variables are unset.
+if [ "$(id -u)" -eq 0 ]; then
+  PUID="${PUID:-1000}"
+  PGID="${PGID:-1000}"
+  case "${PUID}" in
+    *[!0-9]*) echo "filehub: WARN: PUID must be numeric, falling back to 1000" >&2; PUID=1000 ;;
+  esac
+  case "${PGID}" in
+    *[!0-9]*) echo "filehub: WARN: PGID must be numeric, falling back to 1000" >&2; PGID=1000 ;;
+  esac
+  if [ -n "${UMASK:-}" ]; then
+    umask "${UMASK}" || echo "filehub: WARN: invalid UMASK ${UMASK}" >&2
+  fi
+  mkdir -p /data/files /data/thumbs
+  chown -R "${PUID}:${PGID}" /data || echo "filehub: WARN: chown /data to ${PUID}:${PGID} failed" >&2
+  exec gosu "${PUID}:${PGID}" /app/nas-filehub "$@"
+fi
+
 exec /app/nas-filehub "$@"

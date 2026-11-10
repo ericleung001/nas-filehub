@@ -73,6 +73,13 @@
         <main>
           <div class="toolbar">
             <nav id="breadcrumbs"></nav>
+            <div class="file-search">
+              <input id="file-search" type="search" placeholder="Search files…" autocomplete="off" aria-label="Search files" />
+            </div>
+            <div id="trash-actions" class="trash-actions" hidden>
+              <button type="button" id="btn-trash-restore" class="ghost">Restore</button>
+              <button type="button" id="btn-trash-empty" class="ghost danger">Empty recycle bin</button>
+            </div>
             <div class="actions">
               <div class="sort-controls" role="group" aria-label="Sort files">
                 <label class="sort-label" for="sort-by">Sort
@@ -390,8 +397,9 @@
           <div id="tab-registration" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>Registration</h3>
-              <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. Accounts are active immediately (no admin approval yet).</p>
+              <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. By default, self-registered accounts stay pending until an administrator approves them under Settings → Users. Existing active accounts are not affected. Rejecting a pending account deletes it so the username can be reused. Email notification is optional and is not required.</p>
               <label class="check"><input id="open-registration" type="checkbox" /> Allow open registration</label>
+              <label class="check"><input id="registration-require-approval" type="checkbox" /> Require admin approval for new sign-ups</label>
               <p id="open-registration-msg" class="muted" hidden></p>
             </div>
           </div>

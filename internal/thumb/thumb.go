@@ -14,7 +14,8 @@ import (
 type Generator struct {
 	CacheDir string
 	Enable   bool
-	VAAPI    bool
+	VAAPI    bool // legacy THUMB_VAAPI; used when Mode is unset
+	Mode     Mode
 	mu       sync.Mutex
 }
 
@@ -56,27 +57,19 @@ func (g *Generator) Get(src string) (string, error) {
 		return "", fmt.Errorf("unsupported type")
 	}
 
-	var cmd *exec.Cmd
-	if g.VAAPI {
-		// Intel Quick Sync / VAAPI path for Unraid J4125 with --device=/dev/dri
-		cmd = exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
-			"-hwaccel", "vaapi", "-hwaccel_device", "/dev/dri/renderD128", "-hwaccel_output_format", "vaapi",
-			"-i", src,
-			"-vf", "scale_vaapi=w=320:h=-2,hwdownload,format=nv12,format=yuv420p",
-			"-frames:v", "1", "-q:v", "4", "-y", out,
-		)
-		if err := cmd.Run(); err == nil {
+	mode := g.Mode
+	if mode == "" {
+		mode = ParseMode("", g.VAAPI)
+	}
+	plan := SelectPlan(mode, detectGPUs())
+	hw, soft := HWAccelArgs(plan, src, out)
+	if len(hw) > 0 {
+		if err := exec.Command("ffmpeg", hw...).Run(); err == nil {
 			return out, nil
 		}
-		// fall through to software
 		_ = os.Remove(out)
 	}
-
-	cmd = exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error",
-		"-i", src,
-		"-vf", "scale=320:-2",
-		"-frames:v", "1", "-q:v", "4", "-y", out,
-	)
+	cmd := exec.Command("ffmpeg", soft...)
 	if err := cmd.Run(); err != nil {
 		_ = os.Remove(out)
 		return "", fmt.Errorf("ffmpeg failed: %w", err)

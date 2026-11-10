@@ -184,6 +184,10 @@ function treeKey(rootId, path) {
 
 async function fetchTreeDirs(rootId, path) {
   const key = treeKey(rootId, path);
+  if (rootId === 'trash') {
+    state.treeChildren.set(key, []);
+    return [];
+  }
   const data = await api(`/api/list?root=${encodeURIComponent(rootId)}&path=${encodeURIComponent(path || '')}`);
   const dirs = (data.entries || []).filter((e) => e.isDir).sort((a, b) => a.name.localeCompare(b.name));
   state.treeChildren.set(key, dirs);
@@ -426,10 +430,17 @@ function renderGPUStatus(gpu) {
   const parts = [];
   parts.push('/dev/dri: ' + (gpu.devDri ? 'present' : 'not found'));
   parts.push('renderD128: ' + (gpu.renderD128 ? 'present' : 'not found'));
-  if (gpu.thumbVAAPI) {
-    parts.push(gpu.canUseVAAPI ? 'THUMB_VAAPI can use this GPU' : 'THUMB_VAAPI cannot use this GPU');
+  const mode = gpu.thumbHWAccel || (gpu.thumbVAAPI ? 'auto' : 'off');
+  parts.push('THUMB_HWACCEL=' + mode);
+  if (gpu.selectedBackend) {
+    parts.push('thumb path: ' + gpu.selectedBackend + (gpu.selectedDevice ? ' (' + gpu.selectedDevice + ')' : ''));
+  }
+  if (gpu.canUseHardware) {
+    parts.push('current thumb path can use the detected GPU (ffmpeg still falls back to software on failure)');
+  } else if (mode === 'off') {
+    parts.push('hardware thumbnail acceleration is off');
   } else {
-    parts.push('THUMB_VAAPI is off');
+    parts.push('current thumb path cannot use a detected GPU (software ffmpeg)');
   }
   if (flags) flags.textContent = parts.join(' · ');
   if (list) {
@@ -501,7 +512,7 @@ async function loadSystemStatus() {
         note.textContent = unlimited + ' of ' + totalUsers + ' users have unlimited quota (0) and are not included in the assigned total. Homes used still includes everyone.';
       }
     } else {
-      note.textContent = totalUsers ? 'Quota applies to each user’s home only (shared folders are not billed).' : '';
+      note.textContent = totalUsers ? 'Usage includes each user’s home plus files they wrote into shared folders (and items in the recycle bin until purged). Legacy share files with no recorded writer are unbilled.' : '';
     }
 
     const disk = data.disk || {};
@@ -849,18 +860,59 @@ function cycleSortHeader(by) {
 }
 
 async function loadList() {
+  if (state.searchQuery) {
+    await runFileSearch(state.searchQuery, false);
+    return;
+  }
   const data = await api(`/api/list?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(state.path)}`);
   state.perm = data.perm;
   state.canDelete = !!data.canDelete;
   const canWrite = state.perm === 'write';
-  $('#btn-mkdir').disabled = !canWrite;
-  $('#file-input').disabled = !canWrite;
+  const inTrash = state.root === 'trash';
+  $('#btn-mkdir').disabled = !canWrite || inTrash;
+  $('#file-input').disabled = !canWrite || inTrash;
+  const trashBar = $('#trash-actions');
+  if (trashBar) trashBar.hidden = !inTrash;
   renderBreadcrumbs();
   state.entries = data.entries || [];
   state.selected.clear();
   applyViewMode();
   applySortControls();
-  renderEntries(sortEntries(state.entries), canWrite);
+  renderEntries(sortEntries(state.entries), canWrite && !inTrash);
+  updateBulkBar();
+}
+
+async function runFileSearch(q, updateInput) {
+  q = (q || '').trim();
+  state.searchQuery = q;
+  const trashBar = $('#trash-actions');
+  if (trashBar) trashBar.hidden = true;
+  if (!q) {
+    await loadList();
+    return;
+  }
+  const data = await api('/api/search?q=' + encodeURIComponent(q));
+  const results = (data.results || []).map((r) => Object.assign({}, r, {
+    searchRoot: r.root,
+    searchSource: r.source,
+  }));
+  state.perm = 'read';
+  state.canDelete = false;
+  $('#btn-mkdir').disabled = true;
+  $('#file-input').disabled = true;
+  renderBreadcrumbs();
+  const nav = $('#breadcrumbs');
+  if (nav) {
+    const mark = document.createElement('span');
+    mark.className = 'muted';
+    mark.textContent = 'Search: ' + q;
+    nav.appendChild(mark);
+  }
+  state.entries = results;
+  state.selected.clear();
+  applyViewMode();
+  applySortControls();
+  renderEntries(sortEntries(state.entries), false);
   updateBulkBar();
 }
 
@@ -959,6 +1011,25 @@ function joinPath(base, name) {
 }
 
 async function openEntry(e) {
+  if (state.root === 'trash') {
+    return;
+  }
+  if (e.searchRoot) {
+    state.searchQuery = '';
+    const input = $('#file-search');
+    if (input) input.value = '';
+    state.root = e.searchRoot;
+    if (e.isDir) {
+      state.path = e.path;
+    } else {
+      const parts = (e.path || '').split('/');
+      parts.pop();
+      state.path = parts.join('/');
+    }
+    await loadRoots();
+    await loadList();
+    return;
+  }
   if (e.isDir) {
     state.path = e.path;
     const parts = e.path.split('/');
@@ -979,19 +1050,38 @@ async function openEntry(e) {
 }
 
 function appendEntryActions(container, e, canWrite, compact) {
-  if (!e.isDir) {
+  const itemRoot = e.searchRoot || state.root;
+  if (state.root === 'trash') {
+    const rst = document.createElement('button');
+    rst.type = 'button';
+    rst.textContent = '↩';
+    rst.className = 'ghost';
+    rst.title = 'Restore';
+    rst.setAttribute('aria-label', 'Restore');
+    rst.onclick = async (ev) => {
+      ev.stopPropagation();
+      await api('/api/trash/restore', { method: 'POST', body: JSON.stringify({ id: e.path }) });
+      await loadRoots();
+      await loadList();
+    };
+    container.appendChild(rst);
+  } else {
     const dl = document.createElement('button');
     dl.type = 'button';
     dl.textContent = '↓';
     dl.className = 'ghost';
-    dl.title = 'Download';
-    dl.setAttribute('aria-label', 'Download');
+    dl.title = e.isDir ? 'Download folder as zip' : 'Download';
+    dl.setAttribute('aria-label', dl.title);
     dl.onclick = (ev) => {
       ev.stopPropagation();
-      window.location = `/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+      const ep = e.isDir ? '/api/zip' : '/api/download';
+      window.location = `${ep}?root=${encodeURIComponent(itemRoot)}&path=${encodeURIComponent(e.path)}`;
     };
     container.appendChild(dl);
   }
+  if (state.root === 'trash' || e.searchRoot) {
+    // Recycle bin and search results: no share button.
+  } else {
   const share = document.createElement('button');
   share.type = 'button';
   share.textContent = '🔗';
@@ -1021,6 +1111,7 @@ function appendEntryActions(container, e, canWrite, compact) {
     };
     container.appendChild(ren);
   }
+  } // end share/rename (not trash, not search)
   if (state.canDelete) {
     const del = document.createElement('button');
     del.type = 'button';
@@ -1651,6 +1742,10 @@ async function loadSystemSettings() {
     $('#open-registration-msg').hidden = true;
     $('#open-registration-msg').classList.remove('error');
   }
+  const reqAp = $('#registration-require-approval');
+  if (reqAp) {
+    reqAp.checked = data.registrationRequireApproval !== false;
+  }
   const box = $('#force-2fa-all');
   box.checked = !!data.force2faAll;
   box.disabled = !!data.force2faAllEnv;
@@ -1844,6 +1939,26 @@ $('#open-registration')?.addEventListener('change', async (e) => {
       body: JSON.stringify({ openRegistration: !!e.target.checked }),
     });
     e.target.checked = !!data.openRegistration;
+    msg.textContent = 'Saved';
+    msg.hidden = false;
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+$('#registration-require-approval')?.addEventListener('change', async (e) => {
+  const msg = $('#open-registration-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ registrationRequireApproval: !!e.target.checked }),
+    });
+    e.target.checked = data.registrationRequireApproval !== false;
     msg.textContent = 'Saved';
     msg.hidden = false;
   } catch (err) {
@@ -2064,6 +2179,7 @@ async function refreshAdmin() {
     const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
     const badges = [];
     if (u.isAdmin) badges.push('<span class="badge admin">admin</span>');
+    if (u.status === 'pending') badges.push('<span class="badge disabled">pending</span>');
     if (u.disabled) badges.push('<span class="badge disabled">disabled</span>');
     if (u.totpEnabled) badges.push('<span class="badge admin">2FA</span>');
     else if (u.totpRequired || u.force2faAll) badges.push('<span class="badge disabled">2FA req</span>');
@@ -2091,7 +2207,28 @@ async function refreshAdmin() {
     edit.title = 'Edit user';
     edit.onclick = () => openUserEdit(u);
     btns.appendChild(edit);
-    if (u.id !== state.user.id) {
+    if (u.status === 'pending') {
+      const ap = document.createElement('button');
+      ap.textContent = 'Approve';
+      ap.className = 'ghost';
+      ap.title = 'Approve registration';
+      ap.onclick = async () => {
+        await api('/api/admin/users/' + u.id + '/approve', { method: 'POST', body: '{}' });
+        await refreshAdmin();
+      };
+      btns.appendChild(ap);
+      const rj = document.createElement('button');
+      rj.textContent = 'Reject';
+      rj.className = 'ghost danger';
+      rj.title = 'Reject and delete pending account';
+      rj.onclick = async () => {
+        if (!confirm('Reject and delete pending user ' + u.username + '? The username can be reused.')) return;
+        await api('/api/admin/users/' + u.id + '/reject', { method: 'POST', body: '{}' });
+        await refreshAdmin();
+      };
+      btns.appendChild(rj);
+    }
+    if (u.id !== state.user.id && u.status !== 'pending') {
       const b = document.createElement('button');
       b.textContent = 'Del';
       b.className = 'ghost danger';
@@ -3143,9 +3280,13 @@ $('#signup-form')?.addEventListener('submit', async (e) => {
     msgEl.textContent = data.message || 'Account created. You can sign in now.';
     msgEl.hidden = false;
     const user = data.username || fd.get('username') || '';
-    setTimeout(() => {
-      location.href = user ? ('/?registered=' + encodeURIComponent(user)) : '/';
-    }, 800);
+    if (data.pending) {
+      e.target.hidden = true;
+    } else {
+      setTimeout(() => {
+        location.href = user ? ('/?registered=' + encodeURIComponent(user)) : '/';
+      }, 800);
+    }
   } catch (err) {
     errEl.textContent = err.message;
     errEl.hidden = false;
@@ -3285,3 +3426,42 @@ $('#btn-smtp-test')?.addEventListener('click', async () => {
 
 bootstrap();
 
+
+(function bindFileSearchAndTrash() {
+  const input = $('#file-search');
+  let timer = 0;
+  if (input) {
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const v = input.value;
+      timer = setTimeout(() => {
+        runFileSearch(v, false).catch((err) => console.error(err));
+      }, 250);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        input.value = '';
+        state.searchQuery = '';
+        loadList().catch((err) => console.error(err));
+      }
+    });
+  }
+  $('#btn-trash-empty')?.addEventListener('click', async () => {
+    if (!confirm('Permanently delete all items in your recycle bin? This cannot be undone.')) return;
+    await api('/api/trash/purge', { method: 'POST', body: JSON.stringify({ empty: true }) });
+    await loadList();
+  });
+  $('#btn-trash-restore')?.addEventListener('click', async () => {
+    const ids = [...state.selected];
+    if (!ids.length) {
+      alert('Select items to restore.');
+      return;
+    }
+    for (const id of ids) {
+      await api('/api/trash/restore', { method: 'POST', body: JSON.stringify({ id }) });
+    }
+    state.selected.clear();
+    await loadRoots();
+    await loadList();
+  });
+})();

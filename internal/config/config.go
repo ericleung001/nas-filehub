@@ -17,10 +17,11 @@ type Config struct {
 	SecureCookies   bool
 	ThumbEnable     bool
 	ThumbVAAPI      bool
+	ThumbHWAccel    string // auto|off|vaapi|nvdec; empty defers to ThumbVAAPI
 	ThumbCacheDir   string
 	MaxUploadMB     int64
 	RateLimitPerMin int
-	Force2FAAll     bool // env FORCE_2FA_ALL; OR with DB setting force_2fa_all
+	Force2FAAll     bool   // env FORCE_2FA_ALL; OR with DB setting force_2fa_all
 	PublicBaseURL   string // PUBLIC_BASE_URL for password-reset links (optional)
 	// Optional SMTP env overrides (take precedence over DB settings when host set)
 	SMTPHost     string
@@ -71,6 +72,7 @@ func Load() Config {
 		SecureCookies:   getenvBool("SECURE_COOKIES", false),
 		ThumbEnable:     getenvBool("THUMB_ENABLE", true),
 		ThumbVAAPI:      getenvBool("THUMB_VAAPI", false),
+		ThumbHWAccel:    strings.ToLower(strings.TrimSpace(getenv("THUMB_HWACCEL", ""))),
 		ThumbCacheDir:   getenv("THUMB_CACHE_DIR", "/data/thumbs"),
 		MaxUploadMB:     int64(getenvInt("MAX_UPLOAD_MB", 2048)),
 		RateLimitPerMin: getenvInt("LOGIN_RATE_LIMIT", 10),

@@ -13,16 +13,16 @@ Filehub is **not** Unraid-only. It runs on any host that can run **Docker** or a
 - Windows or macOS with Docker Desktop
 - Local development via `go run` / a built binary (Linux, Windows, macOS)
 
-Use **Docker Compose** (recommended) or the single binary from Quick start below. The [Unraid + Intel VAAPI](#unraid--intel-vaapi-optional) section is **optional** — it only enables hardware-accelerated ffmpeg thumbnails when `/dev/dri` is present. Software ffmpeg works everywhere by default.
+Use **Docker Compose** (recommended) or the single binary from Quick start below. The [Hardware thumbnail acceleration](#hardware-thumbnail-acceleration-optional) section is **optional** — it only enables hardware-accelerated ffmpeg thumbnails when a supported device is present. Software ffmpeg works everywhere by default.
 
 ## Features
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` access and an independent **Allow delete** flag (admin picks a user from a dropdown; existing grants can be changed or revoked)
 - **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke (hard-delete) anytime from Settings → Link shares, or select several and **Delete selected**
-- **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy (Move and Copy use a folder picker; writable shared folders are valid destinations); list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
+- **File ops** — browse, **search file and folder names** across My Files and shares you can read, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, **download a folder as a zip**, mkdir, rename, delete (moves items to a **Recycle bin** instead of immediate permanent delete); **multi-select** with bulk Delete / Move / Copy (Move and Copy use a folder picker; writable shared folders are valid destinations); restore or permanently purge from the Recycle bin; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
-- **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
+- **Thumbnails** — optional ffmpeg thumbs (software by default; hardware acceleration is selected from detected Intel VAAPI, AMD VAAPI, or NVIDIA NVDEC/CUDA devices, with software fallback)
 - **App icon** — favicon and Apple touch icon; mark on the login / auth pages and in the top bar after sign-in
 - **Settings** — one top-bar entry; left vertical menu, right content panel
   - **Account** — username, home, quota used/limit
@@ -35,11 +35,11 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
 - **Forgot password** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses)
-- **Open registration** — optional admin toggle; `/register` (linked from login) creates username/email/password accounts under the password policy (active immediately; no approval gate yet)
+- **Open registration** — optional admin toggle; `/register` (linked from login) creates username/email/password accounts under the password policy. New sign-ups require admin approval by default (Settings → Registration and Users). Pending accounts cannot sign in until approved. Rejecting a pending account deletes it so the username can be reused. Already-active users are unchanged. Email notification is optional and is not required.
 - **Session duration** — admin sets normal login lifetime (default **7 days**) and may allow **Stay signed in** (default **30 days**); applies to new logins only; existing sessions keep their expiry
-- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
+- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; container drops to PUID/PGID (default 1000:1000); SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
-Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota). Admins can turn on **Apply the same quota to all users** under Settings → Storage quota so every existing user and every new account uses one quota; per-user quota editing is disabled while that setting is on.
+Quota counts the user’s **home** directory plus files in shared folders that this Filehub user wrote (upload, copy, or replace). Bytes are attributed to the acting writer; a whole share is never billed to every grantee. Existing share files with no recorded writer stay **unbilled** until a Filehub user writes or replaces them. Recycle-bin items still count toward the owner’s quota until they are permanently purged. Admins can turn on **Apply the same quota to all users** under Settings → Storage quota so every existing user and every new account uses one quota; per-user quota editing is disabled while that setting is on. Settings → System and the Users storage bar use this same definition.
 
 ## Quick start
 
@@ -81,18 +81,18 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` images are published to Docker Hub and GHCR. Version tags omit the `v` prefix (use `0.3.22`, not `v0.3.22`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to GHCR, and to Docker Hub when the repository’s `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set. The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.0`, not `v0.4.0`).
 
 - Docker Hub: [`ericleung001/nas-filehub`](https://hub.docker.com/r/ericleung001/nas-filehub)
 - GHCR: `ghcr.io/ericleung001/nas-filehub`
 
 ```bash
-docker pull ericleung001/nas-filehub:0.3.22
+docker pull ericleung001/nas-filehub:0.4.0
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.3.22
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.0
 ```
 
-`latest` on both registries currently matches `0.3.22`. To run the Hub image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.3.22` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (after this release, `0.4.0`). Docker Hub receives the same tags when Hub secrets are configured; otherwise only GHCR is published. To run the Hub image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.0` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -119,7 +119,10 @@ Or set `ADMIN_PASSWORD` yourself and run `make run` / `make smoke`.
 | `DOTENV_FILE` | `/data/.env` | Path for the one-time generated env copy (Docker entrypoint) |
 | `SECURE_COOKIES` | `false` | Set `true` behind HTTPS / NPM |
 | `THUMB_ENABLE` | `true` | Generate thumbs with ffmpeg |
-| `THUMB_VAAPI` | `false` | Use Intel VAAPI for thumbs when `/dev/dri` is available |
+| `THUMB_VAAPI` | `false` | Legacy flag: `true` enables auto hardware thumbnail acceleration when `THUMB_HWACCEL` is unset |
+| `THUMB_HWACCEL` | _(empty)_ | `auto`, `off`, `vaapi`, or `nvdec` (`cuda`/`cuvid`/`nvidia` aliases map to nvdec). Empty defers to `THUMB_VAAPI`. Picks the detected render node; always falls back to software ffmpeg, then the original image |
+| `PUID` / `PGID` | `1000` / `1000` | Docker only: UID/GID after start, and owner of `/data`. Unset keeps the previous 1000:1000 default |
+| `UMASK` | — | Docker only, optional (for example `002`) |
 | `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory |
 | `LOGIN_RATE_LIMIT` | `10` | Max login attempts per IP per minute |
 | `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
@@ -170,7 +173,7 @@ Tagged releases are published on GitHub: [ericleung001/nas-filehub/releases](htt
 Each release includes:
 
 - **Changelog** notes for that version
-- **Downloadable binaries** for Linux (amd64), and often Windows/macOS when built for that tag
+- **Downloadable binaries** for Linux (amd64 and arm64), macOS (amd64 and arm64), and Windows (amd64) when built for that tag
 - **Docker** install notes (see Quick start — `docker compose up -d --build` from the tagged source, or pull `ericleung001/nas-filehub` / `ghcr.io/ericleung001/nas-filehub`)
 
 ### Install from a release binary
@@ -207,25 +210,33 @@ Notes:
 
 - The WebUI listens on container port **8080** (template default host port **8088**). Prefer a reverse proxy with HTTPS, then set `SECURE_COOKIES=true`. **Do not** expose the WebUI port directly to the public internet.
 - The optional **Unraid shares** path is mounted at `/data/files/shares` so you can create shared folders with paths such as `shares/Movies`. Remove that mapping if you do not need it.
-- Optional Intel VAAPI thumbnails: keep the `/dev/dri` device mapping and set `THUMB_VAAPI=true`. If `/dev/dri` is not present, remove the device mapping and leave `THUMB_VAAPI=false`. See also [Unraid + Intel VAAPI](#unraid--intel-vaapi-optional).
+- Optional Intel VAAPI thumbnails: keep the `/dev/dri` device mapping and set `THUMB_VAAPI=true`. If `/dev/dri` is not present, remove the device mapping and leave `THUMB_VAAPI=false`. See also [Hardware thumbnail acceleration](#hardware-thumbnail-acceleration-optional).
 - The GHCR package must be **public** so Unraid can pull `ghcr.io/ericleung001/nas-filehub:latest` without a login.
 
-## Unraid + Intel VAAPI (optional)
+## Hardware thumbnail acceleration (optional)
 
-This section is **optional hardware acceleration** for thumbnail generation only. Filehub itself does not require Unraid or a GPU.
+This section is **optional hardware acceleration** for thumbnail generation only. Filehub itself does not require a GPU.
 
-Browser playback uses **client** decode. Server-side VAAPI mainly speeds **ffmpeg thumbnail** generation on hosts with Intel iGPU (e.g. Unraid on a J4125) when `/dev/dri` is available. Leave `THUMB_VAAPI` unset/`false` on any other platform.
+Browser playback uses **client** decode. The server may use hardware decode only to speed **ffmpeg thumbnail** generation.
 
-In `docker-compose.yml`, uncomment:
+Set `THUMB_HWACCEL=auto` (or the legacy `THUMB_VAAPI=true`, which means the same auto path). Filehub then selects a backend from detected devices:
+
+- Intel or AMD: VAAPI on the matching `/dev/dri/renderD*` node (not hardcoded to `renderD128` when another node is the right one)
+- NVIDIA: CUDA/NVDEC (`-hwaccel cuda`). Stock Debian `ffmpeg` in this image usually includes VAAPI but **not** NVIDIA CUDA; if that backend is missing, ffmpeg falls back to software. Do not assume hardware decode works until Settings → System shows a selected hardware path and your ffmpeg build actually supports it.
+
+Leave `THUMB_HWACCEL` empty and `THUMB_VAAPI` unset/`false` to stay on software.
+
+In `docker-compose.yml`, uncomment the device mapping and set:
 
 ```yaml
 devices:
   - /dev/dri:/dev/dri
 environment:
-  THUMB_VAAPI: "true"
+  THUMB_HWACCEL: "auto"
+  # THUMB_VAAPI: "true"   # still works; treated as auto when THUMB_HWACCEL is unset
 ```
 
-Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls back to software; if that fails, the original image is used. Settings → System lists the detected GPU and whether the current `THUMB_VAAPI` thumbnail path can use it.
+NVIDIA hosts also need the NVIDIA Container Toolkit / GPU runtime; this image does not bundle proprietary CUDA ffmpeg. If hardware decode fails, ffmpeg falls back to software; if that fails, the original image is used. Settings → System lists detected GPUs and whether the **current** thumbnail path can use one.
 
 (Full transcode streaming belongs in products like Jellyfin; Filehub stays intentionally light.)
 
@@ -236,18 +247,25 @@ Confirm `/dev/dri/renderD128` exists on the host. If VAAPI fails, ffmpeg falls b
 - Session cookie: `HttpOnly`, `SameSite=Lax`, optional `Secure`
 - Login rate limiting
 - All file ops confined under the resolved scope root (path traversal protected)
-- Container runs as non-root `filehub` (uid 1000)
+- Container starts as root only to apply `PUID`/`PGID` (default 1000:1000), chown `/data`, then drops privileges with `gosu`
 
 ## API summary
 
 Auth / session:
 
 - `POST /api/login` · `POST /api/logout` · `GET /api/me` · `POST /api/me/password` · `GET /api/health`
-- `GET /api/me` includes `usedBytes` (home usage) alongside `quotaBytes` and `email`
-- `GET /api/auth/features` (`openRegistration`, `allowRememberMe`, password policy, forgotPassword) · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
+- `GET /api/me` includes `usedBytes` (home + attributed share writes + trash) alongside `quotaBytes`, `email`, and `status`
+- `GET /api/auth/features` (`openRegistration`, `registrationRequireApproval`, `allowRememberMe`, password policy, forgotPassword) · `POST /api/register` (may return `pending`) · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
 - `POST /api/login` accepts optional `rememberMe` (honored only when admin allows Stay signed in)
 
 Files:
+
+- `GET /api/search?q=` — filename search across My Files and granted shares
+- `GET /api/zip?root=&path=` — stream a folder (or file) as a zip (size/time limits apply)
+- `GET /api/trash` · `POST /api/trash/restore` · `POST /api/trash/purge` — recycle bin (delete/move-to-trash is `POST /api/delete`; link-share revoke stays a hard-delete of the link row)
+- Recycle bin items live under `DATA_ROOT/.filehub-trash/<id>/` (hidden from normal browsing)
+- `POST /api/admin/users/:id/approve` · `POST /api/admin/users/:id/reject` (reject deletes a pending account)
+
 
 - `GET /api/roots` · `GET /api/list`
 - `POST /api/mkdir` · `POST /api/rename` · `POST /api/delete` · `POST /api/upload`
