@@ -627,7 +627,9 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 .grant-row .grant-delete-flag input { margin: 0; }
 #btn-bulk-delete[hidden],
-#btn-bulk-move[hidden] { display: none !important; }
+#btn-bulk-move[hidden],
+#btn-bulk-copy[hidden],
+#btn-bulk-share[hidden] { display: none !important; }
 .admin-table td.quota-cell {
   overflow: hidden;
   max-width: 0;
