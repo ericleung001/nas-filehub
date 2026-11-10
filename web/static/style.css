@@ -362,9 +362,14 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .admin-table col.col-link-url { width: auto; }
 .admin-table col.col-link-status { width: 9.5rem; }
 .admin-table col.col-actions { width: 7.5rem; }
+.admin-table.links-table col.col-actions { width: 9.5rem; }
 .admin-table .link-label-cell,
 .admin-table .link-target-cell,
-.admin-table .link-url-cell,
+.admin-table .link-url-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .admin-table .link-url-cell a,
 .admin-table .path-cell code {
   display: block;
@@ -467,9 +472,11 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 @media (max-width: 800px) {
   .admin-grid { grid-template-columns: 1fr; }
   .admin-table col.col-status,
+  .admin-table col.col-link-status,
   .admin-table td.status-cell,
   .admin-table thead th.status-h { display: none; }
   .admin-table col.col-actions { width: 6.5rem; }
+  .admin-table.links-table col.col-actions { width: 8.5rem; }
 }
 
 

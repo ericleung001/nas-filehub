@@ -21,7 +21,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` grants
-- **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke anytime from Settings → Link shares
+- **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke (hard-delete) anytime from Settings → Link shares
 - **File ops** — browse, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start), drag-and-drop into current folder or onto a folder, download, mkdir, rename, delete; **multi-select** with bulk Delete / Move / Copy; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; optional Intel VAAPI on hosts with `/dev/dri`, e.g. Unraid)
@@ -29,8 +29,8 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Account** — username, home, quota used/limit
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
-  - **Link shares** — list and revoke public links you created (admins see all)
-  - **Users / Shares / System** (admins only) — user/share tables; System includes **open registration**, **session duration / Stay signed in**, Force 2FA, **password policy** (min length, letters/digits/symbols), and **Email (SMTP)** for forgot-password
+  - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all)
+  - **Users / Shares / Sessions / Registration / Security / Email / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **System** (DATA_ROOT notes)
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
@@ -120,10 +120,14 @@ Sign in → **Settings** (single top-bar button):
 1. **Account** (everyone) — username, email, admin badge (if any), home path, storage used / quota
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
-4. **Link shares** — copy or revoke public file/folder links
+4. **Link shares** — copy or revoke (permanently delete) public file/folder links; revoked rows leave the list
 5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota; reset passwords; disable accounts; per-user require 2FA
 6. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
-7. **System** (admins) — `DATA_ROOT` notes; **open registration**; **session duration** (normal + optional Stay signed in); **Force 2FA for all users**; **Password policy**; **Email (SMTP)** for forgot-password. Session TTL changes apply to new logins only. Saving a tighter password policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
+7. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
+8. **Registration** (admins) — allow open registration
+9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
+10. **Email** (admins) — SMTP for forgot-password
+11. **System** (admins) — `DATA_ROOT` / homes / shares / quota notes
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -231,7 +235,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 
 ## Email and forgot password
 
-1. Admin → Settings → **System** → **Email (SMTP)**: enable, host, port, username, password, from address. Save. Optionally **Send test email**.
+1. Admin → Settings → **Email**: enable, host, port, username, password, from address. Save. Optionally **Send test email**.
 2. Set each user’s **email** under Users → Create / Edit (required for that user to receive reset mail).
 3. Prefer setting `PUBLIC_BASE_URL` to your public HTTPS origin so reset links are correct behind Nginx Proxy Manager.
 4. The login page links to **Forgot password?** (`/forgot`) when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
@@ -248,7 +252,7 @@ Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Aut
 
 1. **User (voluntary)** — Settings → Account → Enable 2FA → scan QR → confirm code. Backup codes are shown once. Disable with password or a current code (blocked if 2FA is required).
 2. **Admin per user** — Settings → Users → Edit → **require 2FA**.
-3. **Admin all users** — Settings → System → **Force 2FA for all users**, or set env `FORCE_2FA_ALL=true`.
+3. **Admin all users** — Settings → Security → **Force 2FA for all users**, or set env `FORCE_2FA_ALL=true`.
 4. **Login** — after a correct password, if 2FA is enabled the UI asks for a code (or backup code). If 2FA is required but not enrolled, enrollment (QR) is required before a session is issued.
 
 ### API — 2FA

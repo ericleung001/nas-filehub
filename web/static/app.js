@@ -417,7 +417,7 @@ document.querySelectorAll('.settings-nav-item').forEach((btn) => {
     if (tab === 'users' || tab === 'shares') {
       try { await refreshAdmin(); } catch (err) { console.error(err); }
     }
-    if (tab === 'system') {
+    if (tab === 'sessions' || tab === 'registration' || tab === 'security' || tab === 'email') {
       try { await loadSystemSettings(); } catch (err) { console.error(err); }
     }
     if (tab === 'links') {
@@ -2060,7 +2060,7 @@ async function refreshLinks() {
     rev.textContent = 'Revoke';
     rev.disabled = !!l.revoked;
     rev.onclick = async () => {
-      if (!confirm('Revoke this link?')) return;
+      if (!confirm('Revoke and delete this link?')) return;
       await api('/api/links/' + l.id, { method: 'DELETE' });
       await refreshLinks();
     };

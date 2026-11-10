@@ -136,6 +136,10 @@
           <button type="button" class="settings-nav-item" data-tab="links">Link shares</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="users" hidden>Users</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="shares" hidden>Shares</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="sessions" hidden>Sessions</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="registration" hidden>Registration</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="security" hidden>Security</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="email" hidden>Email</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="system" hidden>System</button>
         </nav>
         <div class="settings-content">
@@ -191,7 +195,7 @@
           <div id="tab-links" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section">
               <h3>Link shares</h3>
-              <p class="muted">Public links you created for files or folders. Recipients do not need an account. Revoke to disable a link immediately.</p>
+              <p class="muted">Public links you created for files or folders. Recipients do not need an account. Revoke permanently deletes the link and removes it from this list.</p>
               <div class="admin-table-wrap">
                 <table class="admin-table links-table" aria-label="Link shares">
                   <colgroup>
@@ -304,21 +308,8 @@
               </div>
             </div>
           </div>
-          <div id="tab-system" class="settings-panel" role="tabpanel" hidden>
+          <div id="tab-sessions" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
-              <h3>System</h3>
-              <p class="muted">File storage root and listen address are set via server environment variables (see README).</p>
-              <ul class="system-notes muted">
-                <li>Homes: <code>DATA_ROOT/homes/&lt;user&gt;</code></li>
-                <li>Shares: paths under <code>DATA_ROOT</code></li>
-                <li>Quota applies to each user’s home only</li>
-              </ul>
-              <hr class="sep" />
-              <h3>Registration</h3>
-              <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. Accounts are active immediately (no admin approval yet).</p>
-              <label class="check"><input id="open-registration" type="checkbox" /> Allow open registration</label>
-              <p id="open-registration-msg" class="muted" hidden></p>
-              <hr class="sep" />
               <h3>Sessions</h3>
               <p class="muted">How long users stay logged in after a new login. Changing these values applies to <strong>new logins only</strong>; existing sessions keep their current expiry.</p>
               <form id="session-settings-form" class="admin-form policy-form">
@@ -348,14 +339,25 @@
                 <button type="submit">Save session settings</button>
                 <p id="session-settings-msg" class="muted" hidden></p>
               </form>
-              <hr class="sep" />
-              <h3>Security — 2FA</h3>
+            </div>
+          </div>
+          <div id="tab-registration" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section settings-card">
+              <h3>Registration</h3>
+              <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. Accounts are active immediately (no admin approval yet).</p>
+              <label class="check"><input id="open-registration" type="checkbox" /> Allow open registration</label>
+              <p id="open-registration-msg" class="muted" hidden></p>
+            </div>
+          </div>
+          <div id="tab-security" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section settings-card">
+              <h3>Force 2FA</h3>
               <p class="muted">Force every user to enroll TOTP before using Filehub. Can also be set with env <code>FORCE_2FA_ALL=true</code> (env always on if set).</p>
               <label class="check"><input id="force-2fa-all" type="checkbox" /> Force 2FA for all users</label>
               <p id="force-2fa-msg" class="muted" hidden></p>
               <p id="force-2fa-env-note" class="meta" hidden></p>
               <hr class="sep" />
-              <h3>Security — Password policy</h3>
+              <h3>Password policy</h3>
               <p class="muted">Applies when creating users, resetting passwords, or users changing their own password. Tightening rules bumps a policy version so existing users must change password on next login.</p>
               <form id="password-policy-form" class="admin-form policy-form">
                 <label>Minimum length<input name="passwordMinLength" type="number" min="4" max="128" required /></label>
@@ -366,7 +368,10 @@
                 <p id="password-policy-msg" class="muted" hidden></p>
                 <p id="password-policy-version" class="meta"></p>
               </form>
-              <hr class="sep" />
+            </div>
+          </div>
+          <div id="tab-email" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section settings-card">
               <h3>Email (SMTP)</h3>
               <p class="muted">Used for forgot-password reset links. SMTP password is stored in settings and never shown again; leave blank to keep the current password. Env <code>SMTP_*</code> / <code>PUBLIC_BASE_URL</code> override UI when set.</p>
               <form id="smtp-form" class="admin-form policy-form">
@@ -382,6 +387,17 @@
                 <p id="smtp-msg" class="muted" hidden></p>
                 <p id="smtp-ready" class="meta"></p>
               </form>
+            </div>
+          </div>
+          <div id="tab-system" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section settings-card">
+              <h3>System</h3>
+              <p class="muted">File storage root and listen address are set via server environment variables (see README).</p>
+              <ul class="system-notes muted">
+                <li>Homes: <code>DATA_ROOT/homes/&lt;user&gt;</code></li>
+                <li>Shares: paths under <code>DATA_ROOT</code></li>
+                <li>Quota applies to each user’s home only</li>
+              </ul>
             </div>
           </div>
         </div>

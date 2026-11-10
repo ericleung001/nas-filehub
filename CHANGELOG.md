@@ -8,6 +8,15 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-11-10
+
+### Changed
+- **Admin settings nav** — split the long System page into separate admin-only tabs: **Sessions**, **Registration**, **Security** (Force 2FA + password policy), **Email** (SMTP), and a short **System** notes page (DATA_ROOT / homes / shares / quota).
+- **Revoke link share** — DELETE `/api/links/:id` hard-deletes the row (no longer soft-revokes). The Link shares list excludes already-revoked leftovers and removes the row after Revoke.
+
+### Fixed
+- **Link shares table layout** — stopped applying `display: block` to Label/Target/URL table cells (that stacked columns). Ellipsis stays on the cells and inner `a`/`code`. Widened the Actions column for Copy + Revoke.
+
 ## [0.3.9] - 2026-11-10
 
 ### Added
@@ -130,7 +139,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.10...HEAD
+[0.3.10]: https://github.com/ericleung001/nas-filehub/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/ericleung001/nas-filehub/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/ericleung001/nas-filehub/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/ericleung001/nas-filehub/compare/v0.3.6...v0.3.7

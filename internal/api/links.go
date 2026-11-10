@@ -125,7 +125,7 @@ func (s *Server) handleLinkID(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodDelete:
-		if err := s.DB.RevokeLinkShare(id); err != nil {
+		if err := s.DB.DeleteLinkShare(id); err != nil {
 			writeErr(w, 400, err.Error())
 			return
 		}

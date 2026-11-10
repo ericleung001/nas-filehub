@@ -134,9 +134,9 @@ func (d *DB) ListLinkSharesForUser(ownerID int64, isAdmin bool) ([]LinkShare, er
 	var rows *sql.Rows
 	var err error
 	if isAdmin {
-		rows, err = d.SQL.Query(`SELECT ` + linkSelectCols + ` FROM link_shares ORDER BY created_at DESC`)
+		rows, err = d.SQL.Query(`SELECT ` + linkSelectCols + ` FROM link_shares WHERE revoked=0 ORDER BY created_at DESC`)
 	} else {
-		rows, err = d.SQL.Query(`SELECT `+linkSelectCols+` FROM link_shares WHERE owner_id=? ORDER BY created_at DESC`, ownerID)
+		rows, err = d.SQL.Query(`SELECT `+linkSelectCols+` FROM link_shares WHERE owner_id=? AND revoked=0 ORDER BY created_at DESC`, ownerID)
 	}
 	if err != nil {
 		return nil, err
