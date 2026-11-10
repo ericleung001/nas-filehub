@@ -352,6 +352,24 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   padding: .4rem .35rem; border-radius: 6px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.tree-count-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.15rem;
+  margin: 0 .35rem 0 .15rem;
+  padding: 0 .35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #243247;
+  color: var(--text);
+  font-size: .68rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
 .tree-children { margin: 0; padding: 0; }
 
 /* Sidebar storage quota */

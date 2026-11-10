@@ -492,7 +492,12 @@ func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	out = append(out, root{ID: "trash", Name: "Recycle bin", Kind: "trash", Perm: "write", CanDelete: true})
-	writeJSON(w, 200, map[string]any{"roots": out})
+	count, err := trash.Count(s.Cfg.DataRoot, u.ID, u.IsAdmin)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"roots": out, "trashCount": count})
 }
 
 func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {

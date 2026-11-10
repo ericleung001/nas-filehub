@@ -149,6 +149,16 @@ func List(dataRoot string, userID int64, admin bool) ([]Item, error) {
 	return out, nil
 }
 
+// Count returns the number of recycle-bin entries visible to the user.
+// The set matches List: top-level trash items, not a recursive file walk.
+func Count(dataRoot string, userID int64, admin bool) (int, error) {
+	items, err := List(dataRoot, userID, admin)
+	if err != nil {
+		return 0, err
+	}
+	return len(items), nil
+}
+
 func RestoreDest(dataRoot, destRoot, destRel string) (string, error) {
 	full, err := files.SafeJoin(destRoot, destRel)
 	if err != nil {

@@ -30,6 +30,8 @@
   <License>Apache-2.0</License>
   <DonateLink>https://buymeacoffee.com/filehub</DonateLink>
   <DonateText>Buy me a coffee</DonateText>
+  <Screenshot>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/screenshots/01-login.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/screenshots/02-after-login.png</Screenshot>
   <Date>2026-11-10</Date>
   <Requires>After the first start, read the generated admin password in /mnt/user/appdata/nas-filehub/admin-credentials.txt, then change it under Settings → Change password. Prefer a reverse proxy; do not expose the WebUI port to the public internet. For hardware thumbnails, keep /dev/dri mapped (or an NVIDIA runtime) and set THUMB_HWACCEL=auto, or THUMB_VAAPI=true for the same auto path. If no GPU device is present, remove the device mapping. PUID/PGID default to 1000:1000.</Requires>
   <Changes>Community Apps template and GHCR image for Filehub. Leave ADMIN_PASSWORD unset on first boot and read the generated password from appdata/nas-filehub/admin-credentials.txt.</Changes>

@@ -31,7 +31,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all); select multiple to delete together
   - **Users / Shares / Sessions / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **Storage quota** (optional same quota for all users); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
   - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
-- **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
+- **Sidebar** — expandable folder tree under My Files / shares / Recycle bin; a count badge appears to the right of Recycle bin when it has items (`99+` after 99); storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
 - **Forgot password** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses)
@@ -192,7 +192,7 @@ Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the
 
 ## Install on Unraid (Community Apps)
 
-Filehub can be installed on Unraid from a Community Apps template in this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`). The template is categorized under Tools › Utilities and Productivity.
+Filehub can be installed on Unraid from a Community Apps template in this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`). The template is categorized under Tools › Utilities and Productivity, and includes current login and file-browser screenshots.
 
 This is **not** a claim that Filehub is already listed in the official Community Apps catalog — that listing is a separate submission step. Until the catalog accepts the repository, you can add it yourself in **Apps** → the CA settings / **Add a new Repository URL**, using:
 
@@ -267,7 +267,7 @@ Files:
 - `POST /api/admin/users/:id/approve` · `POST /api/admin/users/:id/reject` (reject deletes a pending account)
 
 
-- `GET /api/roots` · `GET /api/list`
+- `GET /api/roots` (includes `trashCount` for the current user’s visible recycle-bin items) · `GET /api/list`
 - `POST /api/mkdir` · `POST /api/rename` · `POST /api/delete` · `POST /api/upload`
 - `GET /api/download` · `GET /api/raw` · `GET /api/thumb`
 

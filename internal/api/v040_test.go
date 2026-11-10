@@ -340,3 +340,141 @@ func TestFolderZipDownload(t *testing.T) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+func rootsTrashCount(t *testing.T, tsURL string, cookies []*http.Cookie) int {
+	t.Helper()
+	st, data := doJSON(t, http.MethodGet, tsURL+"/api/roots", cookies, nil)
+	if st != 200 {
+		t.Fatalf("roots %d %v", st, data)
+	}
+	n, ok := data["trashCount"].(float64)
+	if !ok {
+		t.Fatalf("trashCount missing or not a number: %#v", data["trashCount"])
+	}
+	return int(n)
+}
+
+func TestTrashCountOnRoots(t *testing.T) {
+	s, ts, database := testServer(t)
+	if _, err := database.CreateUser("alice", "alice-pass-123", "homes/alice", false, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.CreateUser("bob", "bob-pass-1234", "homes/bob", false, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	aliceHome := filepath.Join(s.Cfg.DataRoot, "homes/alice")
+	bobHome := filepath.Join(s.Cfg.DataRoot, "homes/bob")
+	if err := os.MkdirAll(aliceHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(bobHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aliceHome, "a1.txt"), []byte("a1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(aliceHome, "a2.txt"), []byte("a2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bobHome, "b1.txt"), []byte("b1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, _ := doJSON(t, http.MethodGet, ts.URL+"/api/roots", nil, nil)
+	if st != 401 && st != 403 {
+		t.Fatalf("unauthenticated roots status %d, want 401 or 403", st)
+	}
+
+	aliceC := loginAs(t, ts.URL, "alice", "alice-pass-123")
+	bobC := loginAs(t, ts.URL, "bob", "bob-pass-1234")
+	adminC := loginAs(t, ts.URL, "admin", "admin-pass-123")
+
+	if n := rootsTrashCount(t, ts.URL, aliceC); n != 0 {
+		t.Fatalf("alice empty trashCount %d", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, bobC); n != 0 {
+		t.Fatalf("bob empty trashCount %d", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, adminC); n != 0 {
+		t.Fatalf("admin empty trashCount %d", n)
+	}
+
+	st, data := doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceC, map[string]any{"root": "home", "path": "a1.txt"})
+	if st != 200 {
+		t.Fatalf("alice delete a1 %d %v", st, data)
+	}
+	if n := rootsTrashCount(t, ts.URL, aliceC); n != 1 {
+		t.Fatalf("alice after one delete trashCount %d", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, bobC); n != 0 {
+		t.Fatalf("bob must not see alice trash, got %d", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, adminC); n != 1 {
+		t.Fatalf("admin should see alice trash, got %d", n)
+	}
+
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceC, map[string]any{"root": "home", "path": "a2.txt"})
+	if st != 200 {
+		t.Fatalf("alice delete a2 %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", bobC, map[string]any{"root": "home", "path": "b1.txt"})
+	if st != 200 {
+		t.Fatalf("bob delete b1 %d %v", st, data)
+	}
+	if n := rootsTrashCount(t, ts.URL, aliceC); n != 2 {
+		t.Fatalf("alice trashCount %d want 2", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, bobC); n != 1 {
+		t.Fatalf("bob trashCount %d want 1", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, adminC); n != 3 {
+		t.Fatalf("admin trashCount %d want 3 (all users)", n)
+	}
+
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/trash", aliceC, nil)
+	if st != 200 {
+		t.Fatalf("list alice trash %d %v", st, data)
+	}
+	items, _ := data["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("alice list len %d want 2", len(items))
+	}
+	id, _ := items[0].(map[string]any)["id"].(string)
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/trash/restore", aliceC, map[string]any{"id": id})
+	if st != 200 {
+		t.Fatalf("alice restore %d %v", st, data)
+	}
+	if n := rootsTrashCount(t, ts.URL, aliceC); n != 1 {
+		t.Fatalf("alice after restore trashCount %d want 1", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, adminC); n != 2 {
+		t.Fatalf("admin after alice restore trashCount %d want 2", n)
+	}
+
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/trash", aliceC, nil)
+	if st != 200 {
+		t.Fatalf("list alice trash after restore %d %v", st, data)
+	}
+	id, _ = data["items"].([]any)[0].(map[string]any)["id"].(string)
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/trash/purge", aliceC, map[string]any{"id": id})
+	if st != 200 {
+		t.Fatalf("alice purge %d %v", st, data)
+	}
+	if n := rootsTrashCount(t, ts.URL, aliceC); n != 0 {
+		t.Fatalf("alice after purge trashCount %d want 0", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, bobC); n != 1 {
+		t.Fatalf("bob trashCount after alice purge %d want 1", n)
+	}
+
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/trash/purge", bobC, map[string]any{"empty": true})
+	if st != 200 {
+		t.Fatalf("bob empty %d %v", st, data)
+	}
+	if n := rootsTrashCount(t, ts.URL, bobC); n != 0 {
+		t.Fatalf("bob after empty trashCount %d want 0", n)
+	}
+	if n := rootsTrashCount(t, ts.URL, adminC); n != 0 {
+		t.Fatalf("admin after all cleared trashCount %d want 0", n)
+	}
+}

@@ -18,6 +18,7 @@ const state = {
   perm: 'write',
   canDelete: true,
   roots: [],
+  trashCount: 0,
   /** @type {'list'|'icons'} */
   viewMode: (localStorage.getItem('filehub-view') === 'icons' ? 'icons' : 'list'),
   /** @type {'name'|'modified'|'type'|'size'} */
@@ -69,6 +70,10 @@ async function api(path, opts = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (!res.ok) throw new Error((data && data.error) || res.statusText);
   return data;
+}
+
+function formatTrashCount(n) {
+  return n > 99 ? '99+' : String(n);
 }
 
 function fmtSize(n) {
@@ -690,6 +695,7 @@ $('#change-password').addEventListener('submit', async (e) => {
 async function loadRoots() {
   const data = await api('/api/roots');
   state.roots = data.roots;
+  state.trashCount = Number(data.trashCount) || 0;
   const ul = $('#root-list');
   ul.innerHTML = '';
   for (const r of data.roots) {
@@ -740,6 +746,17 @@ async function renderTreeNode(root, path, label, depth) {
 
   row.appendChild(twisty);
   row.appendChild(b);
+  if (root.id === 'trash' && !path) {
+    const n = state.trashCount || 0;
+    if (n > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'tree-count-badge';
+      const shown = formatTrashCount(n);
+      badge.textContent = shown;
+      badge.setAttribute('aria-label', n === 1 ? '1 item in Recycle bin' : shown + ' items in Recycle bin');
+      row.appendChild(badge);
+    }
+  }
   li.appendChild(row);
 
   if (expanded) {
@@ -2690,6 +2707,7 @@ async function openTransferDialog(mode) {
   try {
     const data = await api('/api/roots');
     if (data && Array.isArray(data.roots)) state.roots = data.roots;
+    if (data && data.trashCount != null) state.trashCount = Number(data.trashCount) || 0;
   } catch { /* keep cached roots */ }
   const writable = (state.roots || []).filter((r) => r.perm === 'write');
   const sel = $('#transfer-root');
@@ -3462,6 +3480,7 @@ bootstrap();
   $('#btn-trash-empty')?.addEventListener('click', async () => {
     if (!confirm('Permanently delete all items in your recycle bin? This cannot be undone.')) return;
     await api('/api/trash/purge', { method: 'POST', body: JSON.stringify({ empty: true }) });
+    await loadRoots();
     await loadList();
   });
   $('#btn-trash-restore')?.addEventListener('click', async () => {

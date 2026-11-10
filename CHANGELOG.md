@@ -8,6 +8,12 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-10
+
+### Added
+- **Recycle bin count badge** — when the recycle bin has items, a compact count appears to the right of the Recycle bin label in the sidebar. Counts above 99 display as `99+`. The badge is hidden when the bin is empty, uses the same per-user visibility as the recycle bin list, and refreshes after delete, restore, purge, emptying the bin, and on load or navigation.
+- **Unraid Community Apps screenshots** — the Docker template now includes current login and file-browser screenshots (`templates/screenshots/01-login.png`, `templates/screenshots/02-after-login.png`).
+
 ## [0.4.1] - 2026-11-10
 
 ### Fixed
