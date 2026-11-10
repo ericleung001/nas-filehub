@@ -37,7 +37,21 @@ aside ul { list-style: none; padding: 0; margin: 0; }
 
 main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .75rem; flex-wrap: wrap; }
-.actions { display: flex; gap: .5rem; align-items: center; }
+.actions {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.actions > *,
+.actions .sort-controls,
+.actions .view-toggle,
+.actions .file-btn,
+.actions button {
+  flex-shrink: 0;
+}
+.file-btn { display: inline-flex; align-items: center; margin: 0; cursor: pointer; }
 
 /* File list: fixed columns so Name/Size/Modified/actions stay aligned */
 .files-wrap { width: 100%; overflow-x: hidden; position: relative; min-height: 12rem; border-radius: 10px; transition: outline-color .12s, background .12s; }
@@ -155,10 +169,26 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   .files col.col-size, .files th.size-h, .files td.size-cell { display: none; }
   .files col.col-actions { width: 6.25rem; }
   #breadcrumbs button { max-width: 6rem; }
+  .toolbar {
+    align-items: stretch;
+    gap: .65rem;
+  }
+  #breadcrumbs {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+  }
+  .actions {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+  }
 }
 @media (max-width: 420px) {
   .files col.col-actions { width: 5.75rem; }
   .row-actions button { padding: .2rem .3rem; min-width: 1.7rem; }
+  .actions { gap: .4rem; }
+  .view-btn { padding: .28rem .45rem !important; font-size: .78rem; }
 }
 
 .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; padding: 1rem; }
@@ -318,9 +348,35 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 @media (max-width: 800px) {
   .settings-layout { grid-template-columns: 1fr; }
   .settings-nav {
-    flex-direction: row; flex-wrap: wrap; border-right: none;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: .35rem;
+    padding: .65rem .75rem;
+    border-right: none;
     border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
+  .settings-nav-item {
+    flex: 0 0 auto;
+    align-self: center;
+    white-space: nowrap;
+    padding: .4rem .75rem;
+    font-size: .85rem;
+    line-height: 1.2;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #0b1220;
+  }
+  .settings-nav-item.active {
+    color: #fff;
+    border-color: transparent;
+    background: var(--accent);
+  }
+  .settings-gate-banner { max-width: none; white-space: normal; }
 }
 .admin-section { padding: 1rem; max-width: 1100px; }
 .admin-section h3 { margin-top: 0; }
@@ -469,6 +525,21 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   .admin-table thead th.home-h,
   .admin-table thead th.path-h { display: none; }
 }
+/* Link shares: keep Actions as a real table-cell so Copy/Revoke stay under the header
+   (display:grid on td takes the cell out of table layout and stacks content). */
+.admin-table.links-table td.row-actions {
+  display: table-cell;
+  text-align: right;
+  white-space: nowrap;
+  vertical-align: middle;
+  overflow: visible;
+}
+.admin-table.links-table td.row-actions button {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: .2rem;
+}
+
 @media (max-width: 800px) {
   .admin-grid { grid-template-columns: 1fr; }
   .admin-table col.col-status,
@@ -476,7 +547,18 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   .admin-table td.status-cell,
   .admin-table thead th.status-h { display: none; }
   .admin-table col.col-actions { width: 6.5rem; }
-  .admin-table.links-table col.col-actions { width: 8.5rem; }
+  .admin-table.links-table col.col-link-label { width: 30%; }
+  .admin-table.links-table col.col-link-url { width: auto; }
+  .admin-table.links-table col.col-actions { width: 8.75rem; }
+}
+@media (max-width: 420px) {
+  .admin-table.links-table col.col-link-label { width: 32%; }
+  .admin-table.links-table col.col-actions { width: 7.25rem; }
+  .admin-table.links-table .row-actions button {
+    padding: .2rem .35rem;
+    font-size: .75rem;
+    min-width: 0;
+  }
 }
 
 

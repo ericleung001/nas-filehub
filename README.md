@@ -131,6 +131,8 @@ Sign in → **Settings** (single top-bar button):
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
+On phones, the file toolbar wraps so Upload/Refresh stay visible, and Settings uses a horizontal scrollable chip nav.
+
 Disabled users cannot log in. Uploads / mkdir that would exceed home quota are rejected.
 
 ## Nginx Proxy Manager

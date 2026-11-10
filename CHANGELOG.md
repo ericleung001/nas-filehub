@@ -8,6 +8,13 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-11-10
+
+### Fixed
+- **Mobile file toolbar** — `.actions` wraps on narrow screens so **Upload** and **Refresh** stay fully visible (no longer clipped by `main` overflow). Action controls do not shrink below their content.
+- **Mobile settings nav** — horizontal scrollable chip row with consistent height (no tall stretched Account box / uneven wrap gaps when many admin tabs are present).
+- **Mobile Link shares table** — Actions column keeps real `table-cell` layout so **Copy** / **Revoke** stay under Actions instead of dropping under the label.
+
 ## [0.3.10] - 2026-11-10
 
 ### Changed
@@ -139,7 +146,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.10...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.11...HEAD
+[0.3.11]: https://github.com/ericleung001/nas-filehub/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/ericleung001/nas-filehub/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/ericleung001/nas-filehub/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/ericleung001/nas-filehub/compare/v0.3.7...v0.3.8
