@@ -13,6 +13,9 @@ where version tags are used.
 ### Changed
 - **Login** — removed the Chinese tagline on the login page. The line under the Filehub title is now English only: “Multi-user file manager”.
 
+### Fixed
+- **Windows build** — Settings → System disk usage used Unix-only `syscall.Statfs`, which prevented `GOOS=windows` compiles. Windows now reports DATA_ROOT usage via `GetDiskFreeSpaceEx`; Linux and macOS behavior is unchanged.
+
 ## [0.3.21] - 2026-11-10
 
 ### Added
