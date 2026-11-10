@@ -277,6 +277,7 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .badge { display: inline-block; font-size: .72rem; padding: .1rem .4rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
 .badge.admin { color: #93c5fd; border-color: #3b82f6; }
 .badge.disabled { color: #fca5a5; border-color: var(--danger); }
+.badge.current { color: #86efac; border-color: #22c55e; }
 #user-edit-dialog, #share-grant-dialog {
   border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; background: var(--panel); color: var(--text);
   max-width: min(96vw, 420px); width: 100%;

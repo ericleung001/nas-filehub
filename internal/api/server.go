@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +56,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("/api/me", s.requireAuth(s.handleMe))
 	mux.HandleFunc("/api/me/password", s.requireAuth(s.handleMePassword))
+	mux.HandleFunc("/api/me/sessions", s.requireAuth(s.handleMeSessions))
+	mux.HandleFunc("/api/me/sessions/", s.requireAuth(s.handleMeSessionID))
 	mux.HandleFunc("/api/me/totp/setup", s.requireAuth(s.handleMeTotpSetup))
 	mux.HandleFunc("/api/me/totp/confirm", s.requireAuth(s.handleMeTotpConfirm))
 	mux.HandleFunc("/api/me/totp/disable", s.requireAuth(s.handleMeTotpDisable))
@@ -87,6 +88,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/admin/settings", s.requireAdmin(s.handleAdminSettings))
 	mux.HandleFunc("/api/admin/smtp/test", s.requireAdmin(s.handleAdminSMTPTest))
 	mux.HandleFunc("/api/admin/system/status", s.requireAdmin(s.handleAdminSystemStatus))
+	mux.HandleFunc("/api/admin/audit", s.requireAdmin(s.handleAdminAudit))
 
 	mux.Handle("/", s.spaHandler())
 	return s.securityHeaders(mux)
@@ -133,32 +135,51 @@ func allowSameOriginFrame(path string) bool {
 	return false
 }
 
-func setInlineFileHeaders(w http.ResponseWriter, name string) {
-	// Override global DENY so same-origin <iframe>/<embed> can preview PDFs.
-	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-	w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
-	w.Header().Del("Content-Disposition")
-	ext := strings.ToLower(filepath.Ext(name))
-	if ext == ".pdf" {
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `inline; filename="`+filepath.Base(name)+`"`)
-	}
-}
-
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-XSS-Protection", "0")
+		w.Header().Set("Permissions-Policy", permissionsPolicy)
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		if allowSameOriginFrame(r.URL.Path) {
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-			w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+			w.Header().Set("Content-Security-Policy", frameableCSP)
 		} else {
 			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("Content-Security-Policy", documentCSP)
 		}
-		// No command execution endpoint exists by design.
+		// HSTS is not set here: LAN HTTP and first-boot must keep working.
+		// Public HTTPS deployments should set Strict-Transport-Security on the reverse proxy.
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) trustedProxies() *auth.TrustedProxies {
+	return auth.ParseTrustedProxies(s.Cfg.TrustedProxies)
+}
+
+func (s *Server) clientIP(r *http.Request) string {
+	return auth.ClientIP(r, s.trustedProxies())
+}
+
+func (s *Server) audit(r *http.Request, actorID int64, actorName, action, detail string) {
+	if s == nil || s.DB == nil {
+		return
+	}
+	ip := ""
+	if r != nil {
+		ip = s.clientIP(r)
+	}
+	_ = s.DB.AppendAudit(actorID, actorName, ip, action, detail)
+}
+
+func (s *Server) sessionToken(r *http.Request) string {
+	c, err := r.Cookie(auth.CookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -180,6 +201,7 @@ func (s *Server) currentUser(r *http.Request) *db.User {
 	if err != nil || u == nil {
 		return nil
 	}
+	s.DB.TouchSession(c.Value, s.clientIP(r), r.UserAgent())
 	return u
 }
 
@@ -206,7 +228,8 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		if s.userMustChangePassword(u) {
 			allowed := path == "/api/me" ||
 				path == "/api/me/password" ||
-				path == "/api/logout"
+				path == "/api/logout" ||
+				strings.HasPrefix(path, "/api/me/sessions")
 			if !allowed {
 				writeErr(w, http.StatusForbidden, "password change required")
 				return
@@ -215,7 +238,8 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			allowed := path == "/api/me" ||
 				path == "/api/me/totp/setup" ||
 				path == "/api/me/totp/confirm" ||
-				path == "/api/logout"
+				path == "/api/logout" ||
+				strings.HasPrefix(path, "/api/me/sessions")
 			if !allowed {
 				writeErr(w, http.StatusForbidden, "2FA setup required")
 				return
@@ -274,8 +298,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	ip := auth.ClientIP(r)
-	if !s.Limiter.Allow(ip) {
+	ip := s.clientIP(r)
+	if s.Limiter != nil && !s.Limiter.Allow(ip) {
 		writeErr(w, http.StatusTooManyRequests, "too many login attempts")
 		return
 	}
@@ -288,20 +312,32 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "bad json")
 		return
 	}
+	username := strings.TrimSpace(body.Username)
+	if locked, _, err := s.DB.LoginLockState(username); err == nil && locked {
+		s.audit(r, 0, username, "login_failure", "locked")
+		writeErr(w, 401, "too many failed attempts, try again later")
+		return
+	}
 	u, err := s.DB.GetUserByUsername(body.Username)
 	if err != nil || u == nil || !db.CheckPassword(u.PasswordHash, body.Password) {
+		_, _, _ = s.DB.RecordLoginFailure(username, s.Cfg.EffectiveLockoutLimit(), s.Cfg.EffectiveLockoutWindow())
+		s.audit(r, 0, username, "login_failure", "invalid credentials")
 		writeErr(w, 401, "invalid credentials")
 		return
 	}
+	_ = s.DB.ClearLoginFailures(u.Username)
 	if u.Disabled {
+		s.audit(r, u.ID, u.Username, "login_failure", "account disabled")
 		writeErr(w, 401, "account disabled")
 		return
 	}
 	if userPending(u) {
+		s.audit(r, u.ID, u.Username, "login_failure", "pending approval")
 		writeErr(w, 403, "Your account is pending admin approval")
 		return
 	}
 	if db.NormalizeUserStatus(u.Status) != db.UserStatusActive {
+		s.audit(r, u.ID, u.Username, "login_failure", "not active")
 		writeErr(w, 403, "account is not active")
 		return
 	}
@@ -333,13 +369,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		} else {
 			out["needTotpSetup"] = true
 		}
+		s.audit(r, u.ID, u.Username, "login_success", "pending="+kind)
 		writeJSON(w, 200, out)
 		return
 	}
-	if err := s.issueSession(w, u, rememberMe); err != nil {
+	if err := s.issueSession(w, r, u, rememberMe); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}
+	s.audit(r, u.ID, u.Username, "login_success", "")
 	// Refresh user so public flags see current DB state
 	if u2, err := s.DB.GetUserByID(u.ID); err == nil && u2 != nil {
 		u = u2
@@ -742,7 +780,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(st2.Name())+`"`)
+	setFileDisposition(w, st2.Name(), false)
 	http.ServeContent(w, r, st2.Name(), st2.ModTime(), f)
 }
 
@@ -1052,6 +1090,12 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 400, err.Error())
 				return
 			}
+			me := s.currentUser(r)
+			canDel := false
+			if body.CanDelete != nil {
+				canDel = *body.CanDelete
+			}
+			s.audit(r, me.ID, me.Username, "share_grant_set", "share="+itoaLocal(id)+" user="+itoaLocal(body.UserID)+" perm="+body.Perm+" canDelete="+boolStr(canDel))
 			writeJSON(w, 200, map[string]string{"ok": "1"})
 		case http.MethodDelete:
 			uid, _ := strconv.ParseInt(r.URL.Query().Get("userId"), 10, 64)
@@ -1059,6 +1103,8 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 400, err.Error())
 				return
 			}
+			me := s.currentUser(r)
+			s.audit(r, me.ID, me.Username, "share_grant_remove", "share="+itoaLocal(id)+" user="+itoaLocal(uid))
 			writeJSON(w, 200, map[string]string{"ok": "1"})
 		default:
 			writeErr(w, 405, "method not allowed")
@@ -1066,4 +1112,13 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeErr(w, 404, "not found")
+}
+
+func itoaLocal(id int64) string { return strconv.FormatInt(id, 10) }
+
+func boolStr(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
 }

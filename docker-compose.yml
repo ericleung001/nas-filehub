@@ -29,6 +29,10 @@ services:
       PGID: ${PGID:-1000}
       # UMASK: ${UMASK:-}
       LOGIN_RATE_LIMIT: "10"
+      # TRUSTED_PROXIES: "10.0.0.0/8"
+      # PUBLIC_BASE_URL: https://filehub.example.com
+      # LOGIN_LOCKOUT_LIMIT: "10"
+      # LOGIN_LOCKOUT_MINUTES: "15"
       MAX_UPLOAD_MB: "4096"
       CREDENTIALS_FILE: /data/admin-credentials.txt
       DOTENV_FILE: /data/.env

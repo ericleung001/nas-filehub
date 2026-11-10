@@ -96,6 +96,14 @@ func (s *Server) handleLinks(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
+		detail := "path=" + body.Path
+		if pwHash != "" {
+			detail += " password=1"
+		}
+		if exp != nil {
+			detail += " expires=1"
+		}
+		s.audit(r, u.ID, u.Username, "share_link_create", detail)
 		writeJSON(w, 201, map[string]any{
 			"link": link,
 			"url":  "/s/" + link.Token,
@@ -129,6 +137,7 @@ func (s *Server) handleLinkID(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
+		s.audit(r, u.ID, u.Username, "share_link_revoke", "id="+itoaLocal(id))
 		writeJSON(w, 200, map[string]string{"ok": "1"})
 	default:
 		writeErr(w, 405, "method not allowed")
@@ -218,6 +227,11 @@ func (s *Server) handlePublicLinkMeta(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePublicLinkUnlock(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
+		return
+	}
+	ip := s.clientIP(r)
+	if s.Limiter != nil && !s.Limiter.Allow(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many unlock attempts")
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/public/links/")
@@ -399,7 +413,7 @@ func (s *Server) servePublicFile(w http.ResponseWriter, r *http.Request, asAttac
 	}
 	defer f.Close()
 	if asAttachment {
-		w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(st.Name())+`"`)
+		setFileDisposition(w, st.Name(), false)
 	} else {
 		setInlineFileHeaders(w, st.Name())
 	}

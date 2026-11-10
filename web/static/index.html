@@ -151,11 +151,13 @@
           <button type="button" class="settings-nav-item" data-tab="password">Change password</button>
           <button type="button" class="settings-nav-item" data-tab="2fa">2FA</button>
           <button type="button" class="settings-nav-item" data-tab="links">Link shares</button>
+          <button type="button" class="settings-nav-item" data-tab="my-sessions">Active sessions</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="users" hidden>Users</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="shares" hidden>Shares</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="sessions" hidden>Sessions</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="registration" hidden>Registration</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="security" hidden>Security</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="audit" hidden>Audit log</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="email" hidden>Email</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="storage-quota" hidden>Storage quota</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="system" hidden>System</button>
@@ -240,6 +242,30 @@
                     </tr>
                   </thead>
                   <tbody id="link-list"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div id="tab-my-sessions" class="settings-panel" role="tabpanel" hidden>
+            <div class="settings-card">
+              <h3>Active sessions</h3>
+              <p class="muted">These are the devices and browsers currently signed in to your account. You can revoke a session or sign out everywhere else. Changing your password also signs out other sessions.</p>
+              <p class="links-toolbar">
+                <button type="button" id="btn-revoke-other-sessions" class="ghost danger">Revoke other sessions</button>
+                <span id="sessions-msg" class="muted" hidden></span>
+              </p>
+              <div class="admin-table-wrap">
+                <table class="admin-table" aria-label="Active sessions">
+                  <thead>
+                    <tr>
+                      <th scope="col">Device</th>
+                      <th scope="col">IP address</th>
+                      <th scope="col">Signed in</th>
+                      <th scope="col">Last seen</th>
+                      <th scope="col" class="actions-h">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="session-list"></tbody>
                 </table>
               </div>
             </div>
@@ -422,6 +448,31 @@
                 <p id="password-policy-msg" class="muted" hidden></p>
                 <p id="password-policy-version" class="meta"></p>
               </form>
+            </div>
+          </div>
+          <div id="tab-audit" class="settings-panel" role="tabpanel" hidden>
+            <div class="settings-card admin-section">
+              <h3>Audit log</h3>
+              <p class="muted">Recent sign-in attempts, public link create/revoke, and shared-folder permission changes. Passwords and tokens are never recorded.</p>
+              <div class="links-toolbar">
+                <button type="button" id="btn-audit-prev" class="ghost" disabled>Previous</button>
+                <button type="button" id="btn-audit-next" class="ghost" disabled>Next</button>
+                <span id="audit-page-info" class="muted"></span>
+              </div>
+              <div class="admin-table-wrap">
+                <table class="admin-table" aria-label="Audit log">
+                  <thead>
+                    <tr>
+                      <th scope="col">Time</th>
+                      <th scope="col">User</th>
+                      <th scope="col">IP</th>
+                      <th scope="col">Action</th>
+                      <th scope="col">Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody id="audit-list"></tbody>
+                </table>
+              </div>
             </div>
           </div>
           <div id="tab-email" class="settings-panel" role="tabpanel" hidden>

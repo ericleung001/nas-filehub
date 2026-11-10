@@ -114,20 +114,23 @@ Or set `ADMIN_PASSWORD` yourself and run `make run` / `make smoke`.
 | `DB_PATH` | `/data/filehub.db` | SQLite database path |
 | `ADMIN_USER` | `admin` | Seed admin **username** on first boot only |
 | `ADMIN_PASSWORD` | _(auto on first Docker boot if unset)_ | Seed admin **password** — auto-written once to `./data/admin-credentials.txt` + `./data/.env` when unset; ignored after the admin already exists |
-| `SESSION_SECRET` | _(auto on first Docker boot if unset)_ | Auto-generated with the credentials file when unset; session tokens are also random in DB |
+| `SESSION_SECRET` | _(auto on first Docker boot if unset)_ | Auto-generated with the credentials file when unset; also used to encrypt TOTP secrets at rest. If unset at runtime, a key file is written next to the database. Session tokens are random values stored in SQLite |
 | `CREDENTIALS_FILE` | `/data/admin-credentials.txt` | Path for the one-time admin credentials file (Docker entrypoint) |
 | `DOTENV_FILE` | `/data/.env` | Path for the one-time generated env copy (Docker entrypoint) |
-| `SECURE_COOKIES` | `false` | Set `true` behind HTTPS / NPM |
+| `SECURE_COOKIES` | `false` | Set `true` behind HTTPS. **Required** (with `PUBLIC_BASE_URL`) for public HTTPS deployments |
 | `THUMB_ENABLE` | `true` | Generate thumbs with ffmpeg |
 | `THUMB_VAAPI` | `false` | Legacy flag: `true` enables auto hardware thumbnail acceleration when `THUMB_HWACCEL` is unset |
 | `THUMB_HWACCEL` | _(empty)_ | `auto`, `off`, `vaapi`, or `nvdec` (`cuda`/`cuvid`/`nvidia` aliases map to nvdec). Empty defers to `THUMB_VAAPI`. Picks the detected render node; always falls back to software ffmpeg, then the original image |
 | `PUID` / `PGID` | `1000` / `1000` | Docker only: UID/GID after start, and owner of `/data`. Unset keeps the previous 1000:1000 default |
 | `UMASK` | — | Docker only, optional (for example `002`) |
 | `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory |
-| `LOGIN_RATE_LIMIT` | `10` | Max login attempts per IP per minute |
+| `LOGIN_RATE_LIMIT` | `10` | Max login and share-link unlock attempts per client IP per minute |
+| `TRUSTED_PROXIES` | _(loopback only)_ | Extra comma-separated IPs or CIDRs allowed to set `X-Forwarded-For` / `X-Real-IP`. `127.0.0.1` and `::1` are always trusted |
+| `LOGIN_LOCKOUT_LIMIT` | `10` | Failed logins per username before that account is temporarily locked |
+| `LOGIN_LOCKOUT_MINUTES` | `15` | Account lock window; further attempts during the lock do not extend it |
 | `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
 | `FORCE_2FA_ALL` | `false` | If true, every user must enroll TOTP (overrides UI off) |
-| `PUBLIC_BASE_URL` | — | Absolute site URL for password-reset emails (e.g. `https://filehub.example.com`) |
+| `PUBLIC_BASE_URL` | — | Absolute site URL for password-reset emails (e.g. `https://filehub.example.com`). **Required** for public HTTPS deployments so reset links cannot follow a spoofed host |
 | `SMTP_ENABLED` | `false` | Env override: enable SMTP |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | — | Env overrides for SMTP (password never logged) |
 
@@ -139,15 +142,17 @@ Sign in → **Settings** (single top-bar button):
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke (permanently delete) public file/folder links, or select several and **Delete selected**; deleted rows leave the list
-5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while Settings → Storage quota is on); reset passwords; disable accounts; per-user require 2FA
-6. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
-7. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
-8. **Registration** (admins) — allow open registration
-9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
-10. **Email** (admins) — SMTP for forgot-password
-11. **Storage quota** (admins) — optional **Apply the same quota to all users** setting and the quota value
-12. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
-13. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
+5. **Active sessions** (everyone) — list signed-in devices, revoke one session, or revoke all other sessions
+6. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while Settings → Storage quota is on); reset passwords; disable accounts; per-user require 2FA
+7. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
+8. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
+9. **Registration** (admins) — allow open registration
+10. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
+11. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, and shared-folder permission changes
+12. **Email** (admins) — SMTP for forgot-password
+13. **Storage quota** (admins) — optional **Apply the same quota to all users** setting and the quota value
+14. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
+15. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -161,7 +166,9 @@ Disabled users cannot log in. Uploads / mkdir that would exceed home quota are r
 2. Add a Proxy Host → your domain → forward to `http://<host>:8088` (or the Docker network hostname)
 3. Enable SSL (Let’s Encrypt)
 4. Prefer an Access List, Authelia, or Cloudflare Access in front
-5. Set `SECURE_COOKIES=true`
+5. Set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL=https://your.domain` (required for public HTTPS so password-reset emails use a fixed origin)
+6. If the reverse proxy is not on loopback, set `TRUSTED_PROXIES` to the proxy’s address or CIDR
+7. Set HTTP Strict-Transport-Security on the reverse proxy; Filehub does not enable HSTS itself (LAN HTTP and first-boot must keep working)
 
 **Do not** port-forward the app port directly to the public internet.
 
@@ -254,6 +261,7 @@ NVIDIA hosts also need the NVIDIA Container Toolkit / GPU runtime; this image do
 Auth / session:
 
 - `POST /api/login` · `POST /api/logout` · `GET /api/me` · `POST /api/me/password` · `GET /api/health`
+- `GET /api/me/sessions` · `DELETE /api/me/sessions/{id}` · `POST /api/me/sessions/revoke-others`
 - `GET /api/me` includes `usedBytes` (home + attributed share writes + trash) alongside `quotaBytes`, `email`, and `status`
 - `GET /api/auth/features` (`openRegistration`, `registrationRequireApproval`, `allowRememberMe`, password policy, forgotPassword) · `POST /api/register` (may return `pending`) · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
 - `POST /api/login` accepts optional `rememberMe` (honored only when admin allows Stay signed in)
@@ -278,6 +286,7 @@ Admin (requires admin session):
 - `POST /api/admin/users/{id}/password`
 - `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, `globalQuotaEnabled`, `globalQuotaBytes`, password policy, SMTP — password write-only)
 - `GET /api/admin/system/status` (CPU, RAM, user quota totals, `DATA_ROOT` disk; admin only)
+- `GET /api/admin/audit` (`limit`, `offset`) — append-only audit log (admin only)
 - `POST /api/admin/smtp/test`
 - `GET|POST /api/admin/shares`
 - `DELETE /api/admin/shares/{id}`
@@ -298,7 +307,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 
 1. Admin → Settings → **Email**: enable, host, port, username, password, from address. Save. Optionally **Send test email**.
 2. Set each user’s **email** under Users → Create / Edit (required for that user to receive reset mail).
-3. Prefer setting `PUBLIC_BASE_URL` to your public HTTPS origin so reset links are correct behind Nginx Proxy Manager.
+3. Public HTTPS deployments must set `PUBLIC_BASE_URL` to your public origin (and `SECURE_COOKIES=true`) so reset links cannot follow a spoofed host.
 4. The login page links to **Forgot password?** (`/forgot`) when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
 
 SMTP credentials can also be supplied via env (`SMTP_*`); env values override the DB for the running process. The API never returns the SMTP password — only `passwordSet: true|false`.
@@ -321,6 +330,7 @@ Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Aut
 2. **Admin per user** — Settings → Users → Edit → **require 2FA**.
 3. **Admin all users** — Settings → Security → **Force 2FA for all users**, or set env `FORCE_2FA_ALL=true`.
 4. **Login** — after a correct password, if 2FA is enabled the UI asks for a code (or backup code). If 2FA is required but not enrolled, enrollment (QR) is required before a session is issued.
+5. **Storage** — TOTP secrets are encrypted at rest with a key derived from `SESSION_SECRET`. Backup codes are stored as bcrypt hashes.
 
 ### API — 2FA
 
@@ -333,6 +343,10 @@ Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Aut
 | POST | `/api/me/totp/setup` | session | Start enrollment → QR/secret |
 | POST | `/api/me/totp/confirm` | session | `{code}` enable + `{backupCodes}` |
 | POST | `/api/me/totp/disable` | session | `{password}` or `{code}` |
+| GET | `/api/me/sessions` | session | current user’s sessions (no raw tokens) |
+| DELETE | `/api/me/sessions/{id}` | session | revoke one session |
+| POST | `/api/me/sessions/revoke-others` | session | revoke all other sessions |
+| GET | `/api/admin/audit` | admin | paginated audit log |
 | GET/PUT | `/api/admin/settings` | admin | `{force2faAll,openRegistration,sessionTtlSeconds,rememberMeTtlSeconds,allowRememberMe,globalQuotaEnabled,globalQuotaBytes,…}` |
 | PATCH | `/api/admin/users/{id}` | admin | accepts `totpRequired` |
 

@@ -15,6 +15,7 @@ import (
 	"github.com/eric/nas-filehub/internal/auth"
 	"github.com/eric/nas-filehub/internal/config"
 	"github.com/eric/nas-filehub/internal/db"
+	"github.com/eric/nas-filehub/internal/secretbox"
 )
 
 func testServer(t *testing.T) (*Server, *httptest.Server, *db.DB) {
@@ -30,13 +31,18 @@ func testServer(t *testing.T) (*Server, *httptest.Server, *db.DB) {
 	}
 	s := &Server{
 		Cfg: config.Config{
-			DataRoot:      filepath.Join(dir, "files"),
-			SecureCookies: false,
+			DataRoot:       filepath.Join(dir, "files"),
+			SecureCookies:  false,
+			SessionSecret:  "test-session-secret",
+			LockoutLimit:   10,
+			LockoutMinutes: 15,
 		},
-		DB:      database,
-		Limiter: auth.NewLoginLimiter(1000),
-		Static:  os.DirFS(dir),
+		DB:           database,
+		Limiter:      auth.NewLoginLimiter(1000),
+		ResetLimiter: auth.NewLoginLimiter(1000),
+		Static:       os.DirFS(dir),
 	}
+	database.SetTotpKey(secretbox.DeriveKey("test-session-secret"))
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return s, ts, database

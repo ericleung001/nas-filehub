@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -92,8 +93,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "registration is closed")
 		return
 	}
-	ip := auth.ClientIP(r)
-	if !s.Limiter.Allow(ip) {
+	ip := s.clientIP(r)
+	if s.Limiter != nil && !s.Limiter.Allow(ip) {
 		writeErr(w, http.StatusTooManyRequests, "too many requests")
 		return
 	}
@@ -158,8 +159,8 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	ip := auth.ClientIP(r)
-	if !s.ResetLimiter.Allow(ip) {
+	ip := s.clientIP(r)
+	if s.ResetLimiter != nil && !s.ResetLimiter.Allow(ip) {
 		writeErr(w, http.StatusTooManyRequests, "too many reset requests")
 		return
 	}
@@ -203,6 +204,9 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := s.publicBaseURL(r)
+	if s.Cfg.PublicBaseURL == "" {
+		log.Printf("WARN: PUBLIC_BASE_URL is not set; password-reset link will use request host %q. Public HTTPS deployments must set PUBLIC_BASE_URL and SECURE_COOKIES=true", base)
+	}
 	link := fmt.Sprintf("%s/reset?token=%s", base, token)
 	subject := "Filehub password reset"
 	bodyText := fmt.Sprintf(
@@ -217,6 +221,7 @@ func (s *Server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "message": generic})
 		return
 	}
+	s.audit(r, u.ID, u.Username, "password_reset_request", "")
 	writeJSON(w, 200, map[string]any{"ok": true, "message": generic})
 }
 
@@ -225,8 +230,8 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	ip := auth.ClientIP(r)
-	if !s.ResetLimiter.Allow(ip) {
+	ip := s.clientIP(r)
+	if s.ResetLimiter != nil && !s.ResetLimiter.Allow(ip) {
 		writeErr(w, http.StatusTooManyRequests, "too many reset requests")
 		return
 	}
@@ -300,19 +305,35 @@ func (s *Server) publicBaseURL(r *http.Request) string {
 	if s.Cfg.PublicBaseURL != "" {
 		return strings.TrimRight(s.Cfg.PublicBaseURL, "/")
 	}
-	proto := r.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
-		if r.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
+	proto := "http"
+	if r != nil && r.TLS != nil {
+		proto = "https"
+	}
+	peer := ""
+	if r != nil {
+		peer = auth.ClientIP(r, nil) // peer only; used with trusted check below
+	}
+	if r != nil && s.trustedProxies().ContainsIP(peer) {
+		if p := firstForwardedValue(r.Header.Get("X-Forwarded-Proto")); p != "" {
+			p = strings.ToLower(p)
+			if p == "https" || p == "http" {
+				proto = p
+			}
 		}
 	}
-	host := r.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = r.Host
+	host := ""
+	if r != nil {
+		host = r.Host // never X-Forwarded-Host — it can be spoofed
 	}
 	return proto + "://" + host
+}
+
+func firstForwardedValue(v string) string {
+	v = strings.TrimSpace(v)
+	if i := strings.IndexByte(v, ','); i >= 0 {
+		v = strings.TrimSpace(v[:i])
+	}
+	return v
 }
 
 func (s *Server) handleAdminSMTPTest(w http.ResponseWriter, r *http.Request) {

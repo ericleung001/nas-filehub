@@ -608,6 +608,12 @@ document.querySelectorAll('.settings-nav-item').forEach((btn) => {
     if (tab === 'links') {
       try { await refreshLinks(); } catch (err) { console.error(err); }
     }
+    if (tab === 'my-sessions') {
+      try { await refreshMySessions(); } catch (err) { console.error(err); }
+    }
+    if (tab === 'audit') {
+      try { await refreshAudit(0); } catch (err) { console.error(err); }
+    }
   });
 });
 
@@ -3496,4 +3502,123 @@ bootstrap();
     await loadRoots();
     await loadList();
   });
+
+
+const auditState = { offset: 0, limit: 50, total: 0 };
+
+function fmtSessionTime(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString();
+}
+
+function shortUserAgent(ua) {
+  const s = String(ua || '').trim();
+  if (!s) return 'Unknown device';
+  if (s.length <= 96) return s;
+  return s.slice(0, 93) + '…';
+}
+
+async function refreshMySessions() {
+  const tbody = $('#session-list');
+  const msg = $('#sessions-msg');
+  if (!tbody) return;
+  const data = await api('/api/me/sessions');
+  const list = data.sessions || [];
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="muted">No active sessions.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map((sess) => {
+    const current = sess.current ? ' <span class="badge current">this device</span>' : '';
+    const revoke = sess.current
+      ? '<span class="muted">Current</span>'
+      : `<button type="button" class="ghost danger btn-revoke-session" data-id="${sess.id}">Revoke</button>`;
+    return '<tr>' +
+      '<td>' + escapeHtml(shortUserAgent(sess.userAgent)) + current + '</td>' +
+      '<td><code>' + escapeHtml(sess.ip || '—') + '</code></td>' +
+      '<td>' + escapeHtml(fmtSessionTime(sess.createdAt)) + '</td>' +
+      '<td>' + escapeHtml(fmtSessionTime(sess.lastSeenAt)) + '</td>' +
+      '<td>' + revoke + '</td>' +
+      '</tr>';
+  }).join('');
+  tbody.querySelectorAll('.btn-revoke-session').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Revoke this session? That device will be signed out.')) return;
+      try {
+        await api('/api/me/sessions/' + btn.dataset.id, { method: 'DELETE' });
+        if (msg) { msg.hidden = false; msg.textContent = 'Session revoked'; }
+        await refreshMySessions();
+      } catch (err) {
+        if (msg) { msg.hidden = false; msg.textContent = err.message; }
+      }
+    });
+  });
+}
+
+$('#btn-revoke-other-sessions')?.addEventListener('click', async () => {
+  if (!confirm('Sign out all other devices? This device will stay signed in.')) return;
+  const msg = $('#sessions-msg');
+  try {
+    await api('/api/me/sessions/revoke-others', { method: 'POST' });
+    if (msg) { msg.hidden = false; msg.textContent = 'Other sessions revoked'; }
+    await refreshMySessions();
+  } catch (err) {
+    if (msg) { msg.hidden = false; msg.textContent = err.message; }
+  }
+});
+
+function auditActionLabel(action) {
+  switch (action) {
+    case 'login_success': return 'Sign-in success';
+    case 'login_failure': return 'Sign-in failure';
+    case 'share_link_create': return 'Link share created';
+    case 'share_link_revoke': return 'Link share revoked';
+    case 'share_grant_set': return 'Share grant updated';
+    case 'share_grant_remove': return 'Share grant removed';
+    case 'password_reset_request': return 'Password reset requested';
+    default: return action || '';
+  }
+}
+
+async function refreshAudit(offset) {
+  if (typeof offset === 'number') auditState.offset = Math.max(0, offset);
+  const data = await api('/api/admin/audit?limit=' + auditState.limit + '&offset=' + auditState.offset);
+  auditState.total = data.total || 0;
+  auditState.limit = data.limit || auditState.limit;
+  const tbody = $('#audit-list');
+  const events = data.events || [];
+  if (tbody) {
+    if (!events.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">No audit events yet.</td></tr>';
+    } else {
+      tbody.innerHTML = events.map((e) => {
+        return '<tr>' +
+          '<td>' + escapeHtml(fmtSessionTime(e.createdAt)) + '</td>' +
+          '<td>' + escapeHtml(e.actorUsername || '—') + '</td>' +
+          '<td><code>' + escapeHtml(e.ip || '—') + '</code></td>' +
+          '<td>' + escapeHtml(auditActionLabel(e.action)) + '</td>' +
+          '<td class="meta">' + escapeHtml(e.detail || '') + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+  }
+  const info = $('#audit-page-info');
+  const from = auditState.total === 0 ? 0 : auditState.offset + 1;
+  const to = Math.min(auditState.offset + events.length, auditState.total);
+  if (info) info.textContent = auditState.total ? (`${from}–${to} of ${auditState.total}`) : '0 events';
+  const prev = $('#btn-audit-prev');
+  const next = $('#btn-audit-next');
+  if (prev) prev.disabled = auditState.offset <= 0;
+  if (next) next.disabled = auditState.offset + auditState.limit >= auditState.total;
+}
+
+$('#btn-audit-prev')?.addEventListener('click', async () => {
+  try { await refreshAudit(auditState.offset - auditState.limit); } catch (err) { console.error(err); }
+});
+$('#btn-audit-next')?.addEventListener('click', async () => {
+  try { await refreshAudit(auditState.offset + auditState.limit); } catch (err) { console.error(err); }
+});
+
 })();

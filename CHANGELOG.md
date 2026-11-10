@@ -8,6 +8,21 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-10
+
+### Added
+- **Trusted proxy client IP** — login, password-reset, and share-link unlock rate limits use the real client address when the immediate peer is loopback or a host listed in `TRUSTED_PROXIES` (comma-separated IPs or CIDRs). `X-Forwarded-For` / `X-Real-IP` from an untrusted peer are ignored.
+- **Share-link unlock rate limit** — password-protected public link unlocks use the same per-IP limiter as login (`LOGIN_RATE_LIMIT`, default 10/minute) and return 429 when exceeded.
+- **Active sessions** — Settings → Active sessions lists the signed-in user’s sessions (device, IP, signed-in and last-seen times) and can revoke one session or all other sessions. Changing a password still signs out other sessions. Session tokens are never returned to the client.
+- **Audit log** — Settings → Audit log (admins) records sign-in success and failure (no passwords), public link create/revoke, shared-folder grant changes, and password-reset requests (no tokens). The log is paginated.
+- **Per-account lockout** — after `LOGIN_LOCKOUT_LIMIT` failed logins for a username (default 10), that username is locked for `LOGIN_LOCKOUT_MINUTES` (default 15). Further attempts during the lock do not extend the window. Lock state is stored in the database so it survives a process restart. The per-IP limiter still applies.
+
+### Changed
+- **Dangerous file previews** — `.html`, `.htm`, `.svg`, `.xml`, `.js`, and similar scriptable types are served as attachments with `Content-Type: application/octet-stream` (plus `X-Content-Type-Options: nosniff`). Images, video, and PDF can still be previewed inline. `Content-Disposition` filenames use RFC 5987 encoding.
+- **Password-reset URLs** — when `PUBLIC_BASE_URL` is unset, reset links use `Host` and never `X-Forwarded-Host`. `X-Forwarded-Proto` is used only when the immediate peer is a trusted proxy. A warning is logged if a reset email is sent without `PUBLIC_BASE_URL`. Public HTTPS deployments must set `PUBLIC_BASE_URL` and `SECURE_COOKIES=true`.
+- **TOTP secrets at rest** — `users.totp_secret` is stored as AES-GCM ciphertext (`v1:`) using a key derived from `SESSION_SECRET` (or a persistent key file next to the database if the env is empty). Existing plaintext secrets are migrated on startup or on the next successful write/enable path. Backup codes remain bcrypt-hashed.
+- **Security headers** — HTML responses add a document Content-Security-Policy (`default-src` / `script-src` / `style-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, plus `img`/`media`/`frame-src` for previews), `Permissions-Policy` (camera, microphone, and geolocation disabled), and `Cross-Origin-Opener-Policy: same-origin`. HSTS is not set by the app; set it on the reverse proxy for public HTTPS. `/api/raw`, `/api/thumb`, and public raw responses still allow same-origin framing for previews.
+
 ## [0.4.2] - 2026-11-10
 
 ### Added

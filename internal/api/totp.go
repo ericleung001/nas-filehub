@@ -47,17 +47,39 @@ func (s *Server) sessionTTL(rememberMe bool) time.Duration {
 	return d
 }
 
-func (s *Server) issueSession(w http.ResponseWriter, u *db.User, rememberMe bool) error {
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *db.User, rememberMe bool) error {
 	token, err := auth.NewToken()
 	if err != nil {
 		return err
 	}
 	exp := time.Now().Add(s.sessionTTL(rememberMe))
-	if err := s.DB.CreateSession(token, u.ID, exp); err != nil {
+	ip, ua := "", ""
+	if r != nil {
+		ip = s.clientIP(r)
+		ua = r.UserAgent()
+	}
+	if err := s.DB.CreateSession(token, u.ID, exp, ip, ua); err != nil {
 		return err
 	}
 	s.setSessionCookie(w, token, exp)
 	return nil
+}
+
+func (s *Server) maybeReencryptTotp(u *db.User) {
+	if u != nil && u.TotpLegacy && u.TotpSecret != "" {
+		_ = s.DB.ReencryptUserTotpSecret(u.ID, u.TotpSecret)
+		u.TotpLegacy = false
+	}
+}
+
+func (s *Server) loginLocked(w http.ResponseWriter, r *http.Request, username string) bool {
+	locked, _, err := s.DB.LoginLockState(username)
+	if err == nil && locked {
+		s.audit(r, 0, username, "login_failure", "locked")
+		writeErr(w, 401, "too many failed attempts, try again later")
+		return true
+	}
+	return false
 }
 
 func (s *Server) handleLoginTotp(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +87,8 @@ func (s *Server) handleLoginTotp(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	ip := auth.ClientIP(r)
-	if !s.Limiter.Allow(ip) {
+	ip := s.clientIP(r)
+	if s.Limiter != nil && !s.Limiter.Allow(ip) {
 		writeErr(w, http.StatusTooManyRequests, "too many login attempts")
 		return
 	}
@@ -89,22 +111,30 @@ func (s *Server) handleLoginTotp(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "invalid credentials")
 		return
 	}
+	if s.loginLocked(w, r, u.Username) {
+		return
+	}
 	code := strings.TrimSpace(body.Code)
 	ok := apptotp.Validate(u.TotpSecret, code)
 	if !ok {
 		norm := apptotp.NormalizeBackupCode(code)
 		used, err := s.DB.ConsumeBackupCode(u.ID, norm)
 		if err != nil || !used {
+			_, _, _ = s.DB.RecordLoginFailure(u.Username, s.Cfg.EffectiveLockoutLimit(), s.Cfg.EffectiveLockoutWindow())
+			s.audit(r, u.ID, u.Username, "login_failure", "invalid totp")
 			writeErr(w, 401, "invalid authentication code")
 			return
 		}
 	}
+	_ = s.DB.ClearLoginFailures(u.Username)
+	s.maybeReencryptTotp(u)
 	mustChange := pend.MustChangePassword || s.userMustChangePassword(u)
 	_ = s.DB.DeletePendingLogin(body.PendingToken)
-	if err := s.issueSession(w, u, pend.RememberMe); err != nil {
+	if err := s.issueSession(w, r, u, pend.RememberMe); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}
+	s.audit(r, u.ID, u.Username, "login_success", "totp")
 	if u2, err := s.DB.GetUserByID(u.ID); err == nil && u2 != nil {
 		u = u2
 	}
@@ -169,8 +199,8 @@ func (s *Server) handleLoginTotpEnable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	ip := auth.ClientIP(r)
-	if !s.Limiter.Allow(ip) {
+	ip := s.clientIP(r)
+	if s.Limiter != nil && !s.Limiter.Allow(ip) {
 		writeErr(w, http.StatusTooManyRequests, "too many login attempts")
 		return
 	}
@@ -212,10 +242,11 @@ func (s *Server) handleLoginTotpEnable(w http.ResponseWriter, r *http.Request) {
 		u2 = u
 		u2.TotpEnabled = true
 	}
-	if err := s.issueSession(w, u2, pend.RememberMe); err != nil {
+	if err := s.issueSession(w, r, u2, pend.RememberMe); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}
+	s.audit(r, u2.ID, u2.Username, "login_success", "totp_enroll")
 	m := s.userPublic(u2)
 	if mustChange {
 		m["mustChangePassword"] = true

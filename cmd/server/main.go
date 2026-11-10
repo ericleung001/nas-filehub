@@ -13,6 +13,7 @@ import (
 	"github.com/eric/nas-filehub/internal/config"
 	"github.com/eric/nas-filehub/internal/db"
 	"github.com/eric/nas-filehub/internal/files"
+	"github.com/eric/nas-filehub/internal/secretbox"
 	"github.com/eric/nas-filehub/internal/thumb"
 	"github.com/eric/nas-filehub/internal/version"
 	"github.com/eric/nas-filehub/web"
@@ -23,7 +24,16 @@ func main() {
 	if cfg.AdminPassword == "" {
 		log.Println("WARN: ADMIN_PASSWORD not set; admin seed skipped if no admin exists")
 	}
-	if cfg.SessionSecret == "" {
+	secretFile := filepath.Join(filepath.Dir(cfg.DBPath), ".session-secret")
+	loaded, fromFile, err := config.LoadOrCreateSessionSecret(cfg.SessionSecret, secretFile)
+	if err != nil {
+		log.Println("WARN: could not persist a session secret file; TOTP secrets may stay unencrypted:", err)
+	} else if loaded != "" {
+		cfg.SessionSecret = loaded
+		if fromFile {
+			log.Println("WARN: SESSION_SECRET empty; using a persistent key file next to the database to encrypt 2FA secrets at rest")
+		}
+	} else if cfg.SessionSecret == "" {
 		log.Println("WARN: SESSION_SECRET empty; sessions still use random tokens stored in SQLite")
 	}
 
@@ -43,6 +53,12 @@ func main() {
 	}
 	defer database.Close()
 
+	if cfg.SessionSecret != "" {
+		database.SetTotpKey(secretbox.DeriveKey(cfg.SessionSecret))
+		if err := database.ReencryptLegacyTotpSecrets(); err != nil {
+			log.Println("WARN: could not migrate legacy TOTP secrets:", err)
+		}
+	}
 	if err := database.EnsureAdmin(cfg.AdminUser, cfg.AdminPassword); err != nil {
 		log.Fatal("seed admin:", err)
 	}

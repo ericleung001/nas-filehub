@@ -23,6 +23,11 @@ type Config struct {
 	RateLimitPerMin int
 	Force2FAAll     bool   // env FORCE_2FA_ALL; OR with DB setting force_2fa_all
 	PublicBaseURL   string // PUBLIC_BASE_URL for password-reset links (optional)
+	// TrustedProxies is the raw TRUSTED_PROXIES value (comma-separated IPs or CIDRs).
+	// Loopback is always trusted in addition to this list.
+	TrustedProxies string
+	LockoutLimit   int // LOGIN_LOCKOUT_LIMIT; failed logins per username before lock
+	LockoutMinutes int // LOGIN_LOCKOUT_MINUTES; lock window (further attempts do not extend it)
 	// Optional SMTP env overrides (take precedence over DB settings when host set)
 	SMTPHost     string
 	SMTPPort     int
@@ -78,6 +83,9 @@ func Load() Config {
 		RateLimitPerMin: getenvInt("LOGIN_RATE_LIMIT", 10),
 		Force2FAAll:     getenvBool("FORCE_2FA_ALL", false),
 		PublicBaseURL:   strings.TrimRight(getenv("PUBLIC_BASE_URL", ""), "/"),
+		TrustedProxies:  getenv("TRUSTED_PROXIES", ""),
+		LockoutLimit:    getenvInt("LOGIN_LOCKOUT_LIMIT", 10),
+		LockoutMinutes:  getenvInt("LOGIN_LOCKOUT_MINUTES", 15),
 		SMTPHost:        getenv("SMTP_HOST", ""),
 		SMTPPort:        getenvInt("SMTP_PORT", 0),
 		SMTPUsername:    getenv("SMTP_USERNAME", ""),
@@ -89,4 +97,19 @@ func Load() Config {
 
 func (c Config) SessionTTL() time.Duration {
 	return 7 * 24 * time.Hour
+}
+
+func (c Config) EffectiveLockoutLimit() int {
+	if c.LockoutLimit <= 0 {
+		return 10
+	}
+	return c.LockoutLimit
+}
+
+func (c Config) EffectiveLockoutWindow() time.Duration {
+	m := c.LockoutMinutes
+	if m <= 0 {
+		m = 15
+	}
+	return time.Duration(m) * time.Minute
 }

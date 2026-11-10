@@ -48,7 +48,7 @@ func (s *Server) streamZip(w http.ResponseWriter, sc *scope) {
 		name = name + ".zip"
 	}
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(name)+`"`)
+	w.Header().Set("Content-Disposition", contentDisposition("attachment", filepath.Base(name)))
 	if _, err := files.WriteZip(w, sc.Root, sc.Rel, time.Now()); err != nil {
 		// Too late to change status if bytes were already written.
 		return

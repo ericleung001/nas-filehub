@@ -79,7 +79,7 @@ func (d *DB) GetUserByEmail(email string) (*User, error) {
 		`SELECT `+userSelectCols+` FROM users WHERE email=? COLLATE NOCASE AND email!=''`,
 		email,
 	)
-	u, err := scanUser(row)
+	u, err := d.scanUser(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

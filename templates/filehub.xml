@@ -15,7 +15,7 @@
 
     First boot: leave ADMIN_PASSWORD unset. After the container starts, open /mnt/user/appdata/nas-filehub/admin-credentials.txt for the generated admin password, sign in, then change it under Settings → Change password. That credentials file is written once and is never overwritten.
 
-    Prefer a reverse proxy with HTTPS, and set SECURE_COOKIES=true once you are behind HTTPS. Do not expose the WebUI port directly to the public internet.
+    Prefer a reverse proxy with HTTPS, and set SECURE_COOKIES=true and PUBLIC_BASE_URL once you are behind HTTPS. If the proxy is not on loopback, set TRUSTED_PROXIES. Set HSTS on the reverse proxy (Filehub does not enable it). Do not expose the WebUI port directly to the public internet.
 
     Optional hardware thumbnails: keep the /dev/dri device mapping (and NVIDIA runtime if you use an NVIDIA GPU) and set THUMB_HWACCEL=auto (or leave THUMB_VAAPI=true for the same auto path). If no GPU device is present, leave hardware acceleration off. The image supports linux/amd64 and linux/arm64. Set PUID/PGID to the host UID/GID that should own /data (default 1000:1000).
 
@@ -49,6 +49,10 @@
   <Config Name="PUID" Target="PUID" Default="1000" Description="UID the container uses after start, and the owner of /data. Default 1000 matches previous images." Type="Variable" Display="always" Required="false" Mask="false">1000</Config>
   <Config Name="PGID" Target="PGID" Default="1000" Description="GID the container uses after start, and the group owner of /data. Default 1000." Type="Variable" Display="always" Required="false" Mask="false">1000</Config>
   <Config Name="UMASK" Target="UMASK" Default="" Description="Optional umask for created files (for example 002). Leave empty to use the default." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="PUBLIC_BASE_URL" Target="PUBLIC_BASE_URL" Default="" Description="Optional public site URL used in password-reset emails (for example https://filehub.example.com)." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="PUBLIC_BASE_URL" Target="PUBLIC_BASE_URL" Default="" Description="Public site URL used in password-reset emails (for example https://filehub.example.com). Required for public HTTPS deployments, together with SECURE_COOKIES=true." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="TRUSTED_PROXIES" Target="TRUSTED_PROXIES" Default="" Description="Optional comma-separated IPs or CIDRs of reverse proxies allowed to set X-Forwarded-For. Loopback is always trusted. Set this if the proxy is not on localhost." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="LOGIN_RATE_LIMIT" Target="LOGIN_RATE_LIMIT" Default="10" Description="Max login and share-link unlock attempts per client IP per minute." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
+  <Config Name="LOGIN_LOCKOUT_LIMIT" Target="LOGIN_LOCKOUT_LIMIT" Default="10" Description="Failed logins per username before a temporary account lock." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
+  <Config Name="LOGIN_LOCKOUT_MINUTES" Target="LOGIN_LOCKOUT_MINUTES" Default="15" Description="Account lock duration in minutes. Further attempts during the lock do not extend the window." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
   <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="2048" Description="Maximum upload size in MiB (application default is 2048)." Type="Variable" Display="advanced" Required="false" Mask="false">2048</Config>
 </Container>

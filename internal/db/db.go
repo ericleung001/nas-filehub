@@ -14,7 +14,8 @@ import (
 )
 
 type DB struct {
-	SQL *sql.DB
+	SQL     *sql.DB
+	totpKey []byte
 }
 
 type User struct {
@@ -27,6 +28,7 @@ type User struct {
 	QuotaBytes            int64     `json:"quotaBytes"` // 0 = unlimited
 	Disabled              bool      `json:"disabled"`
 	TotpSecret            string    `json:"-"`
+	TotpLegacy            bool      `json:"-"` // stored as plaintext; re-encrypt on next write
 	TotpEnabled           bool      `json:"totpEnabled"`
 	TotpRequired          bool      `json:"totpRequired"`
 	PasswordChangedAt     time.Time `json:"passwordChangedAt,omitempty"`
@@ -140,7 +142,16 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureFileOwnerTable(); err != nil {
 		return err
 	}
-	return d.ensurePasswordResetTable()
+	if err := d.ensurePasswordResetTable(); err != nil {
+		return err
+	}
+	if err := d.ensureSessionMetaColumns(); err != nil {
+		return err
+	}
+	if err := d.ensureAuditLogTable(); err != nil {
+		return err
+	}
+	return d.ensureLoginLockoutTable()
 }
 
 func (d *DB) ensureUserColumns() error {
@@ -287,13 +298,14 @@ func (d *DB) EnsureAdmin(username, password string) error {
 	return err
 }
 
-func scanUser(scanner interface {
+func (d *DB) scanUser(scanner interface {
 	Scan(dest ...any) error
 }) (*User, error) {
 	u := &User{}
 	var admin, disabled, totpEnabled, totpRequired int
 	var created, pwChanged string
-	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &u.TotpSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created)
+	var storedSecret string
+	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &storedSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created)
 	if err != nil {
 		return nil, err
 	}
@@ -302,6 +314,7 @@ func scanUser(scanner interface {
 	u.Disabled = disabled == 1
 	u.TotpEnabled = totpEnabled == 1
 	u.TotpRequired = totpRequired == 1
+	u.TotpSecret, u.TotpLegacy = d.decodeTotpSecret(storedSecret)
 	if pwChanged != "" {
 		u.PasswordChangedAt, _ = time.Parse(time.RFC3339, pwChanged)
 	}
@@ -316,7 +329,7 @@ func (d *DB) GetUserByUsername(username string) (*User, error) {
 		`SELECT `+userSelectCols+` FROM users WHERE username=? COLLATE NOCASE`,
 		username,
 	)
-	u, err := scanUser(row)
+	u, err := d.scanUser(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -325,7 +338,7 @@ func (d *DB) GetUserByUsername(username string) (*User, error) {
 
 func (d *DB) GetUserByID(id int64) (*User, error) {
 	row := d.SQL.QueryRow(`SELECT `+userSelectCols+` FROM users WHERE id=?`, id)
-	u, err := scanUser(row)
+	u, err := d.scanUser(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -340,7 +353,7 @@ func (d *DB) ListUsers() ([]User, error) {
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		u, err := scanUser(rows)
+		u, err := d.scanUser(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -585,10 +598,13 @@ func (d *DB) DeleteUser(id int64) error {
 	return err
 }
 
-func (d *DB) CreateSession(token string, userID int64, expires time.Time) error {
+func (d *DB) CreateSession(token string, userID int64, expires time.Time, ip, userAgent string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	ip = truncateMeta(ip, 128)
+	userAgent = truncateMeta(userAgent, 512)
 	_, err := d.SQL.Exec(
-		`INSERT INTO sessions(token, user_id, expires_at) VALUES(?,?,?)`,
-		token, userID, expires.UTC().Format(time.RFC3339),
+		`INSERT INTO sessions(token, user_id, expires_at, created_at, last_seen_at, ip, user_agent) VALUES(?,?,?,?,?,?,?)`,
+		token, userID, expires.UTC().Format(time.RFC3339), now, now, ip, userAgent,
 	)
 	return err
 }
@@ -942,14 +958,14 @@ func (d *DB) DeletePendingLoginsForUser(userID int64) error {
 }
 
 func (d *DB) SetTotpSecret(userID int64, secret string) error {
-	_, err := d.SQL.Exec(`UPDATE users SET totp_secret=? WHERE id=?`, secret, userID)
+	_, err := d.SQL.Exec(`UPDATE users SET totp_secret=? WHERE id=?`, d.encodeTotpSecret(secret), userID)
 	return err
 }
 
 func (d *DB) EnableTotp(userID int64, secret string) error {
 	_, err := d.SQL.Exec(
 		`UPDATE users SET totp_secret=?, totp_enabled=1 WHERE id=?`,
-		secret, userID,
+		d.encodeTotpSecret(secret), userID,
 	)
 	return err
 }
