@@ -8,6 +8,9 @@ where version tags are used.
 
 ## [Unreleased]
 
+### Changed
+- **Unraid Community Apps template** — set `<Category>` in `templates/filehub.xml` to `Tools:Utilities Productivity:` (Tools › Utilities and Productivity), replacing the invalid `Cloud Tools:Utilities` value. The Community Apps scanner uses the template Category field for the app listing.
+
 ## [0.4.0] - 2026-11-10
 
 ### Added

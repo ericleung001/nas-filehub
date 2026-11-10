@@ -25,7 +25,7 @@
   <Project>https://github.com/ericleung001/nas-filehub</Project>
   <TemplateURL>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/filehub.xml</TemplateURL>
   <ReadMe>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/README.md</ReadMe>
-  <Category>Cloud Tools:Utilities</Category>
+  <Category>Tools:Utilities Productivity:</Category>
   <ExtraSearchTerms>filehub nas files shares</ExtraSearchTerms>
   <License>Apache-2.0</License>
   <DonateLink>https://buymeacoffee.com/filehub</DonateLink>

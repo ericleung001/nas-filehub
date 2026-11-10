@@ -192,7 +192,7 @@ Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the
 
 ## Install on Unraid (Community Apps)
 
-Filehub can be installed on Unraid from a Community Apps template in this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`).
+Filehub can be installed on Unraid from a Community Apps template in this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`). The template is categorized under Tools › Utilities and Productivity.
 
 This is **not** a claim that Filehub is already listed in the official Community Apps catalog — that listing is a separate submission step. Until the catalog accepts the repository, you can add it yourself in **Apps** → the CA settings / **Add a new Repository URL**, using:
 
