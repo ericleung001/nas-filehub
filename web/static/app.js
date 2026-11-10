@@ -35,6 +35,8 @@ const state = {
   transferMode: null,
   /** pending share target { path, isDir, name } */
   shareTarget: null,
+  /** true while POST /api/links is in flight */
+  shareCreating: false,
   /** public link token when on /s/:token */
   publicToken: null,
   publicPath: '',
@@ -1950,13 +1952,26 @@ $('#transfer-form')?.addEventListener('submit', async (e) => {
 
 function openShareDialog(target) {
   state.shareTarget = target;
-  $('#share-target').textContent = (target.isDir ? 'Folder: ' : 'File: ') + target.path;
+  state.shareCreating = false;
+  $('#share-target').textContent = (target.isDir ? 'Folder: ' : 'File: ') + (target.name || target.path);
   $('#share-label').value = target.name || '';
   $('#share-expires').value = '';
   $('#share-password').value = '';
-  $('#share-error').hidden = true;
+  const errEl = $('#share-error');
+  if (errEl) {
+    errEl.hidden = true;
+    errEl.textContent = '';
+  }
   $('#share-result').hidden = true;
   $('#share-form').hidden = false;
+  const submit = $('#btn-create-share');
+  if (submit) {
+    submit.disabled = false;
+    submit.textContent = 'Create link';
+  }
+  const copyBtn = $('#btn-copy-share-url');
+  if (copyBtn) copyBtn.textContent = 'Copy URL';
+  $('#share-url').value = '';
   $('#share-dialog').showModal();
 }
 
@@ -1977,9 +1992,15 @@ function expiresToRFC3339(v) {
 $('#share-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const t = state.shareTarget;
-  if (!t) return;
+  if (!t || state.shareCreating) return;
   const errEl = $('#share-error');
+  const submit = $('#btn-create-share');
   errEl.hidden = true;
+  state.shareCreating = true;
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Creating…';
+  }
   try {
     const res = await api('/api/links', {
       method: 'POST',
@@ -1993,24 +2014,40 @@ $('#share-form')?.addEventListener('submit', async (e) => {
     });
     const url = location.origin + (res.url || ('/s/' + res.link.token));
     $('#share-url').value = url;
+    const copyBtn = $('#btn-copy-share-url');
+    if (copyBtn) copyBtn.textContent = 'Copy URL';
     $('#share-form').hidden = true;
     $('#share-result').hidden = false;
   } catch (err) {
     errEl.textContent = err.message;
     errEl.hidden = false;
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Create link';
+    }
+  } finally {
+    state.shareCreating = false;
   }
 });
 
 $('#btn-copy-share-url')?.addEventListener('click', async () => {
   const inp = $('#share-url');
+  const btn = $('#btn-copy-share-url');
   try {
     await navigator.clipboard.writeText(inp.value);
-    $('#btn-copy-share-url').textContent = 'Copied';
-    setTimeout(() => { $('#btn-copy-share-url').textContent = 'Copy URL'; }, 1500);
+    if (btn) {
+      btn.textContent = 'Copied';
+      setTimeout(() => { btn.textContent = 'Copy URL'; }, 1500);
+    }
   } catch {
     inp.select();
     document.execCommand('copy');
   }
+});
+
+$('#btn-share-done')?.addEventListener('click', () => {
+  const dlg = $('#share-dialog');
+  if (dlg && typeof dlg.close === 'function') dlg.close();
 });
 
 function escapeHtml(s) {

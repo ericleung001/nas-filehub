@@ -422,8 +422,8 @@
   <dialog id="share-dialog">
     <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
     <h3>Share link</h3>
+    <p id="share-target" class="meta"></p>
     <form id="share-form" class="admin-form">
-      <p id="share-target" class="meta"></p>
       <label>Label (optional)<input id="share-label" placeholder="display name" /></label>
       <label>Expires
         <select id="share-expires">
@@ -434,13 +434,17 @@
         </select>
       </label>
       <label>Password (optional)<input id="share-password" type="password" autocomplete="new-password" /></label>
-      <button type="submit">Create link</button>
+      <button type="submit" id="btn-create-share">Create link</button>
       <p id="share-error" class="error" hidden></p>
     </form>
     <div id="share-result" hidden>
-      <p class="muted">Copy this link. Anyone with it can download / browse (read-only).</p>
+      <h4 id="share-success-title">Link created</h4>
+      <p class="muted">Anyone with this URL can download or browse (read-only).</p>
       <input id="share-url" readonly />
-      <button type="button" id="btn-copy-share-url" class="ghost">Copy URL</button>
+      <div class="share-result-actions">
+        <button type="button" id="btn-copy-share-url">Copy URL</button>
+        <button type="button" id="btn-share-done" class="ghost">Done</button>
+      </div>
     </div>
   </dialog>
 

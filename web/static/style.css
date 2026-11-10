@@ -784,7 +784,22 @@ tr.drop-folder-target td,
   background: rgba(0,0,0,.45); border-radius: 6px; padding: .15rem .2rem;
 }
 #share-url { width: 100%; margin: .5rem 0; }
-#share-result { text-align: left; margin-top: .75rem; }
+#share-result { text-align: left; margin-top: .35rem; }
+#share-result h4 { margin: 0 0 .35rem; font-size: 1.05rem; }
+#share-dialog #share-target { margin: 0 0 .75rem; }
+#share-form[hidden],
+#share-result[hidden],
+#share-error[hidden] {
+  display: none !important;
+}
+.share-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .25rem;
+}
+.share-result-actions #btn-copy-share-url { flex: 1 1 auto; }
+#btn-create-share:disabled { opacity: .65; cursor: wait; }
 .public-file-list { list-style: none; padding: 0; margin: 1rem 0 0; text-align: left; }
 .public-file-list li {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;

@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-11-10
+
+### Fixed
+- **Share link dialog** — after creating a link, the create form is actually hidden (`[hidden]` now overrides `.admin-form { display: flex }`). Success shows **Link created**, the URL, a primary **Copy URL** button, and **Done**. Submit is disabled while the request is in flight to prevent duplicate links.
+
 ## [0.3.11] - 2026-11-10
 
 ### Fixed
@@ -146,7 +151,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.11...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.12...HEAD
+[0.3.12]: https://github.com/ericleung001/nas-filehub/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/ericleung001/nas-filehub/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/ericleung001/nas-filehub/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/ericleung001/nas-filehub/compare/v0.3.8...v0.3.9
