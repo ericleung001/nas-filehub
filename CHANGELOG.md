@@ -9,10 +9,8 @@ where version tags are used.
 ## [Unreleased]
 
 ### Added
+- **Docker Hub image** — public repository [`ericleung001/nas-filehub`](https://hub.docker.com/r/ericleung001/nas-filehub). Tags `0.3.22` and `latest` match GHCR digest `sha256:e9adea9b9e5e0222107aa3fc841270d7ede6da2d4ceae8209d819c622d6f5e77` (linux/amd64).
 - **TrueNAS Apps packaging** — files under `truenas/` for the official catalog submission (community train PR to truenas/apps). Image pin `ghcr.io/ericleung001/nas-filehub:0.3.22`.
-
-
-### Added
 - **CasaOS / ZimaOS App Store packaging** — files under `casaos/` for the official store submission (PR to IceWhaleTech/CasaOS-AppStore). Image pin `ghcr.io/ericleung001/nas-filehub:0.3.22`.
 
 

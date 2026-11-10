@@ -79,6 +79,21 @@ cat ./data/admin-credentials.txt
 Open <http://127.0.0.1:8088> and sign in as `admin` with the password from `./data/admin-credentials.txt`.  
 Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reverse proxy) in front.
 
+### Pull a published image
+
+Pre-built `linux/amd64` images are published to Docker Hub and GHCR. Version tags omit the `v` prefix (use `0.3.22`, not `v0.3.22`).
+
+- Docker Hub: [`ericleung001/nas-filehub`](https://hub.docker.com/r/ericleung001/nas-filehub)
+- GHCR: `ghcr.io/ericleung001/nas-filehub`
+
+```bash
+docker pull ericleung001/nas-filehub:0.3.22
+# or
+docker pull ghcr.io/ericleung001/nas-filehub:0.3.22
+```
+
+`latest` on both registries currently matches `0.3.22`. To run the Hub image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.3.22` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+
 ### Local development
 
 ```bash
@@ -156,7 +171,7 @@ Each release includes:
 
 - **Changelog** notes for that version
 - **Downloadable binaries** for Linux (amd64), and often Windows/macOS when built for that tag
-- **Docker** install notes (see Quick start — `docker compose up -d --build` from the tagged source, or pull `ghcr.io/ericleung001/nas-filehub`)
+- **Docker** install notes (see Quick start — `docker compose up -d --build` from the tagged source, or pull `ericleung001/nas-filehub` / `ghcr.io/ericleung001/nas-filehub`)
 
 ### Install from a release binary
 
