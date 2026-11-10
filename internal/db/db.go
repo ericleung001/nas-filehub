@@ -202,6 +202,11 @@ func (d *DB) ensurePendingLoginColumns() error {
 			return err
 		}
 	}
+	if !cols["remember_me"] {
+		if _, err := d.SQL.Exec(`ALTER TABLE pending_logins ADD COLUMN remember_me INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -771,7 +776,7 @@ func (d *DB) UserNeedsTOTP(u *User, forceAll bool) (needCode bool, needEnroll bo
 	return false, false
 }
 
-func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires time.Time, mustChangePassword bool) error {
+func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires time.Time, mustChangePassword, rememberMe bool) error {
 	if kind != "totp" && kind != "enroll" {
 		return fmt.Errorf("invalid pending login kind")
 	}
@@ -779,9 +784,13 @@ func (d *DB) CreatePendingLogin(token string, userID int64, kind string, expires
 	if mustChangePassword {
 		flag = 1
 	}
+	remember := 0
+	if rememberMe {
+		remember = 1
+	}
 	_, err := d.SQL.Exec(
-		`INSERT INTO pending_logins(token, user_id, kind, expires_at, must_change_password) VALUES(?,?,?,?,?)`,
-		token, userID, kind, expires.UTC().Format(time.RFC3339), flag,
+		`INSERT INTO pending_logins(token, user_id, kind, expires_at, must_change_password, remember_me) VALUES(?,?,?,?,?,?)`,
+		token, userID, kind, expires.UTC().Format(time.RFC3339), flag, remember,
 	)
 	return err
 }
@@ -791,15 +800,17 @@ type PendingLogin struct {
 	UserID             int64
 	Kind               string
 	MustChangePassword bool
+	RememberMe         bool
 }
 
 func (d *DB) GetPendingLogin(token string) (*PendingLogin, error) {
 	var p PendingLogin
 	var expStr string
 	var mustChange int
+	var remember int
 	err := d.SQL.QueryRow(
-		`SELECT token, user_id, kind, expires_at, must_change_password FROM pending_logins WHERE token=?`, token,
-	).Scan(&p.Token, &p.UserID, &p.Kind, &expStr, &mustChange)
+		`SELECT token, user_id, kind, expires_at, must_change_password, remember_me FROM pending_logins WHERE token=?`, token,
+	).Scan(&p.Token, &p.UserID, &p.Kind, &expStr, &mustChange, &remember)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -807,6 +818,7 @@ func (d *DB) GetPendingLogin(token string) (*PendingLogin, error) {
 		return nil, err
 	}
 	p.MustChangePassword = mustChange == 1
+	p.RememberMe = remember == 1
 	exp, err := time.Parse(time.RFC3339, expStr)
 	if err != nil || time.Now().After(exp) {
 		_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE token=?`, token)

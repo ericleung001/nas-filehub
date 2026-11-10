@@ -217,6 +217,10 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
+	maxAge := int(time.Until(expires).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
 		Value:    token,
@@ -225,6 +229,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires t
 		SameSite: http.SameSiteLaxMode,
 		Secure:   s.Cfg.SecureCookies,
 		Expires:  expires,
+		MaxAge:   maxAge,
 	})
 }
 
@@ -255,8 +260,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username   string `json:"username"`
+		Password   string `json:"password"`
+		RememberMe bool   `json:"rememberMe"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeErr(w, 400, "bad json")
@@ -271,6 +277,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "account disabled")
 		return
 	}
+	rememberMe := body.RememberMe && s.sessionSettings().AllowRememberMe
 	mustChangePW := s.passwordNeedsChange(u, body.Password)
 	needCode, needEnroll := s.DB.UserNeedsTOTP(u, s.force2FAAll())
 	if needCode || needEnroll {
@@ -285,7 +292,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		exp := time.Now().Add(10 * time.Minute)
 		_ = s.DB.DeletePendingLoginsForUser(u.ID)
-		if err := s.DB.CreatePendingLogin(pend, u.ID, kind, exp, mustChangePW); err != nil {
+		if err := s.DB.CreatePendingLogin(pend, u.ID, kind, exp, mustChangePW, rememberMe); err != nil {
 			writeErr(w, 500, "session error")
 			return
 		}
@@ -301,7 +308,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, out)
 		return
 	}
-	if err := s.issueSession(w, u); err != nil {
+	if err := s.issueSession(w, u, rememberMe); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}

@@ -30,12 +30,13 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list and revoke public links you created (admins see all)
-  - **Users / Shares / System** (admins only) — user/share tables; System includes **open registration**, Force 2FA, **password policy** (min length, letters/digits/symbols), and **Email (SMTP)** for forgot-password
+  - **Users / Shares / System** (admins only) — user/share tables; System includes **open registration**, **session duration / Stay signed in**, Force 2FA, **password policy** (min length, letters/digits/symbols), and **Email (SMTP)** for forgot-password
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
 - **Forgot password** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses)
 - **Open registration** — optional admin toggle; `/register` (linked from login) creates username/email/password accounts under the password policy (active immediately; no approval gate yet)
+- **Session duration** — admin sets normal login lifetime (default **7 days**) and may allow **Stay signed in** (default **30 days**); applies to new logins only; existing sessions keep their expiry
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
 Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota).
@@ -122,7 +123,7 @@ Sign in → **Settings** (single top-bar button):
 4. **Link shares** — copy or revoke public file/folder links
 5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota; reset passwords; disable accounts; per-user require 2FA
 6. **Shares** (admins) — table list of shared folders (path, grants); create shares and grant `read` / `write`
-7. **System** (admins) — `DATA_ROOT` notes; **Force 2FA for all users**; **Password policy**; **Email (SMTP)** for forgot-password. Saving a tighter password policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
+7. **System** (admins) — `DATA_ROOT` notes; **open registration**; **session duration** (normal + optional Stay signed in); **Force 2FA for all users**; **Password policy**; **Email (SMTP)** for forgot-password. Session TTL changes apply to new logins only. Saving a tighter password policy bumps a version so existing users must change password on next login (and after TOTP if enabled)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -197,7 +198,8 @@ Auth / session:
 
 - `POST /api/login` · `POST /api/logout` · `GET /api/me` · `POST /api/me/password` · `GET /api/health`
 - `GET /api/me` includes `usedBytes` (home usage) alongside `quotaBytes` and `email`
-- `GET /api/auth/features` · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
+- `GET /api/auth/features` (`openRegistration`, `allowRememberMe`, password policy, forgotPassword) · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
+- `POST /api/login` accepts optional `rememberMe` (honored only when admin allows Stay signed in)
 
 Files:
 
@@ -210,7 +212,7 @@ Admin (requires admin session):
 - `GET|POST /api/admin/users` (email on create)
 - `PATCH|DELETE /api/admin/users/{id}` (email on patch)
 - `POST /api/admin/users/{id}/password`
-- `GET|PUT /api/admin/settings` (force2faAll, password policy, SMTP — password write-only)
+- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, password policy, SMTP — password write-only)
 - `POST /api/admin/smtp/test`
 - `GET|POST /api/admin/shares`
 - `DELETE /api/admin/shares/{id}`
@@ -253,14 +255,14 @@ Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Aut
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/login` | — | Password; may return `{needTotp,pendingToken}` or `{needTotpSetup,pendingToken}` |
+| POST | `/api/login` | — | `{username,password,rememberMe?}`; may return `{needTotp,pendingToken}` or `{needTotpSetup,pendingToken}` (rememberMe survives 2FA) |
 | POST | `/api/login/totp` | — | `{pendingToken,code}` → session |
 | POST | `/api/login/totp/setup` | — | `{pendingToken}` → `{secret,otpauthUrl,qrDataUrl}` (enroll challenge) |
 | POST | `/api/login/totp/enable` | — | `{pendingToken,code}` → session + `{backupCodes}` |
 | POST | `/api/me/totp/setup` | session | Start enrollment → QR/secret |
 | POST | `/api/me/totp/confirm` | session | `{code}` enable + `{backupCodes}` |
 | POST | `/api/me/totp/disable` | session | `{password}` or `{code}` |
-| GET/PUT | `/api/admin/settings` | admin | `{force2faAll}` |
+| GET/PUT | `/api/admin/settings` | admin | `{force2faAll,openRegistration,sessionTtlSeconds,rememberMeTtlSeconds,allowRememberMe,…}` |
 | PATCH | `/api/admin/users/{id}` | admin | accepts `totpRequired` |
 
-SQLite: `users.totp_secret`, `users.totp_enabled`, `users.totp_required`; `settings.force_2fa_all`; `pending_logins`; `totp_backup_codes`.
+SQLite: `users.totp_secret`, `users.totp_enabled`, `users.totp_required`; `settings.force_2fa_all`, `session_ttl_seconds`, `remember_me_ttl_seconds`, `allow_remember_me`; `pending_logins` (includes `remember_me`); `totp_backup_codes`.

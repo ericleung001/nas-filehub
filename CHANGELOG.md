@@ -8,6 +8,12 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-11-10
+
+### Added
+- **Admin session duration** — Settings → System: choose normal session lifetime (1 hour–30 days presets; default **7 days**) and optionally allow **Stay signed in** with a longer lifetime (7–365 days presets; default **30 days**). Stored in settings (`session_ttl_seconds`, `remember_me_ttl_seconds`, `allow_remember_me`). Applies to **new logins only**.
+- **Stay signed in** — login checkbox when allowed; `POST /api/login` accepts `rememberMe`; the flag is kept on the pending 2FA/enroll challenge so TOTP success uses the longer TTL. Crafted `rememberMe: true` is ignored when the admin toggle is off. `GET /api/auth/features` exposes `allowRememberMe`.
+
 ## [0.3.8] - 2026-11-09
 
 ### Added
@@ -124,7 +130,9 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/ericleung001/nas-filehub/compare/v0.3.8...v0.3.9
+[0.3.8]: https://github.com/ericleung001/nas-filehub/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/ericleung001/nas-filehub/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/ericleung001/nas-filehub/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/ericleung001/nas-filehub/compare/v0.3.4...v0.3.5

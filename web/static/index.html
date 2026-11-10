@@ -14,6 +14,7 @@
       <form id="login-form">
         <label>Username<input name="username" autocomplete="username" required /></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+        <label class="check" id="remember-me-label" hidden><input name="rememberMe" type="checkbox" /> Stay signed in</label>
         <button type="submit">登入 Login</button>
         <p class="login-links">
           <a href="/register" id="link-signup" hidden>Sign up</a>
@@ -317,6 +318,36 @@
               <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. Accounts are active immediately (no admin approval yet).</p>
               <label class="check"><input id="open-registration" type="checkbox" /> Allow open registration</label>
               <p id="open-registration-msg" class="muted" hidden></p>
+              <hr class="sep" />
+              <h3>Sessions</h3>
+              <p class="muted">How long users stay logged in after a new login. Changing these values applies to <strong>new logins only</strong>; existing sessions keep their current expiry.</p>
+              <form id="session-settings-form" class="admin-form policy-form">
+                <label>Session duration
+                  <select name="sessionTtlSeconds" id="session-ttl">
+                    <option value="3600">1 hour</option>
+                    <option value="28800">8 hours</option>
+                    <option value="43200">12 hours</option>
+                    <option value="86400">1 day</option>
+                    <option value="604800" selected>7 days</option>
+                    <option value="2592000">30 days</option>
+                  </select>
+                </label>
+                <label class="check"><input name="allowRememberMe" id="allow-remember-me" type="checkbox" /> Allow “Stay signed in”</label>
+                <div id="remember-me-ttl-wrap">
+                  <label>Stay signed in duration
+                    <select name="rememberMeTtlSeconds" id="remember-me-ttl">
+                      <option value="604800">7 days</option>
+                      <option value="1209600">14 days</option>
+                      <option value="2592000" selected>30 days</option>
+                      <option value="7776000">90 days</option>
+                      <option value="15552000">180 days</option>
+                      <option value="31536000">365 days</option>
+                    </select>
+                  </label>
+                </div>
+                <button type="submit">Save session settings</button>
+                <p id="session-settings-msg" class="muted" hidden></p>
+              </form>
               <hr class="sep" />
               <h3>Security — 2FA</h3>
               <p class="muted">Force every user to enroll TOTP before using Filehub. Can also be set with env <code>FORCE_2FA_ALL=true</code> (env always on if set).</p>

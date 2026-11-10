@@ -72,9 +72,11 @@ func (s *Server) handleAuthFeatures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pol := s.passwordPolicy()
+	sess := s.sessionSettings()
 	writeJSON(w, 200, map[string]any{
 		"forgotPassword":     cfg.Ready(),
 		"openRegistration":   s.openRegistration(),
+		"allowRememberMe":    sess.AllowRememberMe,
 		"passwordPolicy":     pol,
 		"passwordPolicyHint": db.PasswordPolicySummary(pol),
 	})

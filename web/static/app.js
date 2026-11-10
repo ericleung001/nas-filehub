@@ -193,10 +193,12 @@ function showLoginStep(step) {
 async function refreshAuthFeatures() {
   const forgot = $('#link-forgot');
   const signup = $('#link-signup');
+  const rememberLabel = $('#remember-me-label');
   try {
     const data = await api('/api/auth/features');
     if (forgot) forgot.hidden = !data.forgotPassword;
     if (signup) signup.hidden = !data.openRegistration;
+    if (rememberLabel) rememberLabel.hidden = !data.allowRememberMe;
     const hint = $('#signup-policy-hint');
     if (hint) {
       hint.textContent = data.passwordPolicyHint
@@ -212,6 +214,7 @@ async function refreshAuthFeatures() {
   } catch {
     if (forgot) forgot.hidden = true;
     if (signup) signup.hidden = true;
+    if (rememberLabel) rememberLabel.hidden = true;
     return null;
   }
 }
@@ -239,9 +242,14 @@ $('#login-form').addEventListener('submit', async (e) => {
   const fd = new FormData(e.target);
   $('#login-error').hidden = true;
   try {
+    const rememberEl = e.target.rememberMe;
     const data = await api('/api/login', {
       method: 'POST',
-      body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }),
+      body: JSON.stringify({
+        username: fd.get('username'),
+        password: fd.get('password'),
+        rememberMe: !!(rememberEl && rememberEl.checked),
+      }),
     });
     if (data.needTotp) {
       state.pendingToken = data.pendingToken;
@@ -1421,6 +1429,38 @@ $('#totp-disable-form').addEventListener('submit', async (e) => {
   }
 });
 
+
+function ensureSelectOption(select, value, label) {
+  if (!select) return;
+  const v = String(value);
+  for (const opt of select.options) {
+    if (opt.value === v) {
+      select.value = v;
+      return;
+    }
+  }
+  const opt = document.createElement('option');
+  opt.value = v;
+  opt.textContent = label || (v + ' seconds');
+  select.appendChild(opt);
+  select.value = v;
+}
+
+function formatDurationLabel(seconds) {
+  const n = Number(seconds) || 0;
+  const day = 86400;
+  const hour = 3600;
+  if (n % day === 0) {
+    const d = n / day;
+    return d === 1 ? '1 day' : (d + ' days');
+  }
+  if (n % hour === 0) {
+    const h = n / hour;
+    return h === 1 ? '1 hour' : (h + ' hours');
+  }
+  return n + ' seconds';
+}
+
 async function loadSystemSettings() {
   const data = await api('/api/admin/settings');
   const openReg = $('#open-registration');
@@ -1487,7 +1527,53 @@ async function loadSystemSettings() {
   }
   $('#smtp-msg').hidden = true;
   $('#smtp-msg').classList.remove('error');
+  const sessForm = $('#session-settings-form');
+  if (sessForm) {
+    ensureSelectOption(sessForm.sessionTtlSeconds, data.sessionTtlSeconds ?? 604800, formatDurationLabel(data.sessionTtlSeconds ?? 604800));
+    ensureSelectOption(sessForm.rememberMeTtlSeconds, data.rememberMeTtlSeconds ?? 2592000, formatDurationLabel(data.rememberMeTtlSeconds ?? 2592000));
+    sessForm.allowRememberMe.checked = data.allowRememberMe !== false;
+    const wrap = $('#remember-me-ttl-wrap');
+    if (wrap) wrap.hidden = !sessForm.allowRememberMe.checked;
+  }
+  const sessMsg = $('#session-settings-msg');
+  if (sessMsg) {
+    sessMsg.hidden = true;
+    sessMsg.classList.remove('error');
+  }
 }
+
+$('#allow-remember-me')?.addEventListener('change', (e) => {
+  const wrap = $('#remember-me-ttl-wrap');
+  if (wrap) wrap.hidden = !e.target.checked;
+});
+
+$('#session-settings-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#session-settings-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        sessionTtlSeconds: Number(e.target.sessionTtlSeconds.value),
+        rememberMeTtlSeconds: Number(e.target.rememberMeTtlSeconds.value),
+        allowRememberMe: !!e.target.allowRememberMe.checked,
+      }),
+    });
+    ensureSelectOption(e.target.sessionTtlSeconds, data.sessionTtlSeconds, formatDurationLabel(data.sessionTtlSeconds));
+    ensureSelectOption(e.target.rememberMeTtlSeconds, data.rememberMeTtlSeconds, formatDurationLabel(data.rememberMeTtlSeconds));
+    e.target.allowRememberMe.checked = !!data.allowRememberMe;
+    const wrap = $('#remember-me-ttl-wrap');
+    if (wrap) wrap.hidden = !e.target.allowRememberMe.checked;
+    msg.textContent = 'Session settings saved (applies to new logins only)';
+    msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
 
 $('#open-registration')?.addEventListener('change', async (e) => {
   const msg = $('#open-registration-msg');
