@@ -150,6 +150,7 @@
           <button type="button" class="settings-nav-item admin-only" data-tab="registration" hidden>Registration</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="security" hidden>Security</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="email" hidden>Email</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="storage-quota" hidden>Storage quota</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="system" hidden>System</button>
           <button type="button" class="settings-nav-item" data-tab="about">About</button>
         </nav>
@@ -245,7 +246,7 @@
                 <input name="password" type="password" placeholder="password" required />
                 <input name="homePath" placeholder="home path (optional)" />
                 <input name="quota" id="create-user-quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
-                <p id="create-user-quota-note" class="muted admin-form-note" hidden>The global quota under Settings → System applies to all users.</p>
+                <p id="create-user-quota-note" class="muted admin-form-note" hidden>The global quota under Settings → Storage quota applies to all users.</p>
                 <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
                 <button type="submit">Create user</button>
               </form>
@@ -279,7 +280,7 @@
                   <label>Email<input name="email" type="email" placeholder="optional" /></label>
                   <label>Home path<input name="homePath" required /></label>
                   <label id="edit-user-quota-label">Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
-                  <p id="edit-user-quota-note" class="muted admin-form-note" hidden>Quota is set for all users under Settings → System and cannot be changed per user while that setting is on.</p>
+                  <p id="edit-user-quota-note" class="muted admin-form-note" hidden>Quota is set for all users under Settings → Storage quota and cannot be changed per user while that setting is on.</p>
                   <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
                   <label class="check"><input name="disabled" type="checkbox" /> disabled</label>
                   <label class="check"><input name="totpRequired" type="checkbox" /> require 2FA</label>
@@ -434,6 +435,18 @@
               </form>
             </div>
           </div>
+          <div id="tab-storage-quota" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section settings-card">
+              <h3>Storage quota</h3>
+              <form id="global-quota-form" class="admin-form policy-form">
+                <label class="check"><input name="globalQuotaEnabled" type="checkbox" /> Apply the same quota to all users</label>
+                <label>Quota<input name="globalQuota" placeholder="e.g. 5GB / 1G / 0 = unlimited" /></label>
+                <p class="muted admin-form-note">When enabled, every existing user is updated to this quota, and new accounts (admin-created and open registration) get this quota. Per-user quota editing is disabled while it is on. Quota applies to each user’s home only (shared folders are not billed).</p>
+                <button type="submit">Save quota setting</button>
+                <p id="global-quota-msg" class="muted" hidden></p>
+              </form>
+            </div>
+          </div>
           <div id="tab-system" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>System</h3>
@@ -441,17 +454,8 @@
               <ul class="system-notes muted">
                 <li>Homes: <code>DATA_ROOT/homes/&lt;user&gt;</code></li>
                 <li>Shares: paths under <code>DATA_ROOT</code></li>
-                <li>Quota applies to each user’s home only (shared folders are not billed)</li>
+                <li>Quota applies to each user’s home only (shared folders are not billed). Admins can set a shared limit under Settings → Storage quota.</li>
               </ul>
-              <hr class="sep" />
-              <h3>Storage quota</h3>
-              <form id="global-quota-form" class="admin-form policy-form">
-                <label class="check"><input name="globalQuotaEnabled" type="checkbox" /> Apply the same quota to all users</label>
-                <label>Quota<input name="globalQuota" placeholder="e.g. 5GB / 1G / 0 = unlimited" /></label>
-                <p class="muted admin-form-note">When enabled, every existing user is updated to this quota, and new accounts (admin-created and open registration) get this quota. Per-user quota editing is disabled while it is on.</p>
-                <button type="submit">Save quota setting</button>
-                <p id="global-quota-msg" class="muted" hidden></p>
-              </form>
             </div>
           </div>
           <div id="tab-about" class="settings-panel" role="tabpanel" hidden>

@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-11-10
+
+### Changed
+- **Storage quota settings page** — the **Apply the same quota to all users** form moved from Settings → System to its own admin Settings page, **Storage quota**, in the same nav as Sessions / Registration / Security / Email. System keeps only DATA_ROOT / homes / shares notes. In-app Users notes now point at Settings → Storage quota. The `/api/admin/settings` fields `globalQuotaEnabled` and `globalQuotaBytes` are unchanged.
+
 ## [0.3.18] - 2026-11-10
 
 ### Added
@@ -193,7 +198,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.18...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.19...HEAD
+[0.3.19]: https://github.com/ericleung001/nas-filehub/compare/v0.3.18...v0.3.19
 [0.3.18]: https://github.com/ericleung001/nas-filehub/compare/v0.3.17...v0.3.18
 [0.3.17]: https://github.com/ericleung001/nas-filehub/compare/v0.3.16...v0.3.17
 [0.3.16]: https://github.com/ericleung001/nas-filehub/compare/v0.3.15...v0.3.16

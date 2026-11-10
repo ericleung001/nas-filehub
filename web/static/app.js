@@ -428,7 +428,7 @@ document.querySelectorAll('.settings-nav-item').forEach((btn) => {
     if (tab === 'users' || tab === 'shares') {
       try { await refreshAdmin(); } catch (err) { console.error(err); }
     }
-    if (tab === 'sessions' || tab === 'registration' || tab === 'security' || tab === 'email') {
+    if (tab === 'sessions' || tab === 'registration' || tab === 'security' || tab === 'email' || tab === 'storage-quota') {
       try { await loadSystemSettings(); } catch (err) { console.error(err); }
     }
     if (tab === 'links') {
@@ -443,6 +443,9 @@ async function openSettings() {
   document.querySelectorAll('.settings-nav-item.admin-only').forEach((el) => {
     el.hidden = !u.isAdmin;
   });
+  if (u.isAdmin) {
+    try { await loadSystemSettings(); } catch (err) { console.error(err); }
+  }
   applySettingsGate();
   updatePasswordPolicyHints(u);
   let tab = 'account';

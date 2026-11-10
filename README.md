@@ -29,7 +29,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all); select multiple to delete together
-  - **Users / Shares / Sessions / Registration / Security / Email / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **System** (DATA_ROOT notes)
+  - **Users / Shares / Sessions / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **Storage quota** (optional same quota for all users); **System** (DATA_ROOT notes)
   - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
 - **Sidebar** — expandable folder tree under My Files / shares; storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
@@ -39,7 +39,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Session duration** — admin sets normal login lifetime (default **7 days**) and may allow **Stay signed in** (default **30 days**); applies to new logins only; existing sessions keep their expiry
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; non-root container user; SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
-Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota). Admins can turn on **Apply the same quota to all users** under Settings → System so every existing user and every new account uses one quota; per-user quota editing is disabled while that setting is on.
+Quota enforcement currently counts only the user’s **home** directory (shared folders are not billed against personal quota). Admins can turn on **Apply the same quota to all users** under Settings → Storage quota so every existing user and every new account uses one quota; per-user quota editing is disabled while that setting is on.
 
 ## Quick start
 
@@ -121,14 +121,15 @@ Sign in → **Settings** (single top-bar button):
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke (permanently delete) public file/folder links, or select several and **Delete selected**; deleted rows leave the list
-5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while the System global quota is on); reset passwords; disable accounts; per-user require 2FA
+5. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while Settings → Storage quota is on); reset passwords; disable accounts; per-user require 2FA
 6. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
 7. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
 8. **Registration** (admins) — allow open registration
 9. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 10. **Email** (admins) — SMTP for forgot-password
-11. **System** (admins) — `DATA_ROOT` / homes / shares / quota notes, and an optional **Apply the same quota to all users** setting
-12. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
+11. **Storage quota** (admins) — optional **Apply the same quota to all users** setting and the quota value
+12. **System** (admins) — `DATA_ROOT` / homes / shares / quota notes
+13. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
