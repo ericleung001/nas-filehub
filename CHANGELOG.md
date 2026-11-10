@@ -8,6 +8,9 @@ where version tags are used.
 
 ## [Unreleased]
 
+### Added
+- **README screenshots** — the GitHub README now includes current login and file-browser screenshots.
+
 ## [0.4.4] - 2026-11-10
 
 ### Fixed

@@ -4,6 +4,12 @@ Lightweight multi-user file manager — Go single binary + embedded web UI + SQL
 
 **License:** Apache-2.0
 
+## Screenshots
+
+![Login](docs/screenshots/01-login.png)
+
+![Browsing files](docs/screenshots/02-files.png)
+
 ## Where it runs
 
 Filehub is **not** Unraid-only. It runs on any host that can run **Docker** or a **Go binary**:
