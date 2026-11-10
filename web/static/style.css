@@ -101,6 +101,9 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   flex-shrink: 0;
   align-items: center;
 }
+.trash-actions[hidden] {
+  display: none;
+}
 .search-source { font-size: .8rem; }
 
 
@@ -236,6 +239,9 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   }
   .trash-actions {
     flex: 1 1 100%;
+  }
+  .trash-actions[hidden] {
+    display: none;
   }
   .actions {
     flex: 1 1 100%;

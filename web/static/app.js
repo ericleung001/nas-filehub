@@ -1150,19 +1150,32 @@ function updateBulkBar() {
   bar.hidden = n === 0;
   const count = $('#bulk-count');
   if (count) count.textContent = n + ' selected';
+  const inTrash = state.root === 'trash';
   const shareBtn = $('#btn-bulk-share');
-  if (shareBtn) shareBtn.disabled = n !== 1;
+  if (shareBtn) {
+    shareBtn.hidden = inTrash;
+    shareBtn.disabled = inTrash || n !== 1;
+  }
   const canDelete = !!state.canDelete;
 
   ['btn-bulk-delete', 'btn-bulk-move'].forEach((id) => {
     const el = $('#' + id);
     if (!el) return;
-    el.hidden = !canDelete;
-    el.disabled = !canDelete;
+    if (id === 'btn-bulk-move') {
+      el.hidden = inTrash || !canDelete;
+      el.disabled = inTrash || !canDelete;
+    } else {
+      el.hidden = !canDelete;
+      el.disabled = !canDelete;
+    }
   });
   const copyBtn = $('#btn-bulk-copy');
   // Copy only needs write on the destination, which the picker lists.
-  if (copyBtn) copyBtn.disabled = false;
+  // Recycle bin is restore/purge only — no copy or share link.
+  if (copyBtn) {
+    copyBtn.hidden = inTrash;
+    copyBtn.disabled = inTrash;
+  }
   const sa = $('#select-all');
   if (sa && state.entries) {
     const total = state.entries.length;

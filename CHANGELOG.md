@@ -8,6 +8,9 @@ where version tags are used.
 
 ## [Unreleased]
 
+### Fixed
+- **Recycle bin actions** — Restore and Empty recycle bin only appear inside the recycle bin (a CSS `display:flex` rule had been overriding the `hidden` attribute). Copy and Share link are hidden in the recycle bin; they remain available in normal folders.
+
 ### Changed
 - **Unraid Community Apps template** — set `<Category>` in `templates/filehub.xml` to `Tools:Utilities Productivity:` (Tools › Utilities and Productivity), replacing the invalid `Cloud Tools:Utilities` value. The Community Apps scanner uses the template Category field for the app listing.
 
