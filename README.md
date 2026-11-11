@@ -202,7 +202,7 @@ Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the
 
 ## Install on TrueNAS (Community Apps)
 
-Filehub is listed in the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) on the **Community** train (app version 0.4.4).
+Filehub is listed in the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) on the **Community** train. The live catalog currently ships app version 0.4.4; an update to 0.4.7 is in [PR #6466](https://github.com/truenas/apps/pull/6466).
 
 In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install wizard asks for:
 
@@ -210,7 +210,7 @@ In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install w
 - WebUI port (default **30568**)
 - Run-as user and group (default **568**, the TrueNAS `apps` user)
 
-The catalog image is `ghcr.io/ericleung001/nas-filehub:0.4.4`. After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**.
+The live catalog image is `ghcr.io/ericleung001/nas-filehub:0.4.4` until that PR is merged. After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**.
 
 Notes:
 

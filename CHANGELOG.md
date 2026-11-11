@@ -8,6 +8,9 @@ where version tags are used.
 
 ## [Unreleased]
 
+### Changed
+- **TrueNAS catalog packaging** — the `truenas/` snapshot now pins app 0.4.7 / catalog 1.0.1 (`ghcr.io/ericleung001/nas-filehub:0.4.7` by digest). The official catalog update is [truenas/apps#6466](https://github.com/truenas/apps/pull/6466); the live TrueNAS Apps Market still lists 0.4.4 until that PR is merged.
+
 ## [0.4.7] - 2026-11-11
 
 ### Fixed
