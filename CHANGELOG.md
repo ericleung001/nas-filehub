@@ -8,6 +8,12 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-11-11
+
+### Fixed
+- **Users table Actions** — the Actions column is wide enough to keep Edit, Approve, Reject, and Del on one row, instead of wrapping when a pending user has extra buttons.
+
+
 ## [0.4.5] - 2026-11-11
 
 ### Fixed

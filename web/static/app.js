@@ -2275,12 +2275,6 @@ async function refreshAdmin() {
         await refreshAdmin();
       };
       btns.appendChild(b);
-    } else {
-      // Keep Edit under Edit when this row has no Del (cannot delete self).
-      const spacer = document.createElement('span');
-      spacer.className = 'row-action-spacer';
-      spacer.setAttribute('aria-hidden', 'true');
-      btns.appendChild(spacer);
     }
     ul.appendChild(tr);
   }

@@ -547,7 +547,7 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .admin-table col.col-link-target { width: 18%; }
 .admin-table col.col-link-url { width: auto; }
 .admin-table col.col-link-status { width: 9.5rem; }
-.admin-table col.col-actions { width: 7.5rem; }
+.admin-table col.col-actions { width: 14rem; }
 .admin-table.links-table col.col-actions { width: 9.5rem; }
 .admin-table .link-label-cell,
 .admin-table .link-target-cell,
@@ -688,21 +688,14 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   display: table-cell;
   vertical-align: middle;
 }
-/* Two fixed action slots so a lone Edit (no Del on self) lines up with Edit+Del rows. */
+/* Keep Edit / Approve / Reject / Del on one row; column width is sized for three buttons. */
 .admin-table .row-actions-inner {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(2.75rem, max-content));
-  justify-content: end;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
   align-items: center;
   gap: .25rem;
   vertical-align: middle;
-}
-.admin-table .row-action-spacer {
-  display: block;
-  min-width: 2.75rem;
-  min-height: 1.6rem;
-  visibility: hidden;
-  pointer-events: none;
 }
 .admin-table .row-actions button {
   flex: 0 0 auto;
