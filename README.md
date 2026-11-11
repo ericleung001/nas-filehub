@@ -87,15 +87,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.4`, not `v0.4.4`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.5`, not `v0.4.5`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.4
+docker pull ericleung001/nas-filehub:0.4.5
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.4
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.5
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.4`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.4` or `image: ghcr.io/ericleung001/nas-filehub:0.4.4` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.5`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.5` or `image: ghcr.io/ericleung001/nas-filehub:0.4.5` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 

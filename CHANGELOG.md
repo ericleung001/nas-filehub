@@ -8,13 +8,18 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-11-11
+
+### Fixed
+- **Public share password field** — opening a public share link that has no password no longer shows the password unlock form. A CSS rule on `.panel form` was overriding the HTML `hidden` attribute.
+
 ### Added
 - **README screenshots** — the GitHub README now includes current login and file-browser screenshots.
 - **TrueNAS Apps listing in the README** — the GitHub README now documents the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) Community listing and how to install Filehub from the TrueNAS Apps UI.
 
 ### Changed
-- **TrueNAS Community App packaging** — revised `truenas/` to match catalog conventions after review: required initial admin password, configurable run-as user and group (default 568), boolean environment values, user-provided WebUI listen port, and VAAPI thumbnails when an Intel or AMD GPU is selected. The catalog image pin is `0.4.4`. The default WebUI port is `30568` so it does not collide with other community apps.
-- **Published image tag examples** — README pull and compose examples now use `0.4.4` instead of `0.4.0`.
+- **TrueNAS Community App packaging** — revised `truenas/` to match catalog conventions after review: required initial admin password, configurable run-as user and group (default 568), boolean environment values, user-provided WebUI listen port, and VAAPI thumbnails when an Intel or AMD GPU is selected. The official catalog image pin remains `0.4.4`. The default WebUI port is `30568` so it does not collide with other community apps.
+- **Published image tag examples** — README pull and compose examples now use `0.4.5`.
 
 ## [0.4.4] - 2026-11-10
 
