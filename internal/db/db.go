@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,6 +131,9 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureUserColumns(); err != nil {
 		return err
 	}
+	if err := d.ensureUniqueEmailIndex(); err != nil {
+		return err
+	}
 	if err := d.ensurePendingLoginColumns(); err != nil {
 		return err
 	}
@@ -198,6 +202,55 @@ func (d *DB) ensureUserColumns() error {
 	}
 	_, err = d.SQL.Exec(`UPDATE users SET status='active' WHERE status IS NULL OR status=''`)
 	return err
+}
+
+// ErrEmailInUse is returned when a non-empty email is already assigned to another account
+// (active, pending, or disabled). Empty emails are allowed on more than one user.
+var ErrEmailInUse = errors.New("email already in use")
+
+func (d *DB) ensureUniqueEmailIndex() error {
+	var n int
+	err := d.SQL.QueryRow(`
+		SELECT COUNT(*) FROM (
+			SELECT lower(email) AS e FROM users
+			WHERE email != ''
+			GROUP BY e
+			HAVING COUNT(*) > 1
+		)`).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		// Leave existing duplicates in place; EmailInUse still rejects new conflicts.
+		return nil
+	}
+	_, err = d.SQL.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email COLLATE NOCASE) WHERE email != ''`)
+	return err
+}
+
+// EmailInUse reports whether another user already has this email (case-insensitive).
+// excludeID is skipped (pass 0 when creating). Empty email is never considered in use.
+func (d *DB) EmailInUse(email string, excludeID int64) (bool, error) {
+	email = normalizeEmail(email)
+	if email == "" {
+		return false, nil
+	}
+	var n int
+	err := d.SQL.QueryRow(
+		`SELECT COUNT(*) FROM users WHERE email=? COLLATE NOCASE AND email!='' AND id!=?`,
+		email, excludeID,
+	).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func isUniqueConstraint(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
 }
 
 func (d *DB) ensurePendingLoginColumns() error {
@@ -410,6 +463,15 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	if isAdmin {
 		admin = 1
 	}
+	if email != "" {
+		taken, err := d.EmailInUse(email, 0)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
+			return nil, ErrEmailInUse
+		}
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	pol, _ := d.GetPasswordPolicy()
 	res, err := d.SQL.Exec(
@@ -417,6 +479,9 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 		username, email, hash, admin, homePath, quotaBytes, now, pol.Version, UserStatusActive, now,
 	)
 	if err != nil {
+		if isUniqueConstraint(err) && strings.Contains(strings.ToLower(err.Error()), "email") {
+			return nil, ErrEmailInUse
+		}
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
@@ -460,6 +525,15 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 		email = normalizeEmail(*upd.Email)
 		if err := validateEmailOptional(email); err != nil {
 			return nil, err
+		}
+		if email != "" {
+			taken, err := d.EmailInUse(email, id)
+			if err != nil {
+				return nil, err
+			}
+			if taken {
+				return nil, ErrEmailInUse
+			}
 		}
 	}
 	isAdmin := cur.IsAdmin
@@ -510,6 +584,9 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 		username, email, admin, homePath, quota, dis, req, id,
 	)
 	if err != nil {
+		if isUniqueConstraint(err) && strings.Contains(strings.ToLower(err.Error()), "email") {
+			return nil, ErrEmailInUse
+		}
 		return nil, err
 	}
 	if disabled && !cur.Disabled {

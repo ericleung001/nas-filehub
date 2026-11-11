@@ -8,6 +8,13 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-11-11
+
+### Fixed
+- **Unique registration email** — open registration (with or without admin approval) rejects an email that is already used by an active, pending, or disabled account. The same check applies when an administrator creates or edits a user. After a pending account is rejected and deleted, that email can be used again. Blank emails on admin-created users remain allowed on more than one account.
+- **Pending sign-up message** — when registration requires admin approval, the sign-up page now shows “Your account is waiting for admin approval” after a successful request. The confirmation previously sat inside the form and disappeared when the form was hidden.
+
+
 ## [0.4.6] - 2026-11-11
 
 ### Fixed

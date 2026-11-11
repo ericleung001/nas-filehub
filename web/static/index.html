@@ -661,7 +661,7 @@
       <img src="/icon.png" alt="" class="brand-logo" width="64" height="64" />
       <h1>Filehub</h1>
     </div>
-    <p class="muted">Create an account</p>
+    <p id="signup-intro" class="muted">Create an account</p>
     <form id="signup-form">
       <p class="muted">Password must meet the server policy.</p>
       <label>Username<input name="username" autocomplete="username" required minlength="2" maxlength="32" /></label>
@@ -670,9 +670,9 @@
       <label>Confirm password<input name="confirm" type="password" autocomplete="new-password" required /></label>
       <p id="signup-policy-hint" class="meta"></p>
       <button type="submit">Create account</button>
-      <p id="signup-msg" class="muted" hidden></p>
       <p id="signup-error" class="error" hidden></p>
     </form>
+    <p id="signup-msg" class="signup-status" hidden></p>
     <p class="login-links"><a href="/">Back to login</a></p>
   </section>
 

@@ -3308,12 +3308,16 @@ $('#signup-form')?.addEventListener('submit', async (e) => {
         password,
       }),
     });
-    msgEl.textContent = data.message || 'Account created. You can sign in now.';
-    msgEl.hidden = false;
     const user = data.username || fd.get('username') || '';
     if (data.pending) {
+      msgEl.textContent = data.message || 'Your account is waiting for admin approval. You cannot sign in until an administrator approves it.';
+      msgEl.hidden = false;
       e.target.hidden = true;
+      const intro = $('#signup-intro');
+      if (intro) intro.hidden = true;
     } else {
+      msgEl.textContent = data.message || 'Account created. You can sign in now.';
+      msgEl.hidden = false;
       setTimeout(() => {
         location.href = user ? ('/?registered=' + encodeURIComponent(user)) : '/';
       }, 800);

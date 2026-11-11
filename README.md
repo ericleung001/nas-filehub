@@ -87,15 +87,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.6`, not `v0.4.6`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.7`, not `v0.4.7`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.6
+docker pull ericleung001/nas-filehub:0.4.7
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.6
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.7
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.6`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.6` or `image: ghcr.io/ericleung001/nas-filehub:0.4.6` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.7`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.7` or `image: ghcr.io/ericleung001/nas-filehub:0.4.7` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -149,7 +149,7 @@ Sign in → **Settings** (single top-bar button):
 6. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while Settings → Storage quota is on); reset passwords; disable accounts; per-user require 2FA
 7. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
 8. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
-9. **Registration** (admins) — allow open registration
+9. **Registration** (admins) — allow open registration; each sign-up email must be unique (including pending and disabled accounts). When admin approval is required, the sign-up page tells the user their account is waiting for approval
 10. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 11. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, and shared-folder permission changes
 12. **Email** (admins) — SMTP for forgot-password

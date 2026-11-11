@@ -27,6 +27,7 @@ button, .btn { background: var(--accent); border-color: transparent; cursor: poi
 button.ghost, .ghost { background: transparent; border-color: var(--border); color: var(--text); }
 .error { color: var(--danger); }
 .muted { color: var(--muted); font-size: .9rem; }
+.signup-status { color: var(--ok); font-size: 1rem; margin: 1rem 0 0; }
 .topbar {
   display: flex; align-items: center; gap: .75rem; padding: .75rem 1rem;
   border-bottom: 1px solid var(--border); background: var(--panel);

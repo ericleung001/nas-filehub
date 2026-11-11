@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -858,6 +859,10 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		u, err := s.DB.CreateUser(body.Username, body.Password, body.HomePath, body.IsAdmin, body.QuotaBytes, body.Email)
 		if err != nil {
+			if errors.Is(err, db.ErrEmailInUse) {
+				writeErr(w, 409, "email already in use")
+				return
+			}
 			writeErr(w, 400, err.Error())
 			return
 		}
@@ -923,6 +928,10 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 				QuotaBytes: body.QuotaBytes, Disabled: body.Disabled, TotpRequired: body.TotpRequired,
 			})
 			if err != nil {
+				if errors.Is(err, db.ErrEmailInUse) {
+					writeErr(w, 409, "email already in use")
+					return
+				}
 				writeErr(w, 400, err.Error())
 				return
 			}

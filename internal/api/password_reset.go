@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -121,6 +122,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.DB.CreateUser(body.Username, body.Password, "", false, 0, body.Email)
 	if err != nil {
+		if errors.Is(err, db.ErrEmailInUse) {
+			writeErr(w, 409, "email already in use")
+			return
+		}
 		msg := err.Error()
 		if strings.Contains(strings.ToLower(msg), "unique") {
 			writeErr(w, 409, "username already taken")
@@ -144,7 +149,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := "Account created. You can sign in now."
 	if pending {
-		msg = "Account created and is pending admin approval. You cannot sign in until an administrator approves it."
+		msg = "Your account is waiting for admin approval. You cannot sign in until an administrator approves it."
 	}
 	writeJSON(w, 201, map[string]any{
 		"ok":       true,
