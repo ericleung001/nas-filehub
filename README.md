@@ -15,7 +15,7 @@ Lightweight multi-user file manager — Go single binary + embedded web UI + SQL
 Filehub is **not** Unraid-only. It runs on any host that can run **Docker** or a **Go binary**:
 
 - Linux VPS / bare metal
-- Synology / QNAP / TrueNAS / Unraid (or any NAS with Docker)
+- [TrueNAS Community Apps](https://apps.truenas.com/catalog/filehub_community/) (official listing), plus Synology / QNAP / Unraid or any NAS with Docker
 - Windows or macOS with Docker Desktop
 - Local development via `go run` / a built binary (Linux, Windows, macOS)
 
@@ -87,18 +87,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to GHCR, and to Docker Hub when the repository’s `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set. The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.0`, not `v0.4.0`).
-
-- Docker Hub: [`ericleung001/nas-filehub`](https://hub.docker.com/r/ericleung001/nas-filehub)
-- GHCR: `ghcr.io/ericleung001/nas-filehub`
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.4`, not `v0.4.4`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.0
+docker pull ericleung001/nas-filehub:0.4.4
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.0
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.4
 ```
 
-`latest` on the default branch tracks the latest build (after this release, `0.4.0`). Docker Hub receives the same tags when Hub secrets are configured; otherwise only GHCR is published. To run the Hub image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.0` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.4`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.4` or `image: ghcr.io/ericleung001/nas-filehub:0.4.4` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -202,6 +199,23 @@ export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/t
 ```
 
 Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the one you exported), then change it under **Settings → Change password**. Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front) — first `docker compose up` auto-writes that credentials file when `ADMIN_PASSWORD` is unset.
+
+## Install on TrueNAS (Community Apps)
+
+Filehub is listed in the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) on the **Community** train (app version 0.4.4).
+
+In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install wizard asks for:
+
+- An initial admin username and password (required; these seed the first admin on first boot)
+- WebUI port (default **30568**)
+- Run-as user and group (default **568**, the TrueNAS `apps` user)
+
+The catalog image is `ghcr.io/ericleung001/nas-filehub:0.4.4`. After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**.
+
+Notes:
+
+- Prefer a reverse proxy with HTTPS, then set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL`. **Do not** expose the WebUI port directly to the public internet.
+- If the TrueNAS host has an Intel or AMD GPU selected for the app, the catalog enables VAAPI thumbnail acceleration. See also [Hardware thumbnail acceleration](#hardware-thumbnail-acceleration-optional).
 
 ## Install on Unraid (Community Apps)
 

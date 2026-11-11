@@ -11,4 +11,4 @@ These files are the Filehub app package submitted to the official [TrueNAS Apps 
 - Install requires an initial admin username and password (seeds the first admin on first boot)
 - Run-as user and group are configurable in the wizard (default `568`, the TrueNAS `apps` user)
 
-This copy is for reference. Store listing and future updates should stay in sync with that PR / the official `ix-dev/community/filehub` directory after merge.
+This copy is for reference. Filehub is listed on the [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) after [PR #6454](https://github.com/truenas/apps/pull/6454) was merged. Future packaging updates should stay in sync with the official `ix-dev/community/filehub` directory.
