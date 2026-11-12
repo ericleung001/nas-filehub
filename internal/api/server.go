@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -737,6 +738,43 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	action, err := files.ParseConflictAction(r.FormValue("conflict"))
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	filename := hdr.Filename
+	exists, isDir, err := files.Exists(sc.Root, sc.Rel, filename)
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if exists {
+		switch action {
+		case files.ConflictSkip:
+			name := filepath.Base(filename)
+			rel := name
+			if sc.Rel != "" && sc.Rel != "." {
+				rel = filepath.ToSlash(filepath.Join(sc.Rel, name))
+			}
+			writeJSON(w, 200, map[string]any{"path": rel, "name": name, "skipped": true})
+			return
+		case files.ConflictOverwrite:
+			if isDir {
+				writeErr(w, 400, files.ErrIsDirectory.Error())
+				return
+			}
+		case files.ConflictRename:
+			// proceed to write under a free name
+		default:
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": "file already exists",
+				"code":  "exists",
+				"name":  filepath.Base(filename),
+			})
+			return
+		}
+	}
 	extra := hdr.Size
 	if extra < 0 {
 		extra = 0
@@ -745,13 +783,32 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, err.Error())
 		return
 	}
-	saved, err := files.SaveUpload(sc.Root, sc.Rel, hdr.Filename, file)
+	saved, err := files.SaveUpload(sc.Root, sc.Rel, filename, file, action)
 	if err != nil {
+		if errors.Is(err, files.ErrExists) {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": "file already exists",
+				"code":  "exists",
+				"name":  filepath.Base(filename),
+			})
+			return
+		}
 		writeErr(w, 400, err.Error())
 		return
 	}
-	s.attributeWrite(u, sc, saved)
-	writeJSON(w, 200, map[string]string{"path": saved})
+	if saved.Skipped {
+		writeJSON(w, 200, map[string]any{"path": saved.Rel, "name": saved.Name, "skipped": true})
+		return
+	}
+	s.attributeWrite(u, sc, saved.Rel)
+	out := map[string]any{"path": saved.Rel, "name": saved.Name}
+	if saved.Overwritten {
+		out["overwritten"] = true
+	}
+	if saved.Renamed {
+		out["renamed"] = true
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {

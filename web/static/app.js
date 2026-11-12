@@ -1394,19 +1394,23 @@ function setUploadProgressLabel(done, total) {
   el.textContent = `(${done}/${total})`;
 }
 
-function setUploadItem(li, { loaded, total, status, error }) {
+function setUploadItem(li, { loaded, total, status, error, detail }) {
   const pct = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
   const bar = li.querySelector('.bar > span');
   const meta = li.querySelector('.meta');
   bar.style.width = pct + '%';
-  li.classList.remove('done', 'err');
+  li.classList.remove('done', 'err', 'skipped');
   if (status === 'uploading') {
     meta.textContent = total > 0
       ? `${fmtSize(loaded)} / ${fmtSize(total)} (${pct}%)`
       : `${fmtSize(loaded)}…`;
   } else if (status === 'done') {
     li.classList.add('done');
-    meta.textContent = total > 0 ? `Done · ${fmtSize(total)}` : 'Done';
+    meta.textContent = detail || (total > 0 ? `Done · ${fmtSize(total)}` : 'Done');
+    bar.style.width = '100%';
+  } else if (status === 'skipped') {
+    li.classList.add('skipped');
+    meta.textContent = detail || 'Skipped';
     bar.style.width = '100%';
   } else if (status === 'error') {
     li.classList.add('err');
@@ -1414,12 +1418,13 @@ function setUploadItem(li, { loaded, total, status, error }) {
   }
 }
 
-function uploadFileWithProgress(file, destPath, onProgress) {
+function uploadFileWithProgress(file, destPath, onProgress, conflict) {
   return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append('root', state.root);
     fd.append('path', destPath || '');
     fd.append('file', file);
+    if (conflict) fd.append('conflict', conflict);
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload');
     xhr.withCredentials = true;
@@ -1430,12 +1435,212 @@ function uploadFileWithProgress(file, destPath, onProgress) {
       let data = null;
       try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = { raw: xhr.responseText }; }
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error((data && data.error) || xhr.statusText || 'Upload failed'));
+      else {
+        const err = new Error((data && data.error) || xhr.statusText || 'Upload failed');
+        err.status = xhr.status;
+        err.code = data && data.code;
+        err.data = data;
+        reject(err);
+      }
     };
     xhr.onerror = () => reject(new Error('Network error'));
     xhr.onabort = () => reject(new Error('Upload aborted'));
     xhr.send(fd);
   });
+}
+
+function splitUploadName(filename) {
+  const dot = filename.lastIndexOf('.');
+  if (dot <= 0) return { base: filename, ext: '' };
+  return { base: filename.slice(0, dot), ext: filename.slice(dot) };
+}
+
+function nextAvailableUploadName(filename, taken) {
+  if (!taken.has(filename)) return filename;
+  const { base, ext } = splitUploadName(filename);
+  for (let n = 1; n < 10000; n++) {
+    const cand = `${base}_${n}${ext}`;
+    if (!taken.has(cand)) return cand;
+  }
+  return `${base}_${Date.now()}${ext}`;
+}
+
+async function listDestinationNames(destPath) {
+  const taken = new Set();
+  const dirs = new Set();
+  try {
+    const q = new URLSearchParams({ root: state.root, path: destPath || '' });
+    const data = await api('/api/list?' + q.toString());
+    for (const e of data.entries || []) {
+      if (!e || !e.name) continue;
+      taken.add(e.name);
+      if (e.isDir) dirs.add(e.name);
+    }
+  } catch {
+    // Fall back to 409 handling per file if the listing fails.
+  }
+  return { taken, dirs };
+}
+
+function findUploadConflicts(files, taken) {
+  const planned = new Set();
+  const conflicts = [];
+  for (const f of files) {
+    if (taken.has(f.name) || planned.has(f.name)) conflicts.push(f);
+    else planned.add(f.name);
+  }
+  return conflicts;
+}
+
+function showUploadConflictDialog(conflicts, taken, dirs) {
+  return new Promise((resolve) => {
+    const dlg = $('#upload-conflict-dialog');
+    const list = $('#upload-conflict-list');
+    const applyBar = $('#upload-conflict-apply');
+    const continueBtn = $('#upload-conflict-continue');
+    const cancelBtn = $('#upload-conflict-cancel');
+    if (!dlg || !list) {
+      resolve(null);
+      return;
+    }
+    const decisions = new Map();
+    const previewTaken = () => {
+      const next = new Set(taken);
+      for (const f of conflicts) {
+        const action = decisions.get(f) || 'rename';
+        if (action === 'skip') continue;
+        if (action === 'overwrite') {
+          next.add(f.name);
+          continue;
+        }
+        const name = nextAvailableUploadName(f.name, next);
+        next.add(name);
+      }
+      return next;
+    };
+    function renderHints() {
+      const next = new Set(taken);
+      for (const f of conflicts) {
+        const li = f._conflictRow;
+        if (!li) continue;
+        const action = decisions.get(f) || 'rename';
+        const hint = li.querySelector('.conflict-row-hint');
+        li.querySelectorAll('.conflict-choice[data-action]').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.action === action);
+        });
+        if (action === 'skip') {
+          hint.textContent = 'Existing file will be kept';
+        } else if (action === 'overwrite') {
+          hint.textContent = dirs.has(f.name)
+            ? 'A folder with this name exists — overwrite is not available'
+            : 'Existing file will be replaced';
+        } else {
+          const name = nextAvailableUploadName(f.name, next);
+          hint.textContent = name === f.name ? 'Will be uploaded as ' + name : 'Will be saved as ' + name;
+          next.add(name);
+          continue;
+        }
+        if (action === 'overwrite' && !dirs.has(f.name)) next.add(f.name);
+      }
+    }
+    list.innerHTML = '';
+    applyBar.hidden = conflicts.length < 2;
+    for (const f of conflicts) {
+      decisions.set(f, 'rename');
+      const li = document.createElement('li');
+      li.className = 'conflict-row';
+      const info = document.createElement('div');
+      info.className = 'conflict-row-info';
+      const name = document.createElement('div');
+      name.className = 'conflict-row-name';
+      name.textContent = f.name;
+      name.title = f.name;
+      const hint = document.createElement('div');
+      hint.className = 'conflict-row-hint';
+      info.appendChild(name);
+      info.appendChild(hint);
+      const actions = document.createElement('div');
+      actions.className = 'conflict-actions';
+      actions.setAttribute('role', 'group');
+      actions.setAttribute('aria-label', 'Action for ' + f.name);
+      for (const [action, label] of [['skip', 'Skip'], ['overwrite', 'Overwrite'], ['rename', 'Rename']]) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'conflict-choice';
+        btn.dataset.action = action;
+        btn.textContent = label;
+        if (action === 'overwrite' && dirs.has(f.name)) btn.disabled = true;
+        btn.addEventListener('click', () => {
+          if (btn.disabled) return;
+          decisions.set(f, action);
+          renderHints();
+        });
+        actions.appendChild(btn);
+      }
+      li.appendChild(info);
+      li.appendChild(actions);
+      f._conflictRow = li;
+      list.appendChild(li);
+    }
+    renderHints();
+
+    function applyAll(action) {
+      for (const f of conflicts) {
+        if (action === 'overwrite' && dirs.has(f.name)) continue;
+        decisions.set(f, action);
+      }
+      renderHints();
+    }
+    const applyBtns = [...applyBar.querySelectorAll('[data-apply]')];
+    function onApply(ev) {
+      const action = ev.currentTarget.dataset.apply;
+      if (action) applyAll(action);
+    }
+    applyBtns.forEach((b) => b.addEventListener('click', onApply));
+
+    let settled = false;
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      applyBtns.forEach((b) => b.removeEventListener('click', onApply));
+      continueBtn.removeEventListener('click', onContinue);
+      cancelBtn.removeEventListener('click', onCancel);
+      dlg.removeEventListener('cancel', onCancel);
+      dlg.removeEventListener('close', onClose);
+      if (dlg.open) dlg.close();
+      for (const f of conflicts) delete f._conflictRow;
+      resolve(result);
+    }
+    function onContinue(ev) {
+      ev.preventDefault();
+      const out = new Map();
+      // Recompute rename targets after decisions (preview only; server enforces).
+      previewTaken();
+      for (const f of conflicts) out.set(f, decisions.get(f) || 'rename');
+      finish(out);
+    }
+    function onCancel(ev) {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      finish(null);
+    }
+    function onClose() {
+      finish(null);
+    }
+    continueBtn.addEventListener('click', onContinue);
+    cancelBtn.addEventListener('click', onCancel);
+    dlg.addEventListener('cancel', onCancel);
+    dlg.addEventListener('close', onClose);
+    dlg.showModal();
+  });
+}
+
+async function resolveUploadConflicts(files, destPath) {
+  const { taken, dirs } = await listDestinationNames(destPath);
+  const conflicts = findUploadConflicts(files, taken);
+  if (!conflicts.length) return new Map();
+  const decisions = await showUploadConflictDialog(conflicts, taken, dirs);
+  if (!decisions) return null;
+  return decisions;
 }
 
 $('#btn-clear-uploads').addEventListener('click', () => {
@@ -1451,6 +1656,8 @@ async function uploadFiles(files, destPath) {
     return;
   }
   const target = destPath == null ? state.path : destPath;
+  const decisions = await resolveUploadConflicts(listFiles, target);
+  if (decisions == null) return; // cancelled
   ensureUploadPanel();
   const list = $('#upload-list');
   $('#btn-clear-uploads').hidden = true;
@@ -1459,6 +1666,7 @@ async function uploadFiles(files, destPath) {
   setUploadProgressLabel(batchDone, batchTotal);
   let anyErr = false;
   for (const f of listFiles) {
+    const action = decisions.get(f) || '';
     const li = document.createElement('li');
     li.className = 'upload-item';
     li.innerHTML = `<div class="row"><span class="name"></span><span class="meta"></span></div><div class="bar"><span></span></div>`;
@@ -1466,13 +1674,63 @@ async function uploadFiles(files, destPath) {
     li.querySelector('.name').textContent = label;
     li.querySelector('.name').title = label;
     list.appendChild(li);
+    if (action === 'skip') {
+      setUploadItem(li, { loaded: f.size, total: f.size, status: 'skipped', detail: 'Skipped' });
+      batchDone += 1;
+      setUploadProgressLabel(batchDone, batchTotal);
+      continue;
+    }
     setUploadItem(li, { loaded: 0, total: f.size, status: 'uploading' });
     try {
-      await uploadFileWithProgress(f, target, (loaded, total) => {
+      const data = await uploadFileWithProgress(f, target, (loaded, total) => {
         setUploadItem(li, { loaded, total, status: 'uploading' });
-      });
-      setUploadItem(li, { loaded: f.size, total: f.size, status: 'done' });
+      }, action);
+      let detail = f.size ? `Done · ${fmtSize(f.size)}` : 'Done';
+      if (data && data.renamed && data.name) {
+        detail = `Done · saved as ${data.name}`;
+        const nameEl = li.querySelector('.name');
+        const renamedLabel = `${f.name} → ${data.name}`;
+        nameEl.textContent = renamedLabel;
+        nameEl.title = renamedLabel;
+      } else if (data && data.overwritten) {
+        detail = (f.size ? `Done · overwritten · ${fmtSize(f.size)}` : 'Done · overwritten');
+      } else if (data && data.skipped) {
+        setUploadItem(li, { loaded: f.size, total: f.size, status: 'skipped', detail: 'Skipped' });
+        batchDone += 1;
+        setUploadProgressLabel(batchDone, batchTotal);
+        continue;
+      }
+      setUploadItem(li, { loaded: f.size, total: f.size, status: 'done', detail });
     } catch (err) {
+      if (err && err.code === 'exists' && !action) {
+        try {
+          const one = await showUploadConflictDialog([f], new Set([f.name]), new Set());
+          if (one && one.get(f) && one.get(f) !== 'skip') {
+            const data = await uploadFileWithProgress(f, target, (loaded, total) => {
+              setUploadItem(li, { loaded, total, status: 'uploading' });
+            }, one.get(f));
+            let detail = f.size ? `Done · ${fmtSize(f.size)}` : 'Done';
+            if (data && data.renamed && data.name) detail = `Done · saved as ${data.name}`;
+            else if (data && data.overwritten) detail = (f.size ? `Done · overwritten · ${fmtSize(f.size)}` : 'Done · overwritten');
+            setUploadItem(li, { loaded: f.size, total: f.size, status: 'done', detail });
+            batchDone += 1;
+            setUploadProgressLabel(batchDone, batchTotal);
+            continue;
+          }
+          if (one && one.get(f) === 'skip') {
+            setUploadItem(li, { loaded: f.size, total: f.size, status: 'skipped', detail: 'Skipped' });
+            batchDone += 1;
+            setUploadProgressLabel(batchDone, batchTotal);
+            continue;
+          }
+        } catch (retryErr) {
+          anyErr = true;
+          setUploadItem(li, { loaded: 0, total: f.size, status: 'error', error: retryErr.message });
+          batchDone += 1;
+          setUploadProgressLabel(batchDone, batchTotal);
+          continue;
+        }
+      }
       anyErr = true;
       setUploadItem(li, { loaded: 0, total: f.size, status: 'error', error: err.message });
     }

@@ -1154,3 +1154,97 @@ button.ghost.transfer-folder-btn:last-child,
 @media (max-width: 800px) {
   .files col.col-actions { width: 7rem; }
 }
+
+/* Upload name-conflict dialog */
+#upload-conflict-dialog {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: var(--panel);
+  color: var(--text);
+  max-width: min(96vw, 560px);
+  width: 100%;
+  max-height: min(90vh, 680px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  position: relative;
+}
+#upload-conflict-dialog::backdrop { background: rgba(0,0,0,.65); }
+#upload-conflict-dialog .dialog-close { position: absolute; right: .5rem; top: .5rem; margin: 0; }
+#upload-conflict-dialog h3 { margin: 0 2rem .5rem 0; }
+#upload-conflict-intro { margin: 0 0 1rem; }
+.conflict-apply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin: 0 0 .75rem;
+  font-size: .9rem;
+  color: var(--muted);
+}
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+button.conflict-choice {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .35rem .65rem;
+  font-size: .85rem;
+}
+button.conflict-choice:hover { background: #243247; }
+button.conflict-choice.active {
+  background: var(--accent);
+  border-color: transparent;
+  color: white;
+}
+button.conflict-choice:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+.conflict-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  max-height: min(45vh, 360px);
+  overflow-y: auto;
+}
+.conflict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem .75rem;
+  padding: .65rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0b1220;
+}
+.conflict-row-info {
+  min-width: 0;
+  flex: 1 1 160px;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.conflict-row-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflict-row-hint { font-size: .8rem; color: var(--muted); }
+.conflict-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.upload-item.skipped .bar > span { background: var(--muted); width: 100% !important; }
+.upload-item.skipped .meta { color: var(--muted); }

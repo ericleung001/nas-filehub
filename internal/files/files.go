@@ -140,36 +140,207 @@ func Delete(root, rel string) error {
 	return os.RemoveAll(full)
 }
 
-func SaveUpload(root, destDirRel, filename string, r io.Reader) (string, error) {
+// ConflictAction is the policy when an uploaded name is already taken.
+type ConflictAction string
+
+const (
+	ConflictNone      ConflictAction = ""
+	ConflictSkip      ConflictAction = "skip"
+	ConflictOverwrite ConflictAction = "overwrite"
+	ConflictRename    ConflictAction = "rename"
+)
+
+// ErrExists is returned when the destination name is taken and no conflict policy was given.
+var ErrExists = fmt.Errorf("file already exists")
+
+// ErrIsDirectory is returned when overwrite is requested for a name that is a folder.
+var ErrIsDirectory = fmt.Errorf("a folder with this name already exists")
+
+// ParseConflictAction accepts skip, overwrite, rename, or an empty value. Matching is case-insensitive.
+func ParseConflictAction(s string) (ConflictAction, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "none":
+		return ConflictNone, nil
+	case "skip":
+		return ConflictSkip, nil
+	case "overwrite":
+		return ConflictOverwrite, nil
+	case "rename":
+		return ConflictRename, nil
+	default:
+		return ConflictNone, fmt.Errorf("invalid conflict action")
+	}
+}
+
+// SaveUploadResult describes what happened to an uploaded file.
+type SaveUploadResult struct {
+	Rel         string
+	Name        string
+	Skipped     bool
+	Overwritten bool
+	Renamed     bool
+}
+
+func joinRel(destDirRel, filename string) string {
+	if destDirRel != "" && destDirRel != "." {
+		return filepath.ToSlash(filepath.Join(destDirRel, filename))
+	}
+	return filename
+}
+
+func lstatExists(path string) (exists bool, isDir bool, err error) {
+	st, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	return true, st.IsDir(), nil
+}
+
+// Exists reports whether a name is already taken under root/destDirRel.
+func Exists(root, destDirRel, filename string) (exists bool, isDir bool, err error) {
 	filename = filepath.Base(filename)
 	if filename == "" || filename == "." || filename == ".." {
-		return "", fmt.Errorf("invalid filename")
+		return false, false, fmt.Errorf("invalid filename")
 	}
 	dir, err := SafeJoin(root, destDirRel)
 	if err != nil {
-		return "", err
+		return false, false, err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
+	return lstatExists(filepath.Join(dir, filename))
+}
+
+// SplitFileName splits a file name into a base and an extension for rename suffixes.
+// The last dotted suffix is the extension, except a leading-dot name with no other
+// dots (e.g. ".gitignore") is treated as a whole base so the result is ".gitignore_1".
+func SplitFileName(filename string) (base, ext string) {
+	ext = filepath.Ext(filename)
+	base = strings.TrimSuffix(filename, ext)
+	if base == "" {
+		return filename, ""
 	}
-	dest := filepath.Join(dir, filename)
-	// ensure dest still under root
-	if _, err := SafeJoin(root, filepath.ToSlash(filepath.Join(destDirRel, filename))); err != nil {
-		return "", err
-	}
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	return base, ext
+}
+
+// NextAvailableName returns filename if it is free in dir, otherwise base_1.ext,
+// base_2.ext, and so on. The incoming filename is the base: if photo_1.jpg is
+// taken, the next name is photo_1_1.jpg, not photo_2.jpg.
+func NextAvailableName(dir, filename string) (string, error) {
+	exists, _, err := lstatExists(filepath.Join(dir, filename))
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	if _, err := io.Copy(f, r); err != nil {
-		return "", err
+	if !exists {
+		return filename, nil
 	}
-	rel := filename
-	if destDirRel != "" && destDirRel != "." {
-		rel = filepath.ToSlash(filepath.Join(destDirRel, filename))
+	base, ext := SplitFileName(filename)
+	for n := 1; n < 10000; n++ {
+		cand := fmt.Sprintf("%s_%d%s", base, n, ext)
+		exists, _, err = lstatExists(filepath.Join(dir, cand))
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return cand, nil
+		}
 	}
-	return rel, nil
+	return "", fmt.Errorf("could not find a free filename")
+}
+
+func SaveUpload(root, destDirRel, filename string, r io.Reader, action ConflictAction) (SaveUploadResult, error) {
+	filename = filepath.Base(filename)
+	if filename == "" || filename == "." || filename == ".." {
+		return SaveUploadResult{}, fmt.Errorf("invalid filename")
+	}
+	dir, err := SafeJoin(root, destDirRel)
+	if err != nil {
+		return SaveUploadResult{}, err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return SaveUploadResult{}, err
+	}
+	if _, err := SafeJoin(root, joinRel(destDirRel, filename)); err != nil {
+		return SaveUploadResult{}, err
+	}
+
+	chosen := filename
+	overwritten := false
+	renamed := false
+
+	exists, isDir, err := lstatExists(filepath.Join(dir, filename))
+	if err != nil {
+		return SaveUploadResult{}, err
+	}
+	if exists {
+		switch action {
+		case ConflictSkip:
+			return SaveUploadResult{Rel: joinRel(destDirRel, filename), Name: filename, Skipped: true}, nil
+		case ConflictOverwrite:
+			if isDir {
+				return SaveUploadResult{}, ErrIsDirectory
+			}
+			overwritten = true
+		case ConflictRename:
+			chosen, err = NextAvailableName(dir, filename)
+			if err != nil {
+				return SaveUploadResult{}, err
+			}
+			renamed = chosen != filename
+		default:
+			return SaveUploadResult{}, ErrExists
+		}
+	}
+
+	// Retry rename on a race where the chosen name appears between the check and create.
+	for attempt := 0; attempt < 10000; attempt++ {
+		if _, err := SafeJoin(root, joinRel(destDirRel, chosen)); err != nil {
+			return SaveUploadResult{}, err
+		}
+		dest := filepath.Join(dir, chosen)
+		flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+		if !overwritten {
+			flags = os.O_CREATE | os.O_WRONLY | os.O_EXCL
+		}
+		f, err := os.OpenFile(dest, flags, 0o644)
+		if err != nil {
+			if !overwritten && os.IsExist(err) {
+				if action == ConflictRename {
+					next, nerr := NextAvailableName(dir, filename)
+					if nerr != nil {
+						return SaveUploadResult{}, nerr
+					}
+					chosen = next
+					renamed = chosen != filename
+					continue
+				}
+				return SaveUploadResult{}, ErrExists
+			}
+			return SaveUploadResult{}, err
+		}
+		_, copyErr := io.Copy(f, r)
+		closeErr := f.Close()
+		if copyErr != nil {
+			if !overwritten {
+				_ = os.Remove(dest)
+			}
+			return SaveUploadResult{}, copyErr
+		}
+		if closeErr != nil {
+			if !overwritten {
+				_ = os.Remove(dest)
+			}
+			return SaveUploadResult{}, closeErr
+		}
+		return SaveUploadResult{
+			Rel:         joinRel(destDirRel, chosen),
+			Name:        chosen,
+			Overwritten: overwritten,
+			Renamed:     renamed,
+		}, nil
+	}
+	return SaveUploadResult{}, fmt.Errorf("could not find a free filename")
 }
 
 func Open(root, rel string) (*os.File, fs.FileInfo, error) {
@@ -235,7 +406,6 @@ func DirSize(root, rel string) (int64, error) {
 	})
 	return total, err
 }
-
 
 // CopyEntry copies a file or directory from srcRoot/srcRel to dstRoot/dstNameRel
 // (dstNameRel is the full destination path including the final name).

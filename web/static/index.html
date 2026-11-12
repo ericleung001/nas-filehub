@@ -624,6 +624,25 @@
     </div>
   </dialog>
 
+  <dialog id="upload-conflict-dialog">
+    <form method="dialog" class="dialog-close"><button value="cancel" class="ghost" aria-label="Close">✕</button></form>
+    <h3>File already exists</h3>
+    <p class="muted" id="upload-conflict-intro">A file with the same name is already in this folder. Choose Skip, Overwrite, or Rename. Rename adds _1, _2, … before the extension.</p>
+    <div id="upload-conflict-apply" class="conflict-apply" hidden>
+      <span>Apply to all</span>
+      <div class="conflict-actions" role="group" aria-label="Apply to all">
+        <button type="button" class="conflict-choice" data-apply="skip">Skip</button>
+        <button type="button" class="conflict-choice" data-apply="overwrite">Overwrite</button>
+        <button type="button" class="conflict-choice" data-apply="rename">Rename</button>
+      </div>
+    </div>
+    <ul id="upload-conflict-list" class="conflict-list"></ul>
+    <div class="conflict-footer">
+      <button type="button" id="upload-conflict-cancel" class="ghost">Cancel</button>
+      <button type="button" id="upload-conflict-continue">Upload</button>
+    </div>
+  </dialog>
+
   <dialog id="preview">
     <form method="dialog"><button class="close">✕</button></form>
     <div id="preview-body"></div>

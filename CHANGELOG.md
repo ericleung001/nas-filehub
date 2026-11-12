@@ -11,6 +11,11 @@ where version tags are used.
 ### Changed
 - **TrueNAS catalog packaging** — the `truenas/` snapshot now pins app 0.4.7 / catalog 1.0.1 (`ghcr.io/ericleung001/nas-filehub:0.4.7` by digest). The official catalog update is [truenas/apps#6466](https://github.com/truenas/apps/pull/6466); the live TrueNAS Apps Market still lists 0.4.4 until that PR is merged.
 
+## [0.4.8] - 2026-11-12
+
+### Added
+- **Upload name conflicts** — when a file with the same name and extension already exists at the destination, the uploader can **Skip**, **Overwrite**, or **Rename**. Rename appends `_1` before the extension (`photo.jpg` → `photo_1.jpg`); if that name is also taken the number increases (`photo_2.jpg`, …). The incoming filename is the base, so uploading `photo_1.jpg` when it exists becomes `photo_1_1.jpg`. A batch of conflicts can be resolved per file or with **Apply to all**. The same choices apply to the Upload button, drag-and-drop, and multi-file uploads, including writable shared folders. The API enforces the policy (`conflict=skip|overwrite|rename` on `POST /api/upload`); a collision without a policy returns 409. Skip does not change the existing file. Overwrite replaces it in place (same as the previous silent replace; the existing file is not moved to the recycle bin).
+
 ## [0.4.7] - 2026-11-11
 
 ### Fixed
