@@ -261,6 +261,33 @@ func (s *Server) listIncomingEntries(u *db.User) ([]map[string]any, error) {
 	return out, nil
 }
 
+func incomingClientPath(rel string) string {
+	return strings.Trim(filepath.ToSlash(rel), "/")
+}
+
+// rewriteIncomingListEntries maps owner-relative list paths onto the
+// recipient's incoming path (shareID or shareID/child/...), which is what
+// the UI and later /api/list requests use. files.List otherwise returns
+// paths under the owner's root (e.g. "temp/chi"), and opening that as
+// root=incoming fails because the first segment is not a share id.
+func rewriteIncomingListEntries(clientPath string, entries []files.Entry) []files.Entry {
+	base := incomingClientPath(clientPath)
+	out := make([]files.Entry, 0, len(entries))
+	for _, e := range entries {
+		name := filepath.Base(e.Name)
+		if name == "" || name == "." || name == ".." {
+			continue
+		}
+		if base == "" {
+			e.Path = name
+		} else {
+			e.Path = base + "/" + name
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func incomingRootID(sh *db.ItemShare) string {
 	if sh == nil {
 		return "home"

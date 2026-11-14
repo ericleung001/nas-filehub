@@ -695,16 +695,18 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A shared file listed as incoming/{id} is not a directory.
+	listPath := sc.Rel
 	if rootID == "incoming" {
+		listPath = incomingClientPath(rel)
 		full, err := files.SafeJoin(sc.Root, sc.Rel)
 		if err == nil {
 			if st, err := os.Stat(full); err == nil && !st.IsDir() {
 				name := filepath.Base(sc.Rel)
 				entry := files.Entry{
-					Name: name, Path: rel, IsDir: false, Size: st.Size(),
+					Name: name, Path: listPath, IsDir: false, Size: st.Size(),
 					ModTime: st.ModTime().UTC(), Ext: strings.ToLower(filepath.Ext(name)), Kind: files.KindOf(name, false),
 				}
-				writeJSON(w, 200, map[string]any{"path": sc.Rel, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": []files.Entry{entry}})
+				writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": []files.Entry{entry}})
 				return
 			}
 		}
@@ -714,7 +716,10 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"path": sc.Rel, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries})
+	if rootID == "incoming" {
+		entries = rewriteIncomingListEntries(listPath, entries)
+	}
+	writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries})
 }
 
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {

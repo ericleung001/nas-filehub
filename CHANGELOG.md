@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-11-14
+
+### Fixed
+- **Shared folder nesting** — opening a folder that was shared with you under **Shared with me** now lists every level of subfolders and files, not just the first level. Listing used to return paths under the owner's tree (for example `temp/chi` instead of `{share id}/chi`), so opening a child folder such as `chi` failed and its contents looked missing. Paths stay inside the shared folder; a recipient still cannot walk out of that root. Admin-managed shared folders already listed nested items and keep doing so. A write grant still allows creating folders and files at any depth inside the share.
+
 ## [0.4.13] - 2026-11-14
 
 ### Changed
