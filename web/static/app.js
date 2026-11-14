@@ -47,6 +47,14 @@ const state = {
   adminUsers: [],
   /** @type {Array} cached admin share list */
   adminShares: [],
+  /** @type {Array} eligible users for the Share dialog */
+  shareDirectory: [],
+  /** @type {number[]} default (frequent + fill) user IDs, up to 5 */
+  shareFrequentIds: [],
+  /** @type {Set<number>} */
+  shareSelectedIds: new Set(),
+  /** @type {Array|null} extra directory matches from keyword search (email, etc.) */
+  shareQueryMatches: null,
   /** public link token when on /s/:token */
   publicToken: null,
   publicPath: '',
@@ -3362,27 +3370,138 @@ function shareRootId() {
 }
 
 function selectedShareUserIds() {
-  return [...document.querySelectorAll('#share-user-list input[type="checkbox"]:checked')]
-    .map((el) => Number(el.value))
-    .filter((id) => id > 0);
+  return [...state.shareSelectedIds].filter((id) => id > 0);
 }
 
-function renderShareUserList(users, filter) {
+function shareQueryValue() {
+  const el = $('#share-user-filter');
+  return el ? String(el.value || '').trim() : '';
+}
+
+function shareUserMatchesQuery(user, q) {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  if (String(user.username || '').toLowerCase().includes(needle)) return true;
+  if (user.displayName && String(user.displayName).toLowerCase().includes(needle)) return true;
+  if (user.email && String(user.email).toLowerCase().includes(needle)) return true;
+  return false;
+}
+
+function configureShareUserSearch(userCount) {
+  const filter = $('#share-user-filter');
+  const hint = $('#share-user-hint');
+  const longList = userCount > 5;
+  if (filter) {
+    filter.hidden = !longList;
+    if (!longList) filter.value = '';
+  }
+  if (hint) hint.hidden = !longList;
+}
+
+function visibleShareUsers() {
+  const all = state.shareDirectory || [];
+  const byId = new Map(all.map((u) => [Number(u.id), u]));
+  const q = shareQueryValue();
+  const seen = new Set();
+  const out = [];
+  const add = (u) => {
+    if (!u) return;
+    const id = Number(u.id);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(byId.get(id) || u);
+  };
+  if (all.length <= 5) {
+    all.forEach(add);
+    return out;
+  }
+  if (q) {
+    // Keep selected users visible even when they do not match the keyword.
+    [...state.shareSelectedIds].forEach((id) => add(byId.get(id)));
+    all.forEach((u) => { if (shareUserMatchesQuery(u, q)) add(u); });
+    (state.shareQueryMatches || []).forEach((u) => add(byId.get(Number(u.id)) || u));
+    return out;
+  }
+  (state.shareFrequentIds || []).forEach((id) => add(byId.get(Number(id))));
+  [...state.shareSelectedIds].forEach((id) => add(byId.get(id)));
+  return out;
+}
+
+function renderShareUserList() {
   const box = $('#share-user-list');
   const empty = $('#share-user-empty');
   if (!box) return;
-  const q = (filter || '').trim().toLowerCase();
-  const list = (users || []).filter((u) => !q || String(u.username || '').toLowerCase().includes(q));
+  const all = state.shareDirectory || [];
+  configureShareUserSearch(all.length);
+  const q = shareQueryValue();
+  const list = visibleShareUsers();
+  const frequent = new Set((state.shareFrequentIds || []).map((id) => Number(id)));
   box.innerHTML = list.map((u) => {
-    return '<label class="check"><input type="checkbox" value="' + u.id + '" /> ' + escapeHtml(u.username) + '</label>';
+    const id = Number(u.id);
+    const checked = state.shareSelectedIds.has(id) ? ' checked' : '';
+    const badge = frequent.has(id) ? '<span class="share-user-badge">Frequent</span>' : '';
+    return '<label class="share-user-row"><input type="checkbox" value="' + id + '"' + checked + ' />' +
+      '<span class="share-user-name">' + escapeHtml(u.username) + '</span>' + badge + '</label>';
   }).join('');
-  if (empty) empty.hidden = (users || []).length > 0;
+  if (!empty) return;
+  if (all.length === 0) {
+    empty.textContent = 'No other users are available.';
+    empty.hidden = false;
+  } else if (list.length === 0) {
+    empty.textContent = q ? 'No matching users.' : 'No other users are available.';
+    empty.hidden = false;
+  } else if (q && list.every((u) => state.shareSelectedIds.has(Number(u.id))) &&
+      !all.some((u) => shareUserMatchesQuery(u, q)) &&
+      !(state.shareQueryMatches || []).length) {
+    empty.textContent = 'No other matching users.';
+    empty.hidden = false;
+  } else {
+    empty.hidden = true;
+  }
 }
+
+let shareSearchTimer = 0;
+let shareSearchSeq = 0;
 
 async function loadShareDirectory() {
   const data = await api('/api/directory');
   state.shareDirectory = data.users || [];
-  renderShareUserList(state.shareDirectory, $('#share-user-filter') && $('#share-user-filter').value);
+  state.shareFrequentIds = data.frequentUserIds || [];
+  state.shareQueryMatches = null;
+  renderShareUserList();
+  const q = shareQueryValue();
+  if (q) await searchShareDirectory(q);
+}
+
+async function searchShareDirectory(q) {
+  const seq = ++shareSearchSeq;
+  const needle = String(q || '').trim();
+  if (!needle) {
+    state.shareQueryMatches = null;
+    if (seq === shareSearchSeq) renderShareUserList();
+    return;
+  }
+  try {
+    const data = await api('/api/directory?q=' + encodeURIComponent(needle));
+    if (seq !== shareSearchSeq) return;
+    state.shareQueryMatches = data.users || [];
+    renderShareUserList();
+  } catch (err) {
+    if (seq !== shareSearchSeq) return;
+    console.error(err);
+  }
+}
+
+function onShareUserFilterInput() {
+  state.shareQueryMatches = null;
+  renderShareUserList();
+  const q = shareQueryValue();
+  clearTimeout(shareSearchTimer);
+  if (!q) {
+    shareSearchSeq += 1;
+    return;
+  }
+  shareSearchTimer = setTimeout(() => { searchShareDirectory(q); }, 150);
 }
 
 function setShareLinkOptionsVisible() {
@@ -3475,6 +3594,8 @@ function openShareDialog(target) {
   if (permWrap) permWrap.hidden = !target.isDir;
   const perm = $('#share-perm');
   if (perm) perm.value = 'read';
+  state.shareSelectedIds = new Set();
+  state.shareQueryMatches = null;
   const filter = $('#share-user-filter');
   if (filter) filter.value = '';
   const errEl = $('#share-error');
@@ -3501,7 +3622,7 @@ function openShareDialog(target) {
     urlInp.value = '';
     urlInp.hidden = true;
   }
-  renderShareUserList(state.shareDirectory, '');
+  renderShareUserList();
   $('#share-dialog').showModal();
   loadShareDirectory().catch((err) => {
     const el = $('#share-error');
@@ -3525,9 +3646,19 @@ function expiresToRFC3339(v) {
 }
 
 $('#share-public')?.addEventListener('change', setShareLinkOptionsVisible);
-$('#share-user-filter')?.addEventListener('input', () => {
-  renderShareUserList(state.shareDirectory || [], $('#share-user-filter').value);
-});
+$('#share-user-filter')?.addEventListener('input', onShareUserFilterInput);
+const shareUserList = $('#share-user-list');
+if (shareUserList && !shareUserList.dataset.shareBound) {
+  shareUserList.dataset.shareBound = '1';
+  shareUserList.addEventListener('change', (e) => {
+    const inp = e.target;
+    if (!inp || inp.type !== 'checkbox') return;
+    const id = Number(inp.value);
+    if (!(id > 0)) return;
+    if (inp.checked) state.shareSelectedIds.add(id);
+    else state.shareSelectedIds.delete(id);
+  });
+}
 
 $('#share-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();

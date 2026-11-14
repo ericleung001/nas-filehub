@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-11-14
+
+### Changed
+- **Share user picker** — choosing people in the Share dialog is a vertical list. If there are more than five eligible users, the list opens with your five most frequent recipients (how often you have granted them an item share, then the most recent grant). Remaining default slots are filled A–Z by username. Search by username or email to find anyone else; selected people stay visible so they can be unchecked. With five or fewer users, the full list is shown.
+
 ## [0.4.10] - 2026-11-14
 
 ### Added

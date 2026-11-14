@@ -1041,6 +1041,8 @@ tr.drop-folder-target td,
 #share-perm-wrap[hidden],
 #share-existing[hidden],
 #share-user-empty[hidden],
+#share-user-hint[hidden],
+#share-user-filter[hidden],
 #share-url[hidden],
 #btn-copy-share-url[hidden] {
   display: none !important;
@@ -1053,19 +1055,61 @@ tr.drop-folder-target td,
   min-width: 0;
 }
 .share-fieldset legend { padding: 0 .35rem; font-weight: 600; }
+.share-user-hint { margin: .35rem 0 0; font-size: .85rem; }
+#share-user-filter { width: 100%; margin: .45rem 0 0; }
 .share-user-list {
-  max-height: 12rem;
+  max-height: min(40vh, 16rem);
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: .2rem;
-  margin: .4rem 0;
-  padding: .25rem;
+  gap: 0;
+  margin: .45rem 0 .35rem;
+  padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
+  background: #0b1220;
+  min-height: 0;
 }
-.share-user-list label.check { margin: 0; }
-#share-user-filter { width: 100%; margin: .35rem 0 0; }
+.share-user-list:empty { display: none; }
+label.share-user-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: .6rem;
+  margin: 0;
+  padding: .65rem .7rem;
+  min-height: 2.75rem;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+label.share-user-row:last-child { border-bottom: none; }
+label.share-user-row:hover { background: #152033; }
+label.share-user-row:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+label.share-user-row input { flex-shrink: 0; margin: 0; accent-color: var(--accent); }
+.share-user-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .95rem;
+  color: var(--text);
+}
+.share-user-badge {
+  flex-shrink: 0;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: .1rem .45rem;
+}
 .share-existing { text-align: left; margin: .5rem 0; }
 .share-existing h4 { margin: 0 0 .35rem; font-size: 1rem; }
 .share-existing-list { list-style: none; padding: 0; margin: 0 0 .5rem; }
@@ -1100,6 +1144,11 @@ tr.drop-folder-target td,
 #transfer-dialog, #share-dialog {
   border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;
   background: var(--panel); color: var(--text); max-width: min(96vw, 420px); width: 100%;
+}
+#share-dialog {
+  max-height: min(90vh, 720px);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 #transfer-dialog {
   max-width: min(96vw, 440px);

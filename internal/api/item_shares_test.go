@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/eric/nas-filehub/internal/db"
 )
 
 func TestItemShareWithUsersAndEmail(t *testing.T) {
@@ -234,5 +236,143 @@ func TestItemShareWithUsersAndEmail(t *testing.T) {
 	blob := string(raw)
 	if !strings.Contains(blob, "item_share_grant") || !strings.Contains(blob, "item_share_revoke") {
 		t.Fatalf("audit missing item share events: %s", blob)
+	}
+}
+
+func TestShareDirectoryFrequentRecipientsAndSearch(t *testing.T) {
+	_, ts, database := testServer(t)
+
+	admin, err := database.GetUserByUsername("admin")
+	if err != nil || admin == nil {
+		t.Fatalf("admin: %v", err)
+	}
+
+	type person struct {
+		name, email string
+		id          int64
+	}
+	names := []person{
+		{name: "alice"},
+		{name: "beau"},
+		{name: "cara"},
+		{name: "dave"},
+		{name: "ed"},
+		{name: "fay"},
+		{name: "gus", email: "hidden-gus@example.com"},
+		{name: "hale"},
+	}
+	byName := map[string]*db.User{}
+	for _, p := range names {
+		u, err := database.CreateUser(p.name, p.name+"-pass-123", "homes/"+p.name, false, 0, p.email)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byName[p.name] = u
+	}
+	pending, err := database.CreateUser("pending", "pending-pass-1", "homes/pending", false, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.SetUserStatus(pending.ID, db.UserStatusPending); err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := database.CreateUser("zzzdisabled", "disabled-pass-1", "homes/disabled", false, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := true
+	if _, err := database.UpdateUser(disabled.ID, db.UserUpdate{Disabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+
+	grant := func(user string, paths ...string) {
+		u := byName[user]
+		for _, path := range paths {
+			if _, err := database.UpsertItemShare(admin.ID, u.ID, "home", path, false, path, "read"); err != nil {
+				t.Fatalf("grant %s %s: %v", user, path, err)
+			}
+		}
+	}
+	// dave has the most grants; beau and cara are tied, with beau more recent.
+	grant("cara", "c1.txt", "c2.txt", "c3.txt")
+	grant("dave", "d1.txt", "d2.txt", "d3.txt", "d4.txt", "d5.txt")
+	grant("beau", "b1.txt", "b2.txt", "b3.txt")
+	// Disabled user has even more grants but must not appear.
+	for i := 0; i < 8; i++ {
+		if _, err := database.UpsertItemShare(admin.ID, disabled.ID, "home", "x"+string(rune('a'+i))+".txt", false, "x", "read"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	adminCk := loginAs(t, ts.URL, "admin", "admin-pass-123")
+	st, data := doJSON(t, http.MethodGet, ts.URL+"/api/directory", adminCk, nil)
+	if st != 200 {
+		t.Fatalf("directory %d %v", st, data)
+	}
+	rawUsers, _ := data["users"].([]any)
+	if len(rawUsers) != 8 {
+		t.Fatalf("expected 8 eligible users, got %v", data)
+	}
+	for _, u := range rawUsers {
+		m, _ := u.(map[string]any)
+		if _, ok := m["email"]; ok {
+			t.Fatalf("directory must not include email: %v", m)
+		}
+		name, _ := m["username"].(string)
+		if name == "admin" || name == "pending" || name == "zzzdisabled" {
+			t.Fatalf("ineligible user in directory: %v", m)
+		}
+	}
+	var freq []int64
+	for _, v := range data["frequentUserIds"].([]any) {
+		freq = append(freq, int64(v.(float64)))
+	}
+	want := []int64{byName["dave"].ID, byName["beau"].ID, byName["cara"].ID, byName["alice"].ID, byName["ed"].ID}
+	if len(freq) != 5 {
+		t.Fatalf("frequentUserIds %v", freq)
+	}
+	for i := range want {
+		if freq[i] != want[i] {
+			t.Fatalf("frequentUserIds %v, want %v (dave,beau,cara,alice,ed)", freq, want)
+		}
+	}
+
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/directory?q=hidden-gus", adminCk, nil)
+	if st != 200 {
+		t.Fatalf("search %d %v", st, data)
+	}
+	rawUsers, _ = data["users"].([]any)
+	if len(rawUsers) != 1 {
+		t.Fatalf("email search should return gus only: %v", data)
+	}
+	m := rawUsers[0].(map[string]any)
+	if m["username"] != "gus" {
+		t.Fatalf("expected gus, got %v", m)
+	}
+	if _, ok := m["email"]; ok {
+		t.Fatalf("search must not include email: %v", m)
+	}
+	// frequent IDs stay based on the full eligible set, not the filtered rows.
+	freq = freq[:0]
+	for _, v := range data["frequentUserIds"].([]any) {
+		freq = append(freq, int64(v.(float64)))
+	}
+	for i := range want {
+		if freq[i] != want[i] {
+			t.Fatalf("search frequentUserIds %v, want %v", freq, want)
+		}
+	}
+
+	// Recipients do not see the owner's grant frequency as their own.
+	aliceCk := loginAs(t, ts.URL, "alice", "alice-pass-123")
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/directory", aliceCk, nil)
+	if st != 200 {
+		t.Fatalf("alice directory %d %v", st, data)
+	}
+	for _, u := range data["users"].([]any) {
+		m := u.(map[string]any)
+		if m["username"] == "alice" {
+			t.Fatalf("directory included self: %v", data)
+		}
 	}
 }

@@ -19,12 +19,27 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := s.currentUser(r)
-	list, err := s.DB.ListDirectoryUsers(u.ID)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	all, err := s.DB.ListDirectoryUsers(u.ID)
 	if err != nil {
 		writeErr(w, 500, "db error")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"users": list})
+	list := all
+	if q != "" {
+		list, err = s.DB.SearchDirectoryUsers(u.ID, q)
+		if err != nil {
+			writeErr(w, 500, "db error")
+			return
+		}
+	}
+	stats, err := s.DB.ListRecipientGrantStats(u.ID)
+	if err != nil {
+		writeErr(w, 500, "db error")
+		return
+	}
+	frequent := db.PickFrequentRecipientIDs(all, stats, db.DefaultFrequentRecipients)
+	writeJSON(w, 200, map[string]any{"users": list, "frequentUserIds": frequent})
 }
 
 func (s *Server) handleItemShares(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -41,6 +42,23 @@ CREATE TABLE IF NOT EXISTS item_shares (
 CREATE INDEX IF NOT EXISTS idx_item_shares_user ON item_shares(user_id);
 CREATE INDEX IF NOT EXISTS idx_item_shares_owner ON item_shares(owner_id);
 CREATE INDEX IF NOT EXISTS idx_item_shares_target ON item_shares(root_id, path);
+CREATE TABLE IF NOT EXISTS item_share_recipient_stats (
+  owner_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  grant_count INTEGER NOT NULL DEFAULT 0,
+  last_granted_at TEXT NOT NULL,
+  PRIMARY KEY (owner_id, user_id)
+);
+`)
+	if err != nil {
+		return err
+	}
+	// Backfill stats for grants that predate this table. Existing rows are left unchanged.
+	_, err = d.SQL.Exec(`
+INSERT OR IGNORE INTO item_share_recipient_stats(owner_id, user_id, grant_count, last_granted_at)
+SELECT owner_id, user_id, COUNT(*), MAX(created_at)
+FROM item_shares
+GROUP BY owner_id, user_id
 `)
 	return err
 }
@@ -122,6 +140,9 @@ func (d *DB) UpsertItemShare(ownerID, userID int64, rootID, path string, isDir b
 		if err := row.Scan(&id); err != nil {
 			return nil, err
 		}
+	}
+	if err := d.recordItemShareGrant(ownerID, userID, now); err != nil {
+		return nil, err
 	}
 	return d.GetItemShare(id)
 }
@@ -244,6 +265,155 @@ func (d *DB) ListDirectoryUsers(excludeID int64) ([]DirectoryUser, error) {
 		 ORDER BY username COLLATE NOCASE`,
 		excludeID,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]DirectoryUser, 0)
+	for rows.Next() {
+		var u DirectoryUser
+		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) recordItemShareGrant(ownerID, userID int64, grantedAt string) error {
+	if ownerID <= 0 || userID <= 0 {
+		return nil
+	}
+	if grantedAt == "" {
+		grantedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	_, err := d.SQL.Exec(
+		`INSERT INTO item_share_recipient_stats(owner_id, user_id, grant_count, last_granted_at)
+		 VALUES(?,?,1,?)
+		 ON CONFLICT(owner_id, user_id) DO UPDATE SET
+		   grant_count = grant_count + 1,
+		   last_granted_at = excluded.last_granted_at`,
+		ownerID, userID, grantedAt,
+	)
+	return err
+}
+
+// RecipientGrantStat is how often an owner has granted item shares to one user.
+type RecipientGrantStat struct {
+	UserID        int64
+	GrantCount    int
+	LastGrantedAt time.Time
+}
+
+func (d *DB) ListRecipientGrantStats(ownerID int64) ([]RecipientGrantStat, error) {
+	rows, err := d.SQL.Query(
+		`SELECT user_id, grant_count, last_granted_at
+		 FROM item_share_recipient_stats WHERE owner_id=?`,
+		ownerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]RecipientGrantStat, 0)
+	for rows.Next() {
+		var s RecipientGrantStat
+		var last string
+		if err := rows.Scan(&s.UserID, &s.GrantCount, &last); err != nil {
+			return nil, err
+		}
+		s.LastGrantedAt, _ = time.Parse(time.RFC3339, last)
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// DefaultFrequentRecipients is how many users the Share picker shows by default
+// when the eligible directory is longer than this.
+const DefaultFrequentRecipients = 5
+
+// PickFrequentRecipientIDs returns up to limit eligible user IDs, preferring
+// recipients this owner has granted item-shares to most often, then the most
+// recent grant, then username A–Z. Remaining slots are filled from eligible
+// in the given order (expected to already be username A–Z).
+func PickFrequentRecipientIDs(eligible []DirectoryUser, stats []RecipientGrantStat, limit int) []int64 {
+	if limit <= 0 || len(eligible) == 0 {
+		return []int64{}
+	}
+	byID := make(map[int64]DirectoryUser, len(eligible))
+	for _, u := range eligible {
+		byID[u.ID] = u
+	}
+	type row struct {
+		id    int64
+		count int
+		last  time.Time
+		name  string
+	}
+	ranked := make([]row, 0, len(stats))
+	for _, s := range stats {
+		u, ok := byID[s.UserID]
+		if !ok {
+			continue
+		}
+		ranked = append(ranked, row{id: u.ID, count: s.GrantCount, last: s.LastGrantedAt, name: u.Username})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].count != ranked[j].count {
+			return ranked[i].count > ranked[j].count
+		}
+		if !ranked[i].last.Equal(ranked[j].last) {
+			return ranked[i].last.After(ranked[j].last)
+		}
+		return strings.ToLower(ranked[i].name) < strings.ToLower(ranked[j].name)
+	})
+	out := make([]int64, 0, min(limit, len(eligible)))
+	seen := make(map[int64]bool, limit)
+	for _, r := range ranked {
+		if len(out) >= limit {
+			break
+		}
+		out = append(out, r.id)
+		seen[r.id] = true
+	}
+	for _, u := range eligible {
+		if len(out) >= limit {
+			break
+		}
+		if seen[u.ID] {
+			continue
+		}
+		out = append(out, u.ID)
+		seen[u.ID] = true
+	}
+	return out
+}
+
+func likeContainsPattern(q string) string {
+	q = strings.ReplaceAll(q, `\`, `\\`)
+	q = strings.ReplaceAll(q, `%`, `\%`)
+	q = strings.ReplaceAll(q, `_`, `\_`)
+	return "%" + q + "%"
+}
+
+// SearchDirectoryUsers returns eligible share recipients whose username or
+// email contains q (case-insensitive). The email itself is not returned.
+// An empty q returns the same set as ListDirectoryUsers.
+func (d *DB) SearchDirectoryUsers(excludeID int64, q string) ([]DirectoryUser, error) {
+	q = strings.TrimSpace(q)
+	if len(q) > 128 {
+		q = q[:128]
+	}
+	if q == "" {
+		return d.ListDirectoryUsers(excludeID)
+	}
+	pat := likeContainsPattern(q)
+	const query = "SELECT id, username FROM users" +
+		" WHERE disabled=0 AND (status='active' OR status='' OR status IS NULL) AND id!=?" +
+		" AND (username LIKE ? ESCAPE '\\' COLLATE NOCASE" +
+		" OR (email != '' AND email LIKE ? ESCAPE '\\' COLLATE NOCASE))" +
+		" ORDER BY username COLLATE NOCASE"
+	rows, err := d.SQL.Query(query, excludeID, pat, pat)
 	if err != nil {
 		return nil, err
 	}
