@@ -1,4 +1,4 @@
-# Filehub
+# Filehub v0.4.13
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
