@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/eric/nas-filehub/internal/auth"
 )
 
 func davDo(t *testing.T, method, url, user, pass, body, dest string, depth string) (int, string, http.Header) {
@@ -155,5 +157,38 @@ func TestWebDAVDisabled(t *testing.T) {
 	st, _, _ := davDo(t, "PROPFIND", ts.URL+"/dav/", "admin", "admin-pass-123", "", "", "0")
 	if st != 404 {
 		t.Fatalf("disabled webdav %d", st)
+	}
+}
+
+func TestWebDAVAuthenticatedRequestsSkipLoginLimiter(t *testing.T) {
+	s, ts, database := testServer(t)
+	s.Limiter = auth.NewLoginLimiter(3)
+	if _, err := database.CreateUser("alice", "alice-pass-123", "homes/alice", false, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 12; i++ {
+		st, body, _ := davDo(t, "PROPFIND", ts.URL+"/dav/", "alice", "alice-pass-123", "", "", "1")
+		if st != 207 && st != 200 {
+			t.Fatalf("authenticated propfind %d got %d %s", i, st, body)
+		}
+	}
+	st, _, _ := davDo(t, "PROPFIND", ts.URL+"/dav/", "alice", "wrong-pass", "", "", "0")
+	if st != 401 {
+		t.Fatalf("first bad password %d", st)
+	}
+}
+
+func TestWebDAVFailedAuthStillRateLimited(t *testing.T) {
+	s, ts, _ := testServer(t)
+	s.Limiter = auth.NewLoginLimiter(3)
+	var last int
+	for i := 0; i < 6; i++ {
+		last, _, _ = davDo(t, "PROPFIND", ts.URL+"/dav/", "admin", "wrong-pass", "", "", "0")
+		if last != 401 && last != 429 {
+			t.Fatalf("bad password %d got %d", i, last)
+		}
+	}
+	if last != 429 {
+		t.Fatalf("expected 429 after repeated failures, got %d", last)
 	}
 }

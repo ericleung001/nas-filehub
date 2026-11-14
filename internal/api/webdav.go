@@ -59,11 +59,6 @@ func (s *Server) authenticateDAV(w http.ResponseWriter, r *http.Request) *db.Use
 	if u := s.currentUser(r); u != nil && !u.Disabled && userActive(u) {
 		return u
 	}
-	ip := s.clientIP(r)
-	if s.Limiter != nil && !s.Limiter.Allow(ip) {
-		writeErr(w, http.StatusTooManyRequests, "too many requests")
-		return nil
-	}
 	username, password, ok := r.BasicAuth()
 	username = strings.TrimSpace(username)
 	if !ok || username == "" {
@@ -78,6 +73,14 @@ func (s *Server) authenticateDAV(w http.ResponseWriter, r *http.Request) *db.Use
 	}
 	u, err := s.DB.GetUserByUsername(username)
 	if err != nil || u == nil || !db.CheckPassword(u.PasswordHash, password) {
+		// Only failed logins count against the login rate limit. Finder and
+		// other WebDAV clients issue many PROPFIND/GET requests at once;
+		// treating those like login attempts returns 429 and the folder looks empty.
+		ip := s.clientIP(r)
+		if s.Limiter != nil && !s.Limiter.Allow(ip) {
+			writeErr(w, http.StatusTooManyRequests, "too many requests")
+			return nil
+		}
 		_, _, _ = s.DB.RecordLoginFailure(username, s.Cfg.EffectiveLockoutLimit(), s.Cfg.EffectiveLockoutWindow())
 		s.audit(r, 0, username, "webdav_auth_failure", "invalid credentials")
 		w.Header().Set("WWW-Authenticate", `Basic realm="Filehub WebDAV"`)

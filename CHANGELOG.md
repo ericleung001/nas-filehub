@@ -23,6 +23,7 @@ where version tags are used.
 - **Session duration** — the admin settings page that controls login lifetime and Stay signed in is named **Session duration**, so it is not confused with **Active sessions** (the per-user device list).
 
 ### Fixed
+- **WebDAV listing in Finder** — authenticated WebDAV traffic no longer shares the login rate limit (10 requests per IP per minute). macOS Finder sends many PROPFIND/GET requests when opening a folder; those used to return 429 and the folder appeared empty. Failed passwords are still rate-limited.
 - **Bulk selection bar** — the multi-select action bar is hidden unless at least one item is selected, so it no longer appears as “0 selected”.
 
 ## [0.4.8] - 2026-11-12
