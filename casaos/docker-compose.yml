@@ -18,7 +18,7 @@ services:
       THUMB_ENABLE: "true"
       THUMB_VAAPI: "false"
       LOGIN_RATE_LIMIT: "10"
-      MAX_UPLOAD_MB: "4096"
+      MAX_UPLOAD_MB: "102400"
       CREDENTIALS_FILE: /data/admin-credentials.txt
       DOTENV_FILE: /data/.env
     volumes:

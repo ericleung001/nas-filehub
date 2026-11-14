@@ -55,5 +55,5 @@
   <Config Name="LOGIN_RATE_LIMIT" Target="LOGIN_RATE_LIMIT" Default="10" Description="Max login and share-link unlock attempts per client IP per minute." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
   <Config Name="LOGIN_LOCKOUT_LIMIT" Target="LOGIN_LOCKOUT_LIMIT" Default="10" Description="Failed logins per username before a temporary account lock." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
   <Config Name="LOGIN_LOCKOUT_MINUTES" Target="LOGIN_LOCKOUT_MINUTES" Default="15" Description="Account lock duration in minutes. Further attempts during the lock do not extend the window." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
-  <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="2048" Description="Maximum upload size in MiB (application default is 2048)." Type="Variable" Display="advanced" Required="false" Mask="false">2048</Config>
+  <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="102400" Description="Maximum upload size in MiB (application default is 102400, or 100 GiB). Set 0 to disable the application cap; user and storage quotas still apply." Type="Variable" Display="advanced" Required="false" Mask="false">102400</Config>
 </Container>

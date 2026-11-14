@@ -33,7 +33,7 @@ services:
       # PUBLIC_BASE_URL: https://filehub.example.com
       # LOGIN_LOCKOUT_LIMIT: "10"
       # LOGIN_LOCKOUT_MINUTES: "15"
-      MAX_UPLOAD_MB: "4096"
+      MAX_UPLOAD_MB: "102400"
       CREDENTIALS_FILE: /data/admin-credentials.txt
       DOTENV_FILE: /data/.env
     volumes:

@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+// DefaultMaxUploadMB is the application default for MAX_UPLOAD_MB (100 GiB).
+// A NAS file manager needs headroom well above a few gigabytes. Set
+// MAX_UPLOAD_MB=0 to disable the application cap (user and storage quotas
+// still apply).
+const DefaultMaxUploadMB = 102400
+
 type Config struct {
 	ListenAddr      string
 	DataRoot        string
@@ -82,7 +88,7 @@ func Load() Config {
 		ThumbVAAPI:      getenvBool("THUMB_VAAPI", false),
 		ThumbHWAccel:    strings.ToLower(strings.TrimSpace(getenv("THUMB_HWACCEL", ""))),
 		ThumbCacheDir:   getenv("THUMB_CACHE_DIR", "/data/thumbs"),
-		MaxUploadMB:     int64(getenvInt("MAX_UPLOAD_MB", 2048)),
+		MaxUploadMB:     int64(getenvInt("MAX_UPLOAD_MB", DefaultMaxUploadMB)),
 		RateLimitPerMin: getenvInt("LOGIN_RATE_LIMIT", 10),
 		Force2FAAll:     getenvBool("FORCE_2FA_ALL", false),
 		PublicBaseURL:   strings.TrimRight(getenv("PUBLIC_BASE_URL", ""), "/"),

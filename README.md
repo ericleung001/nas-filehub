@@ -88,15 +88,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.12`, not `v0.4.12`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.13`, not `v0.4.13`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.12
+docker pull ericleung001/nas-filehub:0.4.13
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.12
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.13
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.12`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.12` or `image: ghcr.io/ericleung001/nas-filehub:0.4.12` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.13`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.13` or `image: ghcr.io/ericleung001/nas-filehub:0.4.13` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -132,7 +132,7 @@ Or set `ADMIN_PASSWORD` yourself and run `make run` / `make smoke`.
 | `TRUSTED_PROXIES` | _(loopback only)_ | Extra comma-separated IPs or CIDRs allowed to set `X-Forwarded-For` / `X-Real-IP`. `127.0.0.1` and `::1` are always trusted |
 | `LOGIN_LOCKOUT_LIMIT` | `10` | Failed logins per username before that account is temporarily locked |
 | `LOGIN_LOCKOUT_MINUTES` | `15` | Account lock window; further attempts during the lock do not extend it |
-| `MAX_UPLOAD_MB` | `2048` | Max upload size in MiB |
+| `MAX_UPLOAD_MB` | `102400` (100 GiB) | Max upload size in MiB. `0` disables the application cap (user and storage quotas still apply) |
 | `FORCE_2FA_ALL` | `false` | If true, every user must enroll TOTP (overrides UI off) |
 | `PUBLIC_BASE_URL` | — | Absolute site URL for password-reset emails (e.g. `https://filehub.example.com`). **Required** for public HTTPS deployments so reset links cannot follow a spoofed host |
 | `SMTP_ENABLED` | `false` | Env override: enable SMTP |

@@ -266,7 +266,7 @@ func (s *Server) handleUploadSessionInit(w http.ResponseWriter, r *http.Request)
 	}
 	max := s.maxUploadBytes()
 	if body.Size > max {
-		writeErr(w, 400, "upload too large")
+		writeErr(w, 400, s.uploadTooLargeMessage())
 		return
 	}
 	sc, err := s.resolveScope(u, body.Root, body.Path)

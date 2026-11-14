@@ -3,20 +3,53 @@ package api
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 
 	"github.com/eric/nas-filehub/internal/auth"
+	"github.com/eric/nas-filehub/internal/config"
 	"github.com/eric/nas-filehub/internal/db"
 	"github.com/eric/nas-filehub/internal/files"
 )
 
 func (s *Server) maxUploadBytes() int64 {
 	mb := s.Cfg.MaxUploadMB
-	if mb <= 0 {
-		mb = 2048
+	if mb < 0 {
+		mb = config.DefaultMaxUploadMB
+	}
+	if mb == 0 {
+		return math.MaxInt64
+	}
+	if mb > math.MaxInt64>>20 {
+		return math.MaxInt64
 	}
 	return mb << 20
+}
+
+func formatUploadLimit(mb int64) string {
+	if mb <= 0 {
+		return ""
+	}
+	if mb%1024 == 0 {
+		gb := mb / 1024
+		if gb == 1 {
+			return "1 GiB"
+		}
+		return fmt.Sprintf("%d GiB", gb)
+	}
+	return fmt.Sprintf("%d MiB", mb)
+}
+
+func (s *Server) uploadTooLargeMessage() string {
+	mb := s.Cfg.MaxUploadMB
+	if mb < 0 {
+		mb = config.DefaultMaxUploadMB
+	}
+	if mb <= 0 {
+		return "upload too large"
+	}
+	return fmt.Sprintf("upload too large (max %s)", formatUploadLimit(mb))
 }
 
 func (s *Server) stagingRoot() string {

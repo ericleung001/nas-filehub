@@ -3544,8 +3544,12 @@ async function loadExistingShares(target) {
     for (const link of links) {
       any = true;
       const li = document.createElement('li');
+      li.className = 'share-existing-link';
       const url = location.origin + '/s/' + link.token;
-      li.innerHTML = '<span class="meta">Public link: <code>' + escapeHtml(url) + '</code></span>';
+      li.innerHTML =
+        '<span class="meta share-link-label">Public link</span>' +
+        '<code class="share-link-url" title="' + escapeHtml(url) + '">' + escapeHtml(url) + '</code>' +
+        '<span class="share-link-actions"></span>';
       const copy = document.createElement('button');
       copy.type = 'button';
       copy.className = 'ghost';
@@ -3563,8 +3567,9 @@ async function loadExistingShares(target) {
         await api('/api/links/' + link.id, { method: 'DELETE' });
         await loadExistingShares(target);
       });
-      li.appendChild(copy);
-      li.appendChild(del);
+      const actions = li.querySelector('.share-link-actions');
+      actions.appendChild(copy);
+      actions.appendChild(del);
       linksEl.appendChild(li);
     }
   } catch (err) {

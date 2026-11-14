@@ -1030,7 +1030,15 @@ tr.drop-folder-target td,
   position: absolute; top: .35rem; left: .35rem; z-index: 2;
   background: rgba(0,0,0,.45); border-radius: 6px; padding: .15rem .2rem;
 }
-#share-url { width: 100%; margin: .5rem 0; }
+#share-url {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: .5rem 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#share-result, #share-existing, #share-form { min-width: 0; }
 #share-result { text-align: left; margin-top: .35rem; }
 #share-result h4 { margin: 0 0 .35rem; font-size: 1.05rem; }
 #share-dialog #share-target { margin: 0 0 .75rem; }
@@ -1110,14 +1118,51 @@ label.share-user-row input { flex-shrink: 0; margin: 0; accent-color: var(--acce
   border-radius: 999px;
   padding: .1rem .45rem;
 }
-.share-existing { text-align: left; margin: .5rem 0; }
+.share-existing { text-align: left; margin: .5rem 0; min-width: 0; }
 .share-existing h4 { margin: 0 0 .35rem; font-size: 1rem; }
-.share-existing-list { list-style: none; padding: 0; margin: 0 0 .5rem; }
+.share-existing-list { list-style: none; padding: 0; margin: 0 0 .5rem; min-width: 0; }
 .share-existing-list li {
-  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
-  padding: .3rem 0; border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem .5rem;
+  padding: .4rem 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
-.share-existing-list .meta { flex: 1; min-width: 0; }
+.share-existing-list .meta { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-existing-list li.share-existing-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label actions"
+    "url url";
+  align-items: center;
+  column-gap: .5rem;
+  row-gap: .25rem;
+}
+.share-existing-list .share-link-label {
+  grid-area: label;
+  min-width: 0;
+}
+.share-existing-list .share-link-url {
+  grid-area: url;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.share-existing-list .share-link-actions {
+  grid-area: actions;
+  display: flex;
+  gap: .35rem;
+  flex-shrink: 0;
+  justify-self: end;
+}
 
 .share-result-actions {
   display: flex;

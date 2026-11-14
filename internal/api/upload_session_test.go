@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/eric/nas-filehub/internal/config"
 	"github.com/eric/nas-filehub/internal/files"
 )
 
@@ -212,5 +214,79 @@ func TestUploadManagerTTL(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 	if n := m.Cleanup(); n < 1 {
 		t.Fatalf("cleanup %d", n)
+	}
+}
+
+func TestMaxUploadBytesLimit(t *testing.T) {
+	s := &Server{Cfg: config.Config{MaxUploadMB: 2048}}
+	if got, want := s.maxUploadBytes(), int64(2048)<<20; got != want {
+		t.Fatalf("2048 MiB: got %d want %d", got, want)
+	}
+	s.Cfg.MaxUploadMB = 0
+	if s.maxUploadBytes() != math.MaxInt64 {
+		t.Fatalf("0 should be unlimited, got %d", s.maxUploadBytes())
+	}
+	s.Cfg.MaxUploadMB = -1
+	if s.maxUploadBytes() != int64(config.DefaultMaxUploadMB)<<20 {
+		t.Fatalf("negative should use default, got %d", s.maxUploadBytes())
+	}
+	s.Cfg.MaxUploadMB = config.DefaultMaxUploadMB
+	const threeGiB = int64(3) << 30
+	if s.maxUploadBytes() < threeGiB {
+		t.Fatalf("default limit %d is below 3 GiB", s.maxUploadBytes())
+	}
+	if formatUploadLimit(102400) != "100 GiB" {
+		t.Fatalf("format %q", formatUploadLimit(102400))
+	}
+	if formatUploadLimit(2048) != "2 GiB" {
+		t.Fatalf("format 2048 %q", formatUploadLimit(2048))
+	}
+	s.Cfg.MaxUploadMB = 2048
+	if msg := s.uploadTooLargeMessage(); msg != "upload too large (max 2 GiB)" {
+		t.Fatalf("message %q", msg)
+	}
+}
+
+func TestChunkedUploadSizeLimit(t *testing.T) {
+	s, ts, _ := testServer(t)
+	c := loginAs(t, ts.URL, "admin", "admin-pass-123")
+	const threeGiB = int64(3) << 30
+	s.Cfg.MaxUploadMB = 2048
+	st, data, _ := jsonReq(t, http.MethodPost, ts.URL+"/api/upload/sessions", c, map[string]any{
+		"root": "home", "path": "", "name": "movie.bin", "size": threeGiB,
+	}, nil, nil)
+	if st != 400 || !strings.Contains(str(data["error"]), "upload too large") {
+		t.Fatalf("2 GiB cap should reject 3 GiB: %d %v", st, data)
+	}
+
+	s.Cfg.MaxUploadMB = config.DefaultMaxUploadMB
+	st, data, _ = jsonReq(t, http.MethodPost, ts.URL+"/api/upload/sessions", c, map[string]any{
+		"root": "home", "path": "", "name": "movie.bin", "size": threeGiB,
+	}, nil, nil)
+	if st != 200 {
+		t.Fatalf("default cap should accept 3 GiB declared size: %d %v", st, data)
+	}
+	id, _ := data["id"].(string)
+	if id == "" {
+		t.Fatalf("missing id %v", data)
+	}
+	st, _, _ = jsonReq(t, http.MethodDelete, ts.URL+"/api/upload/sessions/"+id, c, nil, nil, nil)
+	if st != 200 && st != 204 {
+		// abort should succeed; ignore exact code if handler returns 200
+		if st >= 300 {
+			t.Fatalf("abort %d", st)
+		}
+	}
+
+	s.Cfg.MaxUploadMB = 0
+	st, data, _ = jsonReq(t, http.MethodPost, ts.URL+"/api/upload/sessions", c, map[string]any{
+		"root": "home", "path": "", "name": "huge.bin", "size": threeGiB,
+	}, nil, nil)
+	if st != 200 {
+		t.Fatalf("MAX_UPLOAD_MB=0 should accept 3 GiB: %d %v", st, data)
+	}
+	id, _ = data["id"].(string)
+	if id != "" {
+		_, _, _ = jsonReq(t, http.MethodDelete, ts.URL+"/api/upload/sessions/"+id, c, nil, nil, nil)
 	}
 }

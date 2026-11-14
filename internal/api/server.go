@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -840,9 +841,17 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := s.currentUser(r)
-	max := s.Cfg.MaxUploadMB << 20
-	r.Body = http.MaxBytesReader(w, r.Body, max+1<<20)
+	max := s.maxUploadBytes()
+	const multipartSlop = 1 << 20
+	if max <= math.MaxInt64-multipartSlop {
+		r.Body = http.MaxBytesReader(w, r.Body, max+multipartSlop)
+	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeErr(w, 400, s.uploadTooLargeMessage())
+			return
+		}
 		writeErr(w, 400, "upload too large or bad multipart")
 		return
 	}

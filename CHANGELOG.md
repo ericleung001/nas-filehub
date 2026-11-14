@@ -8,7 +8,14 @@ where version tags are used.
 
 ## [Unreleased]
 
-## [0.4.12] - 2026-11-14
+## [0.4.13] - 2026-11-14
+
+### Changed
+- **Upload size limit** — the default `MAX_UPLOAD_MB` is now 102400 (100 GiB), so files larger than the previous 2 GiB cap (including 3 GiB uploads) are accepted. Set `MAX_UPLOAD_MB=0` to disable the application cap and rely on user or storage quota. The web UI still uses chunked, resumable uploads for files of 1 MiB or more, so each request stays small. Rejection messages now include the configured maximum, for example “upload too large (max 100 GiB)”.
+
+### Fixed
+- **Share public-link overflow** — in the Share dialog, Current access no longer lets a long public URL collide with the Copy and Delete buttons on a narrow or mobile layout. The URL is shown on its own line and truncated with an ellipsis; Copy still copies the full URL. The full address remains available from the tooltip. Settings → Link shares already truncated the URL in that table.
+
 
 ### Changed
 - **Share user search** — the Share dialog always shows the keyword field, including when there are five or fewer eligible users. Typing still filters the list by username or email; selected people stay visible. With more than five users, the default list is still your five most frequent recipients.
