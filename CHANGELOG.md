@@ -359,7 +359,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.13...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.14...HEAD
+[0.4.14]: https://github.com/ericleung001/nas-filehub/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/ericleung001/nas-filehub/compare/v0.4.12...v0.4.13
 [0.4.12]: https://github.com/ericleung001/nas-filehub/compare/v0.4.11...v0.4.12
 [0.4.11]: https://github.com/ericleung001/nas-filehub/compare/v0.4.10...v0.4.11
