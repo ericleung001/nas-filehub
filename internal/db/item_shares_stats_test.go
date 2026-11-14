@@ -183,3 +183,66 @@ func TestRecipientGrantStatsBackfillOnOpen(t *testing.T) {
 		t.Fatalf("backfill stats: %+v", stats)
 	}
 }
+
+func TestUpsertItemShareRegrantSameItem(t *testing.T) {
+	dir := t.TempDir()
+	d, err := Open(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = d.SQL.Close() })
+
+	owner, err := d.CreateUser("owner", "owner-pass-123", "homes/owner", true, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, err := d.CreateUser("alice", "alice-pass-123", "homes/alice", false, 0, "alice@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := d.UpsertItemShare(owner.ID, alice.ID, "home", "project", true, "project", "read")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == nil || first.ID == 0 || first.Perm != "read" {
+		t.Fatalf("first grant: %+v", first)
+	}
+
+	// Leave last_insert_rowid pointing at a different table, then delete
+	// those rows so a stale item_shares lookup would miss. This is the
+	// failure mode that produced a 502 on re-grant.
+	if _, err := d.SQL.Exec(`CREATE TABLE IF NOT EXISTS test_rowids (id INTEGER PRIMARY KEY AUTOINCREMENT)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		if _, err := d.SQL.Exec(`INSERT INTO test_rowids DEFAULT VALUES`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.SQL.Exec(`DELETE FROM test_rowids`); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := d.UpsertItemShare(owner.ID, alice.ID, "home", "project", true, "Project folder", "write")
+	if err != nil {
+		t.Fatalf("re-grant: %v", err)
+	}
+	if again == nil {
+		t.Fatal("re-grant returned nil share")
+	}
+	if again.ID != first.ID {
+		t.Fatalf("re-grant id=%d, want existing %d", again.ID, first.ID)
+	}
+	if again.Perm != "write" || again.Label != "Project folder" {
+		t.Fatalf("re-grant should update perm and label, got %+v", again)
+	}
+
+	list, err := d.ListItemSharesForPath(owner.ID, "home", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != first.ID || list[0].UserID != alice.ID || list[0].Perm != "write" {
+		t.Fatalf("expected a single updated grant, got %+v", list)
+	}
+}

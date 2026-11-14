@@ -8,6 +8,14 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-11-14
+
+### Changed
+- **Share user search** — the Share dialog always shows the keyword field, including when there are five or fewer eligible users. Typing still filters the list by username or email; selected people stay visible. With more than five users, the default list is still your five most frequent recipients.
+
+### Fixed
+- **Re-sharing with an existing recipient** — opening Share on a file or folder that was already granted to a user, then selecting that same user again, no longer fails with a Bad Gateway. The existing grant is updated (or left as-is if nothing changed) and the request succeeds.
+
 ## [0.4.11] - 2026-11-14
 
 ### Changed

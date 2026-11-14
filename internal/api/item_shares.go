@@ -135,6 +135,10 @@ func (s *Server) handleItemShares(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 400, err.Error())
 				return
 			}
+			if sh == nil {
+				writeErr(w, 500, "db error")
+				return
+			}
 			out = append(out, *sh)
 			s.audit(r, u.ID, u.Username, "item_share_grant", "id="+itoaLocal(sh.ID)+" user="+itoaLocal(uid)+" path="+body.Path+" perm="+perm)
 			s.notifyItemShared(r, u, target, label, st.IsDir())

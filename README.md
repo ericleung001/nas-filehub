@@ -25,7 +25,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` access and an independent **Allow delete** flag (admin picks a user from a dropdown; existing grants can be changed or revoked)
-- **Share with users or a public link** — from a file or folder in the file manager, grant access to one or more Filehub users, create a secret public URL (`/s/<token>`, optional expiry and password), or both. When there are more than five users, the Share dialog lists your five most frequent recipients first; search by username or email to find anyone else. Recipients with an account see the item under **Shared with me** (read by default; folders can be granted write). Public-link recipients browse/download without an account and can **preview images / PDFs / play videos** inline. Revoke a user grant from the Share dialog; revoke public links anytime from Settings → Link shares, or select several and **Delete selected**. Users with an email are notified when SMTP is configured
+- **Share with users or a public link** — from a file or folder in the file manager, grant access to one or more Filehub users, create a secret public URL (`/s/<token>`, optional expiry and password), or both. The Share dialog always has a keyword field (username or email). When there are more than five users, the list opens with your five most frequent recipients; type to find anyone else. Recipients with an account see the item under **Shared with me** (read by default; folders can be granted write). Public-link recipients browse/download without an account and can **preview images / PDFs / play videos** inline. Revoke a user grant from the Share dialog; revoke public links anytime from Settings → Link shares, or select several and **Delete selected**. Users with an email are notified when SMTP is configured
 - **File ops** — browse, **search file and folder names** across My Files and shares you can read, upload files or folders (file picker, **Upload folder**, or drag-and-drop of files and directories, including empty folders; relative structure is preserved; per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start; large uploads can resume after a dropped connection; if a file with the same name already exists, choose **Skip**, **Overwrite**, or **Rename** — Rename appends `_1`, `_2`, … before the extension, a batch can use **Apply to all**, and Overwrite moves the existing file to the Recycle bin before saving the new one), drag-and-drop into current folder or onto a folder, download, **download a folder as a zip**, mkdir, rename, delete (moves items to a **Recycle bin** instead of immediate permanent delete); **multi-select** with bulk Delete / Move / Copy (Move and Copy use a folder picker; writable shared folders are valid destinations); restore or permanently purge from the Recycle bin; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; hardware acceleration is selected from detected Intel VAAPI, AMD VAAPI, or NVIDIA NVDEC/CUDA devices, with software fallback)
@@ -88,15 +88,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.11`, not `v0.4.11`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.12`, not `v0.4.12`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.11
+docker pull ericleung001/nas-filehub:0.4.12
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.11
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.12
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.11`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.11` or `image: ghcr.io/ericleung001/nas-filehub:0.4.11` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.12`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.12` or `image: ghcr.io/ericleung001/nas-filehub:0.4.12` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -294,7 +294,7 @@ Files:
 
 
 - `GET /api/directory` — other active users (id and username only) for the share picker, plus `frequentUserIds` (up to five, by how often the current user has granted them an item share). Optional `q` matches username or email; email is never returned
-- `GET|POST /api/item-shares` · `DELETE /api/item-shares/{id}` — user-to-user file or folder grants (recipients appear under the Shared with me root)
+- `GET|POST /api/item-shares` · `DELETE /api/item-shares/{id}` — user-to-user file or folder grants (recipients appear under the Shared with me root). Posting a user who already has access updates that grant instead of failing.
 - `GET /api/roots` (includes `trashCount` for the current user’s visible recycle-bin items, plus Shared with me) · `GET /api/list`
 - `POST /api/mkdir` · `POST /api/rename` · `POST /api/delete` · `POST /api/upload` (multipart `file`, `root`, `path`; optional `conflict=skip|overwrite|rename` when the destination name is taken; a collision without `conflict` returns 409; **overwrite** moves the existing file to the Recycle bin first)
 - `POST /api/upload/sessions` · `GET|PUT|DELETE /api/upload/sessions/{id}` · `POST /api/upload/sessions/{id}/complete` — chunked, resumable uploads (conflict policy is chosen at init; incomplete sessions expire after 24 hours)

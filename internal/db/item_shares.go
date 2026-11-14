@@ -120,31 +120,34 @@ func (d *DB) UpsertItemShare(ownerID, userID int64, rootID, path string, isDir b
 		dir = 1
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := d.SQL.Exec(
+	// Always read the id from RETURNING. After ON CONFLICT DO UPDATE,
+	// database/sql LastInsertId is the last INSERT on this connection,
+	// which may be a different table's rowid (or a deleted item_shares
+	// id). Using that stale id made GetItemShare return nil and the API
+	// panic with a 502 when re-granting an existing recipient.
+	var id int64
+	err := d.SQL.QueryRow(
 		`INSERT INTO item_shares(owner_id, user_id, root_id, path, is_dir, label, perm, created_at)
 		 VALUES(?,?,?,?,?,?,?,?)
 		 ON CONFLICT(owner_id, root_id, path, user_id) DO UPDATE SET
-		   is_dir=excluded.is_dir, label=excluded.label, perm=excluded.perm`,
+		   is_dir=excluded.is_dir, label=excluded.label, perm=excluded.perm
+		 RETURNING id`,
 		ownerID, userID, rootID, path, dir, label, perm, now,
-	)
+	).Scan(&id)
 	if err != nil {
 		return nil, err
-	}
-	id, _ := res.LastInsertId()
-	if id == 0 {
-		// conflict update may not report last insert id
-		row := d.SQL.QueryRow(
-			`SELECT id FROM item_shares WHERE owner_id=? AND root_id=? AND path=? AND user_id=?`,
-			ownerID, rootID, path, userID,
-		)
-		if err := row.Scan(&id); err != nil {
-			return nil, err
-		}
 	}
 	if err := d.recordItemShareGrant(ownerID, userID, now); err != nil {
 		return nil, err
 	}
-	return d.GetItemShare(id)
+	sh, err := d.GetItemShare(id)
+	if err != nil {
+		return nil, err
+	}
+	if sh == nil {
+		return nil, fmt.Errorf("item share not found after upsert")
+	}
+	return sh, nil
 }
 
 func (d *DB) GetItemShare(id int64) (*ItemShare, error) {

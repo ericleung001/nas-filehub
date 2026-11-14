@@ -3390,12 +3390,9 @@ function shareUserMatchesQuery(user, q) {
 function configureShareUserSearch(userCount) {
   const filter = $('#share-user-filter');
   const hint = $('#share-user-hint');
-  const longList = userCount > 5;
-  if (filter) {
-    filter.hidden = !longList;
-    if (!longList) filter.value = '';
-  }
-  if (hint) hint.hidden = !longList;
+  // Keyword field is always available, including when the list is short.
+  if (filter) filter.hidden = false;
+  if (hint) hint.hidden = !(userCount > 5);
 }
 
 function visibleShareUsers() {
@@ -3411,15 +3408,15 @@ function visibleShareUsers() {
     seen.add(id);
     out.push(byId.get(id) || u);
   };
-  if (all.length <= 5) {
-    all.forEach(add);
-    return out;
-  }
   if (q) {
     // Keep selected users visible even when they do not match the keyword.
     [...state.shareSelectedIds].forEach((id) => add(byId.get(id)));
     all.forEach((u) => { if (shareUserMatchesQuery(u, q)) add(u); });
     (state.shareQueryMatches || []).forEach((u) => add(byId.get(Number(u.id)) || u));
+    return out;
+  }
+  if (all.length <= 5) {
+    all.forEach(add);
     return out;
   }
   (state.shareFrequentIds || []).forEach((id) => add(byId.get(Number(id))));

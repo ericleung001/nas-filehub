@@ -376,3 +376,102 @@ func TestShareDirectoryFrequentRecipientsAndSearch(t *testing.T) {
 		}
 	}
 }
+
+func TestItemShareRegrantSameUser(t *testing.T) {
+	s, ts, database := testServer(t)
+
+	home := filepath.Join(s.Cfg.DataRoot, "homes/admin")
+	if err := os.MkdirAll(filepath.Join(home, "project"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "notes.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	alice, err := database.CreateUser("alice", "alice-pass-123", "homes/alice", false, 0, "alice@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	admin := loginAs(t, ts.URL, "admin", "admin-pass-123")
+	body := map[string]any{
+		"root":    "home",
+		"path":    "notes.txt",
+		"userIds": []int64{alice.ID},
+	}
+	st, data := doJSON(t, http.MethodPost, ts.URL+"/api/item-shares", admin, body)
+	if st != 200 {
+		t.Fatalf("first share %d %v", st, data)
+	}
+	shares, _ := data["shares"].([]any)
+	if len(shares) != 1 {
+		t.Fatalf("first share payload: %v", data)
+	}
+	firstID := int64(shares[0].(map[string]any)["id"].(float64))
+
+	// Extra inserts so a pooled connection's last_insert_rowid is unlikely
+	// to still be the item_shares row, matching the live re-grant path.
+	if _, err := database.SQL.Exec(`CREATE TABLE IF NOT EXISTS test_rowids (id INTEGER PRIMARY KEY AUTOINCREMENT)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		if _, err := database.SQL.Exec(`INSERT INTO test_rowids DEFAULT VALUES`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.SQL.Exec(`DELETE FROM test_rowids`); err != nil {
+		t.Fatal(err)
+	}
+
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/item-shares", admin, body)
+	if st != 200 {
+		t.Fatalf("re-grant same user must succeed, got %d %v", st, data)
+	}
+	shares, _ = data["shares"].([]any)
+	if len(shares) != 1 {
+		t.Fatalf("re-grant payload: %v", data)
+	}
+	againID := int64(shares[0].(map[string]any)["id"].(float64))
+	if againID != firstID {
+		t.Fatalf("re-grant id=%d, want existing %d", againID, firstID)
+	}
+
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/item-shares?root=home&path=notes.txt", admin, nil)
+	if st != 200 {
+		t.Fatalf("list grants %d %v", st, data)
+	}
+	listed, _ := data["shares"].([]any)
+	if len(listed) != 1 || int64(listed[0].(map[string]any)["id"].(float64)) != firstID {
+		t.Fatalf("expected one grant after re-share, got %v", data)
+	}
+
+	// Re-granting a folder with a new permission updates the existing row.
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/item-shares", admin, map[string]any{
+		"root": "home", "path": "project", "userIds": []int64{alice.ID}, "perm": "read",
+	})
+	if st != 200 {
+		t.Fatalf("folder share %d %v", st, data)
+	}
+	folderID := int64(data["shares"].([]any)[0].(map[string]any)["id"].(float64))
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/item-shares", admin, map[string]any{
+		"root": "home", "path": "project", "userIds": []int64{alice.ID}, "perm": "write",
+	})
+	if st != 200 {
+		t.Fatalf("folder re-grant %d %v", st, data)
+	}
+	if int64(data["shares"].([]any)[0].(map[string]any)["id"].(float64)) != folderID {
+		t.Fatalf("folder re-grant should keep id %d: %v", folderID, data)
+	}
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/item-shares?root=home&path=project", admin, nil)
+	if st != 200 {
+		t.Fatalf("list folder grants %d %v", st, data)
+	}
+	listed, _ = data["shares"].([]any)
+	if len(listed) != 1 {
+		t.Fatalf("expected one folder grant, got %v", data)
+	}
+	m := listed[0].(map[string]any)
+	if int64(m["id"].(float64)) != folderID || m["perm"] != "write" {
+		t.Fatalf("folder grant should be write on the same row: %v", data)
+	}
+}
