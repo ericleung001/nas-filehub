@@ -15,7 +15,7 @@ type SearchHit struct {
 }
 
 // SearchNames walks root/rel and returns filename matches (case-insensitive).
-// Directories named TrashDirName are skipped. max limits the result count.
+// Internal directories (recycle bin, upload staging) are skipped. max limits the result count.
 func SearchNames(root, rel, query string, max int) ([]SearchHit, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -34,7 +34,7 @@ func SearchNames(root, rel, query string, max int) ([]SearchHit, error) {
 		if err != nil {
 			return nil
 		}
-		if info.IsDir() && info.Name() == TrashDirName {
+		if info.IsDir() && IsInternalDirName(info.Name()) {
 			return filepath.SkipDir
 		}
 		if path == full {

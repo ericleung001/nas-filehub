@@ -150,6 +150,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	msg := "Account created. You can sign in now."
 	if pending {
 		msg = "Your account is waiting for admin approval. You cannot sign in until an administrator approves it."
+		s.notifyPendingRegistration(u.Username, u.Email)
 	}
 	writeJSON(w, 201, map[string]any{
 		"ok":       true,

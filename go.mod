@@ -6,6 +6,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.58.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.61.1
 )

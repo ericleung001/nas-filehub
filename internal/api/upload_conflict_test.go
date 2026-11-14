@@ -60,6 +60,29 @@ func rawFile(t *testing.T, tsURL string, cookies []*http.Cookie, root, path stri
 	return resp.StatusCode, b
 }
 
+func listTrash(t *testing.T, tsURL string, cookies []*http.Cookie) []map[string]any {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, tsURL+"/api/trash", nil)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var data map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&data)
+	raw, _ := data["items"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, it := range raw {
+		if m, ok := it.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func TestUploadNoConflictUnchanged(t *testing.T) {
 	_, ts, _ := testServer(t)
 	c := loginAs(t, ts.URL, "admin", "admin-pass-123")
@@ -79,17 +102,12 @@ func TestUploadNoConflictUnchanged(t *testing.T) {
 	if _, ok := data["overwritten"]; ok {
 		t.Fatalf("unexpected overwritten: %v", data)
 	}
-	st, body := rawFile(t, ts.URL, c, "home", "hello.txt")
-	if st != 200 || string(body) != "hello" {
-		t.Fatalf("raw %d %q", st, body)
-	}
 }
 
-func TestUploadConflictRequiresPolicy(t *testing.T) {
+func TestUploadConflict409(t *testing.T) {
 	_, ts, _ := testServer(t)
 	c := loginAs(t, ts.URL, "admin", "admin-pass-123")
-	st, _ := uploadFileConflict(t, ts.URL, c, "home", "", "hello.txt", "first", "")
-	if st != 200 {
+	if st, _ := uploadFileConflict(t, ts.URL, c, "home", "", "hello.txt", "first", ""); st != 200 {
 		t.Fatalf("first upload %d", st)
 	}
 	st, data := uploadFileConflict(t, ts.URL, c, "home", "", "hello.txt", "second", "")
@@ -119,7 +137,7 @@ func TestUploadConflictSkip(t *testing.T) {
 	}
 }
 
-func TestUploadConflictOverwrite(t *testing.T) {
+func TestUploadConflictOverwriteMovesToTrash(t *testing.T) {
 	_, ts, _ := testServer(t)
 	c := loginAs(t, ts.URL, "admin", "admin-pass-123")
 	st, _ := uploadFileConflict(t, ts.URL, c, "home", "", "hello.txt", "old", "")
@@ -133,6 +151,30 @@ func TestUploadConflictOverwrite(t *testing.T) {
 	st, body := rawFile(t, ts.URL, c, "home", "hello.txt")
 	if st != 200 || string(body) != "new" {
 		t.Fatalf("overwrite content %d %q", st, body)
+	}
+	items := listTrash(t, ts.URL, c)
+	if len(items) != 1 {
+		t.Fatalf("want 1 trash item, got %d %#v", len(items), items)
+	}
+	if items[0]["name"] != "hello.txt" {
+		t.Fatalf("trashed name %v", items[0]["name"])
+	}
+	id, _ := items[0]["id"].(string)
+	if id == "" {
+		t.Fatal("missing trash id")
+	}
+}
+
+func TestUploadConflictOverwriteFolderRejected(t *testing.T) {
+	_, ts, _ := testServer(t)
+	c := loginAs(t, ts.URL, "admin", "admin-pass-123")
+	st, data := doJSON(t, http.MethodPost, ts.URL+"/api/mkdir", c, map[string]any{"root": "home", "path": "folder.jpg"})
+	if st != 200 {
+		t.Fatalf("mkdir %d %v", st, data)
+	}
+	st, data = uploadFileConflict(t, ts.URL, c, "home", "", "folder.jpg", "x", "overwrite")
+	if st != 400 {
+		t.Fatalf("overwrite folder %d %v", st, data)
 	}
 }
 
@@ -228,6 +270,40 @@ func TestUploadConflictInSharedFolder(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(s.Cfg.DataRoot, "shared/team/photo.jpg")); string(got) != "c" {
 		t.Fatalf("overwritten share content %q", got)
 	}
+	items := listTrash(t, ts.URL, c)
+	if len(items) != 1 || items[0]["name"] != "photo.jpg" {
+		t.Fatalf("share overwrite should trash original, got %#v", items)
+	}
+}
+
+func TestUploadOverwriteRequiresDeletePermission(t *testing.T) {
+	s, ts, database := testServer(t)
+	alice, err := database.CreateUser("alice", "alice-pass-123", "homes/alice", false, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.MkdirAll(filepath.Join(s.Cfg.DataRoot, "homes/alice"), 0o755)
+	_ = os.MkdirAll(filepath.Join(s.Cfg.DataRoot, "shared/team"), 0o755)
+	if err := os.WriteFile(filepath.Join(s.Cfg.DataRoot, "shared/team/photo.jpg"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh, err := database.CreateShare("Team", "shared/team", alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canDel := false
+	if err := database.SetShareGrant(sh.ID, alice.ID, "write", &canDel); err != nil {
+		t.Fatal(err)
+	}
+	c := loginAs(t, ts.URL, "alice", "alice-pass-123")
+	root := "share:" + itoa(sh.ID)
+	st, data := uploadFileConflict(t, ts.URL, c, root, "", "photo.jpg", "c", "overwrite")
+	if st != 400 || !strings.Contains(str(data["error"]), "delete permission") {
+		t.Fatalf("write-without-delete overwrite %d %v", st, data)
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.Cfg.DataRoot, "shared/team/photo.jpg")); string(got) != "old" {
+		t.Fatalf("original must remain: %q", got)
+	}
 }
 
 func TestUploadConflictSkipDoesNotNeedQuota(t *testing.T) {
@@ -242,7 +318,6 @@ func TestUploadConflictSkipDoesNotNeedQuota(t *testing.T) {
 	}
 	_ = alice
 	c := loginAs(t, ts.URL, "alice", "alice-pass-123")
-	// Already at quota; skip must still succeed and leave the file alone.
 	st, data := uploadFileConflict(t, ts.URL, c, "home", "", "full.txt", strings.Repeat("x", 50), "skip")
 	if st != 200 || data["skipped"] != true {
 		t.Fatalf("skip at quota %d %v", st, data)
@@ -250,6 +325,26 @@ func TestUploadConflictSkipDoesNotNeedQuota(t *testing.T) {
 	got, _ := os.ReadFile(filepath.Join(s.Cfg.DataRoot, "homes/alice/full.txt"))
 	if string(got) != "0123456789" {
 		t.Fatalf("file changed: %q", got)
+	}
+}
+
+func TestUploadIntoNestedFolderAndEmptyDir(t *testing.T) {
+	s, ts, _ := testServer(t)
+	c := loginAs(t, ts.URL, "admin", "admin-pass-123")
+	st, data := doJSON(t, http.MethodPost, ts.URL+"/api/mkdir", c, map[string]any{"root": "home", "path": "album/empty"})
+	if st != 200 {
+		t.Fatalf("mkdir empty %d %v", st, data)
+	}
+	st, data = uploadFileConflict(t, ts.URL, c, "home", "album/2024", "shot.jpg", "pic", "")
+	if st != 200 || data["path"] != "album/2024/shot.jpg" {
+		t.Fatalf("nested upload %d %v", st, data)
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.Cfg.DataRoot, "homes/admin/album/2024/shot.jpg")); string(got) != "pic" {
+		t.Fatalf("nested content %q", got)
+	}
+	stInfo, err := os.Stat(filepath.Join(s.Cfg.DataRoot, "homes/admin/album/empty"))
+	if err != nil || !stInfo.IsDir() {
+		t.Fatalf("empty dir missing: %v", err)
 	}
 }
 

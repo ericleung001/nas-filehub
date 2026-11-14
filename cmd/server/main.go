@@ -88,6 +88,19 @@ func main() {
 		Limiter:      auth.NewLoginLimiter(cfg.RateLimitPerMin),
 		ResetLimiter: auth.NewLoginLimiter(5), // password-reset requests per IP per minute
 		Static:       staticRoot,
+		Uploads:      api.NewUploadManager(cfg.DataRoot, 24*time.Hour),
+	}
+	go func() {
+		t := time.NewTicker(time.Hour)
+		for range t.C {
+			n := srv.Uploads.Cleanup()
+			if n > 0 {
+				log.Printf("cleaned %d expired upload session(s)", n)
+			}
+		}
+	}()
+	if cfg.WebDAVEnabled {
+		log.Printf("WebDAV enabled at /dav/")
 	}
 
 	log.Printf("nas-filehub %s listening on %s (data=%s)", version.Version, cfg.ListenAddr, cfg.DataRoot)

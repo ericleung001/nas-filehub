@@ -8,8 +8,22 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-11-14
+
+### Added
+- **Folder upload** — Upload folder (directory file picker) and drag-and-drop of directories. Intermediate folders are created as needed, empty folders are created, and the relative folder structure is preserved. Existing folders are merged; name conflicts on files still use Skip / Overwrite / Rename, including Apply to all.
+- **Resumable uploads** — large uploads (1 MiB and above in the web UI) use a chunked session (`/api/upload/sessions`) so a dropped connection can resume from the last complete chunk instead of starting over. Incomplete sessions expire after 24 hours and are cleaned up. Conflict policy is decided before the file is streamed.
+- **WebDAV** — mount Filehub at `/dav/` with your Filehub username and password. The virtual root lists My Files and granted shared folders, with the same permission and quota rules as the web UI. WebDAV DELETE moves items to the Recycle bin. Enabled by default; set `WEBDAV_ENABLED=false` to disable. No anonymous access.
+- **SMTP notifications** — when SMTP is configured, administrators who have an email address are notified if a new open-registration account is waiting for approval, and a user is notified when an admin grants them access to a shared folder (if that user has an email). Send failures are logged and do not fail the original action. If SMTP is not configured or the recipient has no email, nothing is sent.
+- **Unraid User files path** — the Community Apps template now includes an optional **User files** mapping (default host `/mnt/user/nas-filehub` → container `/data/files`) so application data and user files can be split without adding a path by hand.
+
 ### Changed
-- **TrueNAS catalog packaging** — the `truenas/` snapshot now pins app 0.4.7 / catalog 1.0.1 (`ghcr.io/ericleung001/nas-filehub:0.4.7` by digest). The official catalog update is [truenas/apps#6466](https://github.com/truenas/apps/pull/6466); the live TrueNAS Apps Market still lists 0.4.4 until that PR is merged.
+- **Overwrite to Recycle bin** — uploading with Overwrite no longer replaces the existing file in place. The current file is moved to the Recycle bin with the same rules as a normal delete, then the new file is written. If the Recycle bin move fails, the original file is left in place. Overwriting a folder is still rejected. Overwrite also requires delete permission (a write-only share grant cannot overwrite). Trashed bytes still count toward the owner’s quota until purged.
+- **TrueNAS catalog docs** — README and `truenas/` no longer describe the live Market listing as 0.4.4 or a pending [truenas/apps#6466](https://github.com/truenas/apps/pull/6466) update. Filehub is listed on the [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/); already-published versions follow new releases automatically, so version-bump pull requests are not needed.
+- **Session duration** — the admin settings page that controls login lifetime and Stay signed in is named **Session duration**, so it is not confused with **Active sessions** (the per-user device list).
+
+### Fixed
+- **Bulk selection bar** — the multi-select action bar is hidden unless at least one item is selected, so it no longer appears as “0 selected”.
 
 ## [0.4.8] - 2026-11-12
 

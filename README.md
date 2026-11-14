@@ -26,7 +26,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` access and an independent **Allow delete** flag (admin picks a user from a dropdown; existing grants can be changed or revoked)
 - **Link shares** — secret URLs for a file or folder (`/s/<token>`); optional expiry and password (password form only when the link has one); recipients browse/download without an account and can **preview images / PDFs / play videos** inline; revoke (hard-delete) anytime from Settings → Link shares, or select several and **Delete selected**
-- **File ops** — browse, **search file and folder names** across My Files and shares you can read, upload (with per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start; if a file with the same name already exists, choose **Skip**, **Overwrite**, or **Rename** — Rename appends `_1`, `_2`, … before the extension, and a batch can use **Apply to all**), drag-and-drop into current folder or onto a folder, download, **download a folder as a zip**, mkdir, rename, delete (moves items to a **Recycle bin** instead of immediate permanent delete); **multi-select** with bulk Delete / Move / Copy (Move and Copy use a folder picker; writable shared folders are valid destinations); restore or permanently purge from the Recycle bin; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
+- **File ops** — browse, **search file and folder names** across My Files and shares you can read, upload files or folders (file picker, **Upload folder**, or drag-and-drop of files and directories, including empty folders; relative structure is preserved; per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start; large uploads can resume after a dropped connection; if a file with the same name already exists, choose **Skip**, **Overwrite**, or **Rename** — Rename appends `_1`, `_2`, … before the extension, a batch can use **Apply to all**, and Overwrite moves the existing file to the Recycle bin before saving the new one), drag-and-drop into current folder or onto a folder, download, **download a folder as a zip**, mkdir, rename, delete (moves items to a **Recycle bin** instead of immediate permanent delete); **multi-select** with bulk Delete / Move / Copy (Move and Copy use a folder picker; writable shared folders are valid destinations); restore or permanently purge from the Recycle bin; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; hardware acceleration is selected from detected Intel VAAPI, AMD VAAPI, or NVIDIA NVDEC/CUDA devices, with software fallback)
 - **App icon** — favicon and Apple touch icon; mark on the login / auth pages and in the top bar after sign-in
@@ -35,14 +35,15 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Change password** — `POST /api/me/password` (enforces admin password policy)
   - **2FA** — enable/disable TOTP
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all); select multiple to delete together
-  - **Users / Shares / Sessions / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Sessions** (duration + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP); **Storage quota** (optional same quota for all users); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
+  - **Users / Shares / Session duration / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Session duration** (login lifetime + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP for password reset, pending-registration, and share-grant notices); **Storage quota** (optional same quota for all users); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
   - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
 - **Sidebar** — expandable folder tree under My Files / shares / Recycle bin; a count badge appears to the right of Recycle bin when it has items (`99+` after 99); storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
 - **Password policy** — admin-configurable min length and character classes; enforced on create user, admin reset, self-service change, and forgot-password reset; policy version forces remediation after tighten; login blocks the app until password/2FA requirements are met
-- **Forgot password** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses)
+- **Forgot password and email notices** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses). When SMTP is ready, Filehub also emails administrators (who have an email address) if a new open-registration account is waiting for approval, and emails a user when an admin grants them access to a shared folder (if that user has an email). If SMTP is not configured or the recipient has no email, the original action still succeeds.
 - **Open registration** — optional admin toggle; `/register` (linked from login) creates username/email/password accounts under the password policy. New sign-ups require admin approval by default (Settings → Registration and Users). Pending accounts cannot sign in until approved. Rejecting a pending account deletes it so the username can be reused. Already-active users are unchanged. Email notification is optional and is not required.
 - **Session duration** — admin sets normal login lifetime (default **7 days**) and may allow **Stay signed in** (default **30 days**); applies to new logins only; existing sessions keep their expiry
+- **WebDAV** — mount Filehub as a network drive at `/dav/` with your Filehub username and password (HTTPS). The virtual root lists **My Files** and the shared folders you can access, with the same read / write / delete rules as the web UI. Delete moves items to the Recycle bin. Disabled with `WEBDAV_ENABLED=false`. No anonymous access.
 - **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; container drops to PUID/PGID (default 1000:1000); SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
 Quota counts the user’s **home** directory plus files in shared folders that this Filehub user wrote (upload, copy, or replace). Bytes are attributed to the acting writer; a whole share is never billed to every grantee. Existing share files with no recorded writer stay **unbilled** until a Filehub user writes or replaces them. Recycle-bin items still count toward the owner’s quota until they are permanently purged. Admins can turn on **Apply the same quota to all users** under Settings → Storage quota so every existing user and every new account uses one quota; per-user quota editing is disabled while that setting is on. Settings → System and the Users storage bar use this same definition.
@@ -87,15 +88,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.8`, not `v0.4.8`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.9`, not `v0.4.9`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.8
+docker pull ericleung001/nas-filehub:0.4.9
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.8
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.9
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.8`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.8` or `image: ghcr.io/ericleung001/nas-filehub:0.4.8` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.9`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.9` or `image: ghcr.io/ericleung001/nas-filehub:0.4.9` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -136,6 +137,7 @@ Or set `ADMIN_PASSWORD` yourself and run `make run` / `make smoke`.
 | `PUBLIC_BASE_URL` | — | Absolute site URL for password-reset emails (e.g. `https://filehub.example.com`). **Required** for public HTTPS deployments so reset links cannot follow a spoofed host |
 | `SMTP_ENABLED` | `false` | Env override: enable SMTP |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | — | Env overrides for SMTP (password never logged) |
+| `WEBDAV_ENABLED` | `true` | Expose WebDAV at `/dav/`. Set `false` to disable |
 
 ## Settings
 
@@ -145,14 +147,14 @@ Sign in → **Settings** (single top-bar button):
 2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke (permanently delete) public file/folder links, or select several and **Delete selected**; deleted rows leave the list
-5. **Active sessions** (everyone) — list signed-in devices, revoke one session, or revoke all other sessions
+5. **Active sessions** (everyone) — list signed-in devices, revoke one session, or revoke all other sessions. When WebDAV is enabled, Settings → Account also shows the mount URL (`/dav/`)
 6. **Users** (admins) — table list of users (home, storage used/quota, status); create / edit / delete; set email / quota (quota is read-only while Settings → Storage quota is on); reset passwords; disable accounts; per-user require 2FA
 7. **Shares** (admins) — table list of shared folders (path, grants); create shares; grant access with a user dropdown, Read or Write (write includes read), and **Allow delete**; change or revoke existing grants
-8. **Sessions** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
+8. **Session duration** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
 9. **Registration** (admins) — allow open registration; each sign-up email must be unique (including pending and disabled accounts). When admin approval is required, the sign-up page tells the user their account is waiting for approval
 10. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 11. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, and shared-folder permission changes
-12. **Email** (admins) — SMTP for forgot-password
+12. **Email** (admins) — SMTP for forgot-password, pending-registration notices, and shared-folder access notices
 13. **Storage quota** (admins) — optional **Apply the same quota to all users** setting and the quota value
 14. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
 15. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
@@ -202,7 +204,7 @@ Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the
 
 ## Install on TrueNAS (Community Apps)
 
-Filehub is listed in the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) on the **Community** train. The live catalog currently ships app version 0.4.4; an update to 0.4.7 is in [PR #6466](https://github.com/truenas/apps/pull/6466).
+Filehub is listed in the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) on the **Community** train. After the initial listing, already-published Filehub versions follow new GitHub releases automatically — you do not need to open a catalog pull request just to bump the version. See the Market page for the version currently offered.
 
 In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install wizard asks for:
 
@@ -210,7 +212,7 @@ In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install w
 - WebUI port (default **30568**)
 - Run-as user and group (default **568**, the TrueNAS `apps` user)
 
-The live catalog image is `ghcr.io/ericleung001/nas-filehub:0.4.4` until that PR is merged. After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**.
+After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**.
 
 Notes:
 
@@ -219,13 +221,7 @@ Notes:
 
 ## Install on Unraid (Community Apps)
 
-Filehub can be installed on Unraid from a Community Apps template in this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`). The template is categorized under Tools › Utilities and Productivity, and includes current login and file-browser screenshots.
-
-This is **not** a claim that Filehub is already listed in the official Community Apps catalog — that listing is a separate submission step. Until the catalog accepts the repository, you can add it yourself in **Apps** → the CA settings / **Add a new Repository URL**, using:
-
-`https://github.com/ericleung001/nas-filehub`
-
-Then search for **Filehub** and install the template. After the official listing is accepted, searching **Filehub** in Community Apps should be enough.
+Filehub is available in Unraid Community Applications. Search for **Filehub** and install the template from this repository (`templates/filehub.xml`). The container image is `ghcr.io/ericleung001/nas-filehub` (the `:latest` tag is published from `main`). The template is categorized under Tools › Utilities and Productivity, and includes current login and file-browser screenshots.
 
 First boot:
 
@@ -236,7 +232,9 @@ First boot:
 Notes:
 
 - The WebUI listens on container port **8080** (template default host port **8088**). Prefer a reverse proxy with HTTPS, then set `SECURE_COOKIES=true`. **Do not** expose the WebUI port directly to the public internet.
-- The optional **Unraid shares** path is mounted at `/data/files/shares` so you can create shared folders with paths such as `shares/Movies`. Remove that mapping if you do not need it.
+- **Appdata** is mounted at `/data` (database, thumbnails, and `admin-credentials.txt`). User files default to `/data/files` inside appdata unless you set the optional **User files** path.
+- **User files** (optional) maps host `/mnt/user/nas-filehub` to container `/data/files` (`DATA_ROOT`) so homes and Filehub-created shares live on a share instead of under appdata. If the container has already been started, move any existing files from `appdata/nas-filehub/files` into the new location before adding this mapping; otherwise the new mount hides the old directory. The entrypoint `chown`s `/data` (including this mount) to `PUID`/`PGID`.
+- The optional **Unraid shares** path is mounted at `/data/files/shares` so you can create shared folders with paths such as `shares/Movies` from the Unraid `/mnt/user` tree. Remove that mapping if you do not need host shares. If **User files** is also set, keep **Unraid shares** only when you still want host shares visible under `shares/`.
 - Optional Intel VAAPI thumbnails: keep the `/dev/dri` device mapping and set `THUMB_VAAPI=true`. If `/dev/dri` is not present, remove the device mapping and leave `THUMB_VAAPI=false`. See also [Hardware thumbnail acceleration](#hardware-thumbnail-acceleration-optional).
 - The GHCR package must be **public** so Unraid can pull `ghcr.io/ericleung001/nas-filehub:latest` without a login.
 
@@ -296,7 +294,9 @@ Files:
 
 
 - `GET /api/roots` (includes `trashCount` for the current user’s visible recycle-bin items) · `GET /api/list`
-- `POST /api/mkdir` · `POST /api/rename` · `POST /api/delete` · `POST /api/upload` (multipart `file`, `root`, `path`; optional `conflict=skip|overwrite|rename` when the destination name is taken; a collision without `conflict` returns 409)
+- `POST /api/mkdir` · `POST /api/rename` · `POST /api/delete` · `POST /api/upload` (multipart `file`, `root`, `path`; optional `conflict=skip|overwrite|rename` when the destination name is taken; a collision without `conflict` returns 409; **overwrite** moves the existing file to the Recycle bin first)
+- `POST /api/upload/sessions` · `GET|PUT|DELETE /api/upload/sessions/{id}` · `POST /api/upload/sessions/{id}/complete` — chunked, resumable uploads (conflict policy is chosen at init; incomplete sessions expire after 24 hours)
+- WebDAV at `/dav/` (Basic auth, same permissions as the UI; `DELETE` moves items to the Recycle bin)
 - `GET /api/download` · `GET /api/raw` · `GET /api/thumb`
 
 Admin (requires admin session):
@@ -325,12 +325,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 
 ## Email and forgot password
 
-1. Admin → Settings → **Email**: enable, host, port, username, password, from address. Save. Optionally **Send test email**.
+1. Admin → Settings → **Email**: enable, host, port, username, password, from address. Save. Optionally **Send test email**. The same SMTP settings are used for password-reset mail, pending-registration notices to admins, and shared-folder access notices to users who have an email address.
 2. Set each user’s **email** under Users → Create / Edit (required for that user to receive reset mail).
 3. Public HTTPS deployments must set `PUBLIC_BASE_URL` to your public origin (and `SECURE_COOKIES=true`) so reset links cannot follow a spoofed host.
 4. The login page links to **Forgot password?** (`/forgot`) when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
 
 SMTP credentials can also be supplied via env (`SMTP_*`); env values override the DB for the running process. The API never returns the SMTP password — only `passwordSet: true|false`.
+
+## WebDAV
+
+WebDAV is enabled by default at `/dav/`. Set `WEBDAV_ENABLED=false` to turn it off.
+
+1. Prefer a reverse proxy with HTTPS. Do not expose the Filehub port directly to the public internet.
+2. Mount `https://your-host/dav/` (trailing slash recommended) as a network drive.
+3. Sign in with your Filehub username and password. There is no anonymous access. WebDAV uses the account password even if 2FA is required for the web UI.
+4. The virtual root lists **My Files** and each shared folder you can access. Read, write, and delete follow the same grants as the web UI. Deleting a file or folder through WebDAV moves it to the Recycle bin.
+
+macOS Finder: Go → Connect to Server → `https://your-host/dav/`. Windows: Map a network drive to that HTTPS URL (the WebClient service must be running). Other clients (rclone, Cyberduck, davfs2) can use the same URL and credentials.
+
+Settings → Account shows the mount URL when WebDAV is enabled.
 
 ## Support
 

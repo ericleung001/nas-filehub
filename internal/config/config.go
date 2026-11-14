@@ -35,6 +35,9 @@ type Config struct {
 	SMTPPassword string
 	SMTPFrom     string
 	SMTPEnabled  bool // SMTP_ENABLED; if env host set, may force enable
+	// WebDAVEnabled exposes /dav/ for mounting with a Filehub username and password.
+	// Default is true; set WEBDAV_ENABLED=false to disable.
+	WebDAVEnabled bool
 }
 
 func getenv(k, def string) string {
@@ -92,6 +95,7 @@ func Load() Config {
 		SMTPPassword:    getenv("SMTP_PASSWORD", ""),
 		SMTPFrom:        getenv("SMTP_FROM", ""),
 		SMTPEnabled:     getenvBool("SMTP_ENABLED", false),
+		WebDAVEnabled:   getenvBool("WEBDAV_ENABLED", true),
 	}
 }
 

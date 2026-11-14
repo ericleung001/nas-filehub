@@ -1020,6 +1020,7 @@ tr.drop-folder-target td,
   margin: 0 0 .75rem; padding: .5rem .75rem;
   background: #152033; border: 1px solid var(--border); border-radius: 10px;
 }
+.bulk-bar[hidden] { display: none !important; }
 .bulk-bar .danger { border-color: #7f1d1d; color: #fca5a5; }
 .file-card { position: relative; }
 .file-card.selected { outline: 2px solid var(--accent); outline-offset: 2px; }

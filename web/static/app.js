@@ -643,6 +643,7 @@ async function openSettings() {
     <div class="meta">Email: ${u.email ? `<code>${u.email}</code>` : '<span class="muted">not set (ask admin)</span>'}</div>
     <div class="meta">Home: <code>${u.homePath || ''}</code></div>
     <div class="meta">Storage: ${fmtSize(used)} / ${fmtQuota(quota)}${quota ? ` (${pct}%)` : ''}</div>
+    ${u.webdav && u.webdav.enabled ? `<div class="meta">WebDAV: <code>${window.location.origin + (u.webdav.path || '/dav/')}</code></div><p class="muted">Mount this URL as a network drive with your Filehub username and password over HTTPS. Do not expose the app port directly. WebDAV uses your account password even if 2FA is enabled for the web sign-in.</p>` : ''}
   `;
   const bar = $('#settings-quota-bar');
   if (quota > 0) {
@@ -894,6 +895,8 @@ async function loadList() {
   const inTrash = state.root === 'trash';
   $('#btn-mkdir').disabled = !canWrite || inTrash;
   $('#file-input').disabled = !canWrite || inTrash;
+  const folderInput = $('#folder-input');
+  if (folderInput) folderInput.disabled = !canWrite || inTrash;
   const trashBar = $('#trash-actions');
   if (trashBar) trashBar.hidden = !inTrash;
   renderBreadcrumbs();
@@ -923,6 +926,8 @@ async function runFileSearch(q, updateInput) {
   state.canDelete = false;
   $('#btn-mkdir').disabled = true;
   $('#file-input').disabled = true;
+  const folderInput = $('#folder-input');
+  if (folderInput) folderInput.disabled = true;
   renderBreadcrumbs();
   const nav = $('#breadcrumbs');
   if (nav) {
@@ -1229,11 +1234,11 @@ function renderEntries(entries, canWrite) {
     if (state.viewMode === 'icons') {
       const empty = document.createElement('div');
       empty.className = 'files-empty';
-      empty.textContent = canWrite ? 'Empty folder — drop files here to upload' : 'Empty folder';
+      empty.textContent = canWrite ? 'Empty folder — drop files or folders here to upload' : 'Empty folder';
       grid.appendChild(empty);
     } else {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="6" class="empty-row muted">${canWrite ? 'Empty folder — drop files here to upload' : 'Empty folder'}</td>`;
+      tr.innerHTML = `<td colspan="6" class="empty-row muted">${canWrite ? 'Empty folder — drop files or folders here to upload' : 'Empty folder'}</td>`;
       body.appendChild(tr);
     }
     updateBulkBar();
@@ -1418,6 +1423,31 @@ function setUploadItem(li, { loaded, total, status, error, detail }) {
   }
 }
 
+const CHUNK_THRESHOLD = 1024 * 1024;
+const CHUNK_SIZE = 4 * 1024 * 1024;
+
+function joinUploadPath(base, rel) {
+  const b = (base || '').replace(/\/+$/, '');
+  const r = (rel || '').replace(/^\/+/, '');
+  if (!b) return r;
+  if (!r) return b;
+  return b + '/' + r;
+}
+
+function dirnamePath(rel) {
+  const i = (rel || '').lastIndexOf('/');
+  return i <= 0 ? '' : rel.slice(0, i);
+}
+
+function basenamePath(rel) {
+  const i = (rel || '').lastIndexOf('/');
+  return i < 0 ? (rel || '') : rel.slice(i + 1);
+}
+
+function uploadResumeKey(root, dest, rel, file) {
+  return `filehub-upload:${root}:${dest || ''}:${rel || file.name}:${file.size}:${file.lastModified}`;
+}
+
 function uploadFileWithProgress(file, destPath, onProgress, conflict) {
   return new Promise((resolve, reject) => {
     const fd = new FormData();
@@ -1447,6 +1477,107 @@ function uploadFileWithProgress(file, destPath, onProgress, conflict) {
     xhr.onabort = () => reject(new Error('Upload aborted'));
     xhr.send(fd);
   });
+}
+
+function putUploadChunk(id, blob, offset, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/upload/sessions/' + id);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Upload-Offset', String(offset));
+    xhr.upload.onprogress = (e) => {
+      if (onProgress) onProgress(e.loaded);
+    };
+    xhr.onload = () => {
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { data = { raw: xhr.responseText }; }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else {
+        const err = new Error((data && data.error) || xhr.statusText || 'Chunk upload failed');
+        err.status = xhr.status;
+        err.data = data;
+        reject(err);
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.onabort = () => reject(new Error('Upload aborted'));
+    xhr.send(blob);
+  });
+}
+
+async function uploadChunked(file, destPath, onProgress, conflict, relPath) {
+  const key = uploadResumeKey(state.root, destPath, relPath || file.name, file);
+  let id = null;
+  let offset = 0;
+  const stored = (() => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  })();
+  if (stored) {
+    try {
+      const data = await api('/api/upload/sessions/' + stored);
+      if (data && data.id && data.size === file.size) {
+        id = data.id;
+        offset = data.offset || 0;
+      } else {
+        try { localStorage.removeItem(key); } catch { /* ignore */ }
+      }
+    } catch {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    }
+  }
+  if (!id) {
+    const data = await api('/api/upload/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        root: state.root,
+        path: destPath || '',
+        name: file.name,
+        size: file.size,
+        conflict: conflict || '',
+      }),
+    });
+    if (data && data.skipped) return data;
+    id = data.id;
+    offset = data.offset || 0;
+    try { localStorage.setItem(key, id); } catch { /* ignore */ }
+    if (onProgress) onProgress(offset, file.size);
+    if (data) data._started = true;
+  }
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK_SIZE, file.size);
+    const blob = file.slice(offset, end);
+    let attempt = 0;
+    const start = offset;
+    for (;;) {
+      try {
+        const data = await putUploadChunk(id, blob, start, (loaded) => {
+          if (onProgress) onProgress(start + loaded, file.size);
+        });
+        offset = data.offset;
+        break;
+      } catch (err) {
+        attempt += 1;
+        if (attempt >= 4) throw err;
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+        try {
+          const st = await api('/api/upload/sessions/' + id);
+          offset = st.offset || 0;
+          if (offset > start) break;
+        } catch { /* retry same chunk */ }
+      }
+    }
+  }
+  const data = await api('/api/upload/sessions/' + id + '/complete', { method: 'POST', body: '{}' });
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+  return data;
+}
+
+async function uploadOneFile(file, destPath, onProgress, conflict, relPath) {
+  const size = file.size || 0;
+  if (size >= CHUNK_THRESHOLD) {
+    return uploadChunked(file, destPath, onProgress, conflict, relPath);
+  }
+  return uploadFileWithProgress(file, destPath, onProgress, conflict);
 }
 
 function splitUploadName(filename) {
@@ -1482,17 +1613,30 @@ async function listDestinationNames(destPath) {
   return { taken, dirs };
 }
 
-function findUploadConflicts(files, taken) {
-  const planned = new Set();
+function findUploadConflicts(entries, takenBy) {
+  const planned = new Map();
   const conflicts = [];
-  for (const f of files) {
-    if (taken.has(f.name) || planned.has(f.name)) conflicts.push(f);
-    else planned.add(f.name);
+  for (const e of entries) {
+    const dest = e.dest || '';
+    if (!planned.has(dest)) planned.set(dest, new Set());
+    const taken = takenBy.get(dest) || new Set();
+    const used = planned.get(dest);
+    if (taken.has(e.name) || used.has(e.name)) conflicts.push(e);
+    else used.add(e.name);
   }
   return conflicts;
 }
 
-function showUploadConflictDialog(conflicts, taken, dirs) {
+function destTakenSet(takenBy, dest) {
+  if (!takenBy.has(dest)) takenBy.set(dest, new Set());
+  return takenBy.get(dest);
+}
+
+function destDirSet(dirsBy, dest) {
+  return dirsBy.get(dest) || new Set();
+}
+
+function showUploadConflictDialog(conflicts, takenBy, dirsBy) {
   return new Promise((resolve) => {
     const dlg = $('#upload-conflict-dialog');
     const list = $('#upload-conflict-list');
@@ -1504,57 +1648,48 @@ function showUploadConflictDialog(conflicts, taken, dirs) {
       return;
     }
     const decisions = new Map();
-    const previewTaken = () => {
-      const next = new Set(taken);
-      for (const f of conflicts) {
-        const action = decisions.get(f) || 'rename';
-        if (action === 'skip') continue;
-        if (action === 'overwrite') {
-          next.add(f.name);
-          continue;
-        }
-        const name = nextAvailableUploadName(f.name, next);
-        next.add(name);
-      }
-      return next;
-    };
+    const canOverwriteItem = (e) => state.canDelete && !destDirSet(dirsBy, e.dest).has(e.name);
     function renderHints() {
-      const next = new Set(taken);
-      for (const f of conflicts) {
-        const li = f._conflictRow;
+      const nextBy = new Map();
+      for (const [dest, set] of takenBy.entries()) nextBy.set(dest, new Set(set));
+      for (const e of conflicts) {
+        const li = e._conflictRow;
         if (!li) continue;
-        const action = decisions.get(f) || 'rename';
+        const action = decisions.get(e) || 'rename';
         const hint = li.querySelector('.conflict-row-hint');
         li.querySelectorAll('.conflict-choice[data-action]').forEach((btn) => {
           btn.classList.toggle('active', btn.dataset.action === action);
         });
+        const next = destTakenSet(nextBy, e.dest);
         if (action === 'skip') {
           hint.textContent = 'Existing file will be kept';
         } else if (action === 'overwrite') {
-          hint.textContent = dirs.has(f.name)
+          hint.textContent = destDirSet(dirsBy, e.dest).has(e.name)
             ? 'A folder with this name exists — overwrite is not available'
-            : 'Existing file will be replaced';
+            : (!state.canDelete
+              ? 'Overwrite is not available without delete permission'
+              : 'Existing file will be moved to the Recycle bin');
+          if (canOverwriteItem(e)) next.add(e.name);
         } else {
-          const name = nextAvailableUploadName(f.name, next);
-          hint.textContent = name === f.name ? 'Will be uploaded as ' + name : 'Will be saved as ' + name;
+          const name = nextAvailableUploadName(e.name, next);
+          hint.textContent = name === e.name ? 'Will be uploaded as ' + name : 'Will be saved as ' + name;
           next.add(name);
-          continue;
         }
-        if (action === 'overwrite' && !dirs.has(f.name)) next.add(f.name);
       }
     }
     list.innerHTML = '';
     applyBar.hidden = conflicts.length < 2;
-    for (const f of conflicts) {
-      decisions.set(f, 'rename');
+    for (const e of conflicts) {
+      decisions.set(e, 'rename');
       const li = document.createElement('li');
       li.className = 'conflict-row';
       const info = document.createElement('div');
       info.className = 'conflict-row-info';
       const name = document.createElement('div');
       name.className = 'conflict-row-name';
-      name.textContent = f.name;
-      name.title = f.name;
+      const label = e.relPath && e.relPath !== e.name ? e.relPath : e.name;
+      name.textContent = label;
+      name.title = label;
       const hint = document.createElement('div');
       hint.className = 'conflict-row-hint';
       info.appendChild(name);
@@ -1562,32 +1697,32 @@ function showUploadConflictDialog(conflicts, taken, dirs) {
       const actions = document.createElement('div');
       actions.className = 'conflict-actions';
       actions.setAttribute('role', 'group');
-      actions.setAttribute('aria-label', 'Action for ' + f.name);
-      for (const [action, label] of [['skip', 'Skip'], ['overwrite', 'Overwrite'], ['rename', 'Rename']]) {
+      actions.setAttribute('aria-label', 'Action for ' + label);
+      for (const [action, caption] of [['skip', 'Skip'], ['overwrite', 'Overwrite'], ['rename', 'Rename']]) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'conflict-choice';
         btn.dataset.action = action;
-        btn.textContent = label;
-        if (action === 'overwrite' && dirs.has(f.name)) btn.disabled = true;
+        btn.textContent = caption;
+        if (action === 'overwrite' && !canOverwriteItem(e)) btn.disabled = true;
         btn.addEventListener('click', () => {
           if (btn.disabled) return;
-          decisions.set(f, action);
+          decisions.set(e, action);
           renderHints();
         });
         actions.appendChild(btn);
       }
       li.appendChild(info);
       li.appendChild(actions);
-      f._conflictRow = li;
+      e._conflictRow = li;
       list.appendChild(li);
     }
     renderHints();
 
     function applyAll(action) {
-      for (const f of conflicts) {
-        if (action === 'overwrite' && dirs.has(f.name)) continue;
-        decisions.set(f, action);
+      for (const e of conflicts) {
+        if (action === 'overwrite' && !canOverwriteItem(e)) continue;
+        decisions.set(e, action);
       }
       renderHints();
     }
@@ -1608,15 +1743,13 @@ function showUploadConflictDialog(conflicts, taken, dirs) {
       dlg.removeEventListener('cancel', onCancel);
       dlg.removeEventListener('close', onClose);
       if (dlg.open) dlg.close();
-      for (const f of conflicts) delete f._conflictRow;
+      for (const e of conflicts) delete e._conflictRow;
       resolve(result);
     }
     function onContinue(ev) {
       ev.preventDefault();
       const out = new Map();
-      // Recompute rename targets after decisions (preview only; server enforces).
-      previewTaken();
-      for (const f of conflicts) out.set(f, decisions.get(f) || 'rename');
+      for (const e of conflicts) out.set(e, decisions.get(e) || 'rename');
       finish(out);
     }
     function onCancel(ev) {
@@ -1634,13 +1767,100 @@ function showUploadConflictDialog(conflicts, taken, dirs) {
   });
 }
 
-async function resolveUploadConflicts(files, destPath) {
-  const { taken, dirs } = await listDestinationNames(destPath);
-  const conflicts = findUploadConflicts(files, taken);
+async function resolveUploadConflicts(entries, destPath) {
+  const dests = [...new Set(entries.map((e) => e.dest || destPath || ''))];
+  const takenBy = new Map();
+  const dirsBy = new Map();
+  await Promise.all(dests.map(async (d) => {
+    const { taken, dirs } = await listDestinationNames(d);
+    takenBy.set(d, taken);
+    dirsBy.set(d, dirs);
+  }));
+  const conflicts = findUploadConflicts(entries, takenBy);
   if (!conflicts.length) return new Map();
-  const decisions = await showUploadConflictDialog(conflicts, taken, dirs);
+  const decisions = await showUploadConflictDialog(conflicts, takenBy, dirsBy);
   if (!decisions) return null;
   return decisions;
+}
+
+async function ensureUploadDirs(dirs, destPath) {
+  const unique = [...new Set(dirs)].filter(Boolean).sort((a, b) => a.length - b.length || a.localeCompare(b));
+  for (const d of unique) {
+    const path = joinUploadPath(destPath, d);
+    try {
+      await api('/api/mkdir', { method: 'POST', body: JSON.stringify({ root: state.root, path }) });
+    } catch {
+      // Existing folders are merged; a later file upload reports a real conflict.
+    }
+  }
+}
+
+function entriesFromFileList(list, fromFolderPicker) {
+  const files = [];
+  const dirs = new Set();
+  for (const f of list) {
+    if (!f || !f.name) continue;
+    let rel = (fromFolderPicker && f.webkitRelativePath) ? f.webkitRelativePath.replace(/\\/g, '/') : f.name;
+    if (!rel) rel = f.name;
+    files.push({ file: f, relPath: rel });
+    const parts = rel.split('/');
+    parts.pop();
+    let acc = '';
+    for (const part of parts) {
+      acc = acc ? acc + '/' + part : part;
+      dirs.add(acc);
+    }
+  }
+  return { files, dirs: [...dirs] };
+}
+
+async function readDirectoryEntry(dirEntry, prefix) {
+  const reader = dirEntry.createReader();
+  const all = [];
+  for (;;) {
+    const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+    if (!batch.length) break;
+    all.push(...batch);
+  }
+  const relDir = prefix ? prefix + '/' + dirEntry.name : dirEntry.name;
+  const files = [];
+  const dirs = [relDir];
+  for (const ent of all) {
+    if (ent.isDirectory) {
+      const sub = await readDirectoryEntry(ent, relDir);
+      files.push(...sub.files);
+      dirs.push(...sub.dirs);
+    } else {
+      const file = await new Promise((res, rej) => ent.file(res, rej));
+      files.push({ file, relPath: relDir + '/' + file.name });
+    }
+  }
+  return { files, dirs };
+}
+
+async function collectDroppedTree(dt) {
+  const files = [];
+  const dirs = [];
+  if (dt.items && dt.items.length) {
+    const pending = [];
+    for (const item of dt.items) {
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry && entry.isDirectory) {
+        pending.push(readDirectoryEntry(entry, ''));
+        continue;
+      }
+      const f = item.getAsFile ? item.getAsFile() : null;
+      if (f) files.push({ file: f, relPath: f.name });
+    }
+    for (const sub of await Promise.all(pending)) {
+      files.push(...sub.files);
+      dirs.push(...sub.dirs);
+    }
+  } else if (dt.files) {
+    return entriesFromFileList(dt.files, false);
+  }
+  return { files, dirs };
 }
 
 $('#btn-clear-uploads').addEventListener('click', () => {
@@ -1648,29 +1868,50 @@ $('#btn-clear-uploads').addEventListener('click', () => {
   syncUploadPanelVisibility();
 });
 
-async function uploadFiles(files, destPath) {
-  const listFiles = [...files].filter((f) => f && f.name);
-  if (!listFiles.length) return;
+async function uploadFiles(input, destPath, opts = {}) {
+  let packed;
+  if (opts.tree) {
+    packed = { files: input || [], dirs: opts.dirs || [] };
+  } else {
+    packed = entriesFromFileList(input || [], !!opts.folderPicker);
+  }
+  const listEntries = packed.files.filter((e) => e && e.file && e.file.name);
+  if (!listEntries.length && !(packed.dirs && packed.dirs.length)) return;
   if (state.perm !== 'write') {
     alert('This folder is read-only');
     return;
   }
   const target = destPath == null ? state.path : destPath;
-  const decisions = await resolveUploadConflicts(listFiles, target);
+  for (const e of listEntries) {
+    e.name = basenamePath(e.relPath) || e.file.name;
+    e.dest = joinUploadPath(target, dirnamePath(e.relPath));
+  }
+  if (packed.dirs && packed.dirs.length) {
+    await ensureUploadDirs(packed.dirs, target);
+  }
+  const decisions = listEntries.length ? await resolveUploadConflicts(listEntries, target) : new Map();
   if (decisions == null) return; // cancelled
+  if (!listEntries.length) {
+    invalidateTreeCache(state.root);
+    try { await loadRoots(); } catch { /* ignore */ }
+    try { await loadList(); } catch { /* ignore */ }
+    return true;
+  }
   ensureUploadPanel();
   const list = $('#upload-list');
   $('#btn-clear-uploads').hidden = true;
-  const batchTotal = listFiles.length;
+  const batchTotal = listEntries.length;
   let batchDone = 0;
   setUploadProgressLabel(batchDone, batchTotal);
   let anyErr = false;
-  for (const f of listFiles) {
-    const action = decisions.get(f) || '';
+  for (const e of listEntries) {
+    const f = e.file;
+    const action = decisions.get(e) || '';
     const li = document.createElement('li');
     li.className = 'upload-item';
     li.innerHTML = `<div class="row"><span class="name"></span><span class="meta"></span></div><div class="bar"><span></span></div>`;
-    const label = target ? `${f.name} → ${target}/` : f.name;
+    const shown = e.relPath && e.relPath !== f.name ? e.relPath : f.name;
+    const label = e.dest ? `${shown} → ${e.dest}/` : shown;
     li.querySelector('.name').textContent = label;
     li.querySelector('.name').title = label;
     list.appendChild(li);
@@ -1682,14 +1923,14 @@ async function uploadFiles(files, destPath) {
     }
     setUploadItem(li, { loaded: 0, total: f.size, status: 'uploading' });
     try {
-      const data = await uploadFileWithProgress(f, target, (loaded, total) => {
+      const data = await uploadOneFile(f, e.dest, (loaded, total) => {
         setUploadItem(li, { loaded, total, status: 'uploading' });
-      }, action);
+      }, action, e.relPath);
       let detail = f.size ? `Done · ${fmtSize(f.size)}` : 'Done';
       if (data && data.renamed && data.name) {
         detail = `Done · saved as ${data.name}`;
         const nameEl = li.querySelector('.name');
-        const renamedLabel = `${f.name} → ${data.name}`;
+        const renamedLabel = `${shown} → ${data.name}`;
         nameEl.textContent = renamedLabel;
         nameEl.title = renamedLabel;
       } else if (data && data.overwritten) {
@@ -1704,11 +1945,13 @@ async function uploadFiles(files, destPath) {
     } catch (err) {
       if (err && err.code === 'exists' && !action) {
         try {
-          const one = await showUploadConflictDialog([f], new Set([f.name]), new Set());
-          if (one && one.get(f) && one.get(f) !== 'skip') {
-            const data = await uploadFileWithProgress(f, target, (loaded, total) => {
+          const takenBy = new Map([[e.dest, new Set([e.name])]]);
+          const dirsBy = new Map([[e.dest, new Set()]]);
+          const one = await showUploadConflictDialog([e], takenBy, dirsBy);
+          if (one && one.get(e) && one.get(e) !== 'skip') {
+            const data = await uploadOneFile(f, e.dest, (loaded, total) => {
               setUploadItem(li, { loaded, total, status: 'uploading' });
-            }, one.get(f));
+            }, one.get(e), e.relPath);
             let detail = f.size ? `Done · ${fmtSize(f.size)}` : 'Done';
             if (data && data.renamed && data.name) detail = `Done · saved as ${data.name}`;
             else if (data && data.overwritten) detail = (f.size ? `Done · overwritten · ${fmtSize(f.size)}` : 'Done · overwritten');
@@ -1717,7 +1960,7 @@ async function uploadFiles(files, destPath) {
             setUploadProgressLabel(batchDone, batchTotal);
             continue;
           }
-          if (one && one.get(f) === 'skip') {
+          if (one && one.get(e) === 'skip') {
             setUploadItem(li, { loaded: f.size, total: f.size, status: 'skipped', detail: 'Skipped' });
             batchDone += 1;
             setUploadProgressLabel(batchDone, batchTotal);
@@ -1761,6 +2004,7 @@ function collectDroppedFiles(dt) {
   return out;
 }
 
+
 function findFolderDropPath(target) {
   const el = target && target.closest ? target.closest('.is-folder-drop') : null;
   return el ? el.dataset.dropPath : null;
@@ -1769,6 +2013,7 @@ function findFolderDropPath(target) {
 (function setupDragDrop() {
   const zone = $('#files-dropzone');
   const hint = $('#drop-hint');
+  if (!zone) return;
   let dragDepth = 0;
 
   function clearFolderHighlights() {
@@ -1784,7 +2029,6 @@ function findFolderDropPath(target) {
     return !!(dt.files && dt.files.length);
   }
 
-  // Prevent browser from opening dropped files outside the zone
   window.addEventListener('dragover', (ev) => {
     if (hasFiles(ev.dataTransfer)) ev.preventDefault();
   });
@@ -1823,7 +2067,7 @@ function findFolderDropPath(target) {
       }
     } else if (hint) {
       hint.hidden = false;
-      hint.textContent = 'Drop files to upload here';
+      hint.textContent = 'Drop files or folders to upload here';
     }
   });
   zone.addEventListener('drop', async (ev) => {
@@ -1834,13 +2078,13 @@ function findFolderDropPath(target) {
     zone.classList.remove('drop-active');
     if (hint) {
       hint.hidden = true;
-      hint.textContent = 'Drop files to upload here';
+      hint.textContent = 'Drop files or folders to upload here';
     }
     const folderPath = findFolderDropPath(ev.target);
     clearFolderHighlights();
-    const files = collectDroppedFiles(ev.dataTransfer);
-    if (!files.length) return;
-    await uploadFiles(files, folderPath != null ? folderPath : state.path);
+    const tree = await collectDroppedTree(ev.dataTransfer);
+    if (!tree.files.length && !tree.dirs.length) return;
+    await uploadFiles(tree.files, folderPath != null ? folderPath : state.path, { tree: true, dirs: tree.dirs });
   });
 })();
 
@@ -1850,6 +2094,16 @@ $('#file-input').addEventListener('change', async (ev) => {
   if (!files.length) return;
   await uploadFiles(files, state.path);
 });
+
+const folderInput = $('#folder-input');
+if (folderInput) {
+  folderInput.addEventListener('change', async (ev) => {
+    const files = [...ev.target.files];
+    ev.target.value = '';
+    if (!files.length) return;
+    await uploadFiles(files, state.path, { folderPicker: true });
+  });
+}
 
 $('#btn-refresh').addEventListener('click', loadList);
 

@@ -36,6 +36,8 @@ func testServer(t *testing.T) (*Server, *httptest.Server, *db.DB) {
 			SessionSecret:  "test-session-secret",
 			LockoutLimit:   10,
 			LockoutMinutes: 15,
+			MaxUploadMB:    2048,
+			WebDAVEnabled:  true,
 		},
 		DB:           database,
 		Limiter:      auth.NewLoginLimiter(1000),

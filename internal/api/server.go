@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eric/nas-filehub/internal/auth"
@@ -28,6 +29,17 @@ type Server struct {
 	Limiter      *auth.LoginLimiter
 	ResetLimiter *auth.LoginLimiter
 	Static       fs.FS
+	Uploads      *UploadManager
+	// MailSend, if set, is used instead of mail.Send (tests).
+	MailSend func(cfg db.SMTPSettings, to, subject, body string) error
+	// NotifySync sends notification emails in-process instead of a goroutine (tests).
+	NotifySync bool
+
+	uploadsOnce sync.Once
+	notifyMu    sync.Mutex
+	notifyLast  map[string]time.Time
+	davOnce     sync.Once
+	davHandler  http.Handler
 }
 
 type scope struct {
@@ -72,6 +84,12 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/batch/move", s.requireAuth(s.handleBatchMove))
 	mux.HandleFunc("/api/batch/copy", s.requireAuth(s.handleBatchCopy))
 	mux.HandleFunc("/api/upload", s.requireAuth(s.handleUpload))
+	mux.HandleFunc("/api/upload/sessions", s.requireAuth(s.handleUploadSessions))
+	mux.HandleFunc("/api/upload/sessions/", s.requireAuth(s.handleUploadSessionID))
+	if s.webdavEnabled() {
+		mux.Handle("/dav", s.webDAVHandler())
+		mux.Handle("/dav/", s.webDAVHandler())
+	}
 	mux.HandleFunc("/api/download", s.requireAuth(s.handleDownload))
 	mux.HandleFunc("/api/raw", s.requireAuth(s.handleRaw))
 	mux.HandleFunc("/api/thumb", s.requireAuth(s.handleThumb))
@@ -464,6 +482,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	u := s.currentUser(r)
 	m := s.userPublic(u)
 	m["usedBytes"] = s.homeUsedBytes(u)
+	m["webdav"] = map[string]any{"enabled": s.webdavEnabled(), "path": "/dav/"}
 	writeJSON(w, 200, map[string]any{"user": m})
 }
 
@@ -744,46 +763,14 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filename := hdr.Filename
-	exists, isDir, err := files.Exists(sc.Root, sc.Rel, filename)
-	if err != nil {
-		writeErr(w, 400, err.Error())
-		return
-	}
-	if exists {
-		switch action {
-		case files.ConflictSkip:
-			name := filepath.Base(filename)
-			rel := name
-			if sc.Rel != "" && sc.Rel != "." {
-				rel = filepath.ToSlash(filepath.Join(sc.Rel, name))
-			}
-			writeJSON(w, 200, map[string]any{"path": rel, "name": name, "skipped": true})
-			return
-		case files.ConflictOverwrite:
-			if isDir {
-				writeErr(w, 400, files.ErrIsDirectory.Error())
-				return
-			}
-		case files.ConflictRename:
-			// proceed to write under a free name
-		default:
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error": "file already exists",
-				"code":  "exists",
-				"name":  filepath.Base(filename),
-			})
-			return
-		}
+	if rootID == "" {
+		rootID = "home"
 	}
 	extra := hdr.Size
 	if extra < 0 {
 		extra = 0
 	}
-	if err := s.checkUserQuota(u, extra); err != nil {
-		writeErr(w, 403, err.Error())
-		return
-	}
-	saved, err := files.SaveUpload(sc.Root, sc.Rel, filename, file, action)
+	saved, err := s.applyUploadedFile(u, sc, rootID, filename, file, extra, action)
 	if err != nil {
 		if errors.Is(err, files.ErrExists) {
 			writeJSON(w, http.StatusConflict, map[string]any{
@@ -793,14 +780,22 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		writeErr(w, 400, err.Error())
+		if errors.Is(err, files.ErrIsDirectory) {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		msg := err.Error()
+		if strings.Contains(strings.ToLower(msg), "quota exceeded") {
+			writeErr(w, 403, msg)
+			return
+		}
+		writeErr(w, 400, msg)
 		return
 	}
 	if saved.Skipped {
 		writeJSON(w, 200, map[string]any{"path": saved.Rel, "name": saved.Name, "skipped": true})
 		return
 	}
-	s.attributeWrite(u, sc, saved.Rel)
 	out := map[string]any{"path": saved.Rel, "name": saved.Name}
 	if saved.Overwritten {
 		out["overwritten"] = true
@@ -1162,6 +1157,7 @@ func (s *Server) handleAdminShareID(w http.ResponseWriter, r *http.Request) {
 				canDel = *body.CanDelete
 			}
 			s.audit(r, me.ID, me.Username, "share_grant_set", "share="+itoaLocal(id)+" user="+itoaLocal(body.UserID)+" perm="+body.Perm+" canDelete="+boolStr(canDel))
+			s.notifyShareGranted(body.UserID, id, body.Perm, canDel)
 			writeJSON(w, 200, map[string]string{"ok": "1"})
 		case http.MethodDelete:
 			uid, _ := strconv.ParseInt(r.URL.Query().Get("userId"), 10, 64)

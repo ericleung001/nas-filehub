@@ -19,7 +19,7 @@
 
     Optional hardware thumbnails: keep the /dev/dri device mapping (and NVIDIA runtime if you use an NVIDIA GPU) and set THUMB_HWACCEL=auto (or leave THUMB_VAAPI=true for the same auto path). If no GPU device is present, leave hardware acceleration off. The image supports linux/amd64 and linux/arm64. Set PUID/PGID to the host UID/GID that should own /data (default 1000:1000).
 
-    The optional Unraid shares path is mounted at /data/files/shares so you can create shared folders with paths such as shares/Movies. You can remove that mapping if you do not need it.
+    Appdata is mounted at /data (database, thumbnails, and admin-credentials.txt). Optionally map User files from /mnt/user/nas-filehub to /data/files (DATA_ROOT) so user data is stored on a share instead of under appdata. If the container has already been started, move any existing files from appdata/nas-filehub/files into the new User files location before adding that mapping, otherwise the new mount hides the old directory. The optional Unraid shares path is mounted at /data/files/shares so you can create shared folders with paths such as shares/Movies. If you also set User files, keep Unraid shares mapped when you still want host /mnt/user visible as shares/…; otherwise you can remove it.
   </Description>
   <Support>https://github.com/ericleung001/nas-filehub/issues</Support>
   <Project>https://github.com/ericleung001/nas-filehub</Project>
@@ -32,13 +32,14 @@
   <DonateText>Buy me a coffee</DonateText>
   <Screenshot>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/screenshots/01-login.png</Screenshot>
   <Screenshot>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/screenshots/02-after-login.png</Screenshot>
-  <Date>2026-11-10</Date>
+  <Date>2026-11-14</Date>
   <Requires>After the first start, read the generated admin password in /mnt/user/appdata/nas-filehub/admin-credentials.txt, then change it under Settings → Change password. Prefer a reverse proxy; do not expose the WebUI port to the public internet. For hardware thumbnails, keep /dev/dri mapped (or an NVIDIA runtime) and set THUMB_HWACCEL=auto, or THUMB_VAAPI=true for the same auto path. If no GPU device is present, remove the device mapping. PUID/PGID default to 1000:1000.</Requires>
   <Changes>Community Apps template and GHCR image for Filehub. Leave ADMIN_PASSWORD unset on first boot and read the generated password from appdata/nas-filehub/admin-credentials.txt.</Changes>
 
   <Config Name="WebUI" Target="8080" Default="8088" Mode="tcp" Description="HTTP WebUI port (container 8080). Prefer a reverse proxy; do not expose this port directly to the public internet." Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/nas-filehub" Mode="rw" Description="Database, thumbnails, generated admin-credentials.txt, and default files under /data/files." Type="Path" Display="always" Required="true" Mask="false"/>
-  <Config Name="Unraid shares" Target="/data/files/shares" Default="/mnt/user" Mode="rw" Description="Optional mapping so Shared folders can use paths like shares/Movies. You can remove this mapping if you do not need host shares." Type="Path" Display="always" Required="false" Mask="false"/>
+  <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/nas-filehub" Mode="rw" Description="Database, thumbnails, and generated admin-credentials.txt. User files default to /data/files inside this folder unless User files is mapped separately." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="User files" Target="/data/files" Default="/mnt/user/nas-filehub" Mode="rw" Description="Optional DATA_ROOT mapping for homes and shared folders you create in Filehub. Default host path is /mnt/user/nas-filehub. If the container already ran, move appdata/nas-filehub/files here before adding this mapping. PUID/PGID ownership applies to /data, including this mount." Type="Path" Display="always" Required="false" Mask="false"/>
+  <Config Name="Unraid shares" Target="/data/files/shares" Default="/mnt/user" Mode="rw" Description="Optional mapping so Shared folders can use paths like shares/Movies from the Unraid /mnt/user tree. You can remove this mapping if you do not need host shares. If User files is also set, keep this mapping only when you still want host shares visible under shares/." Type="Path" Display="always" Required="false" Mask="false"/>
   <Config Name="Intel GPU (/dev/dri)" Target="/dev/dri" Default="/dev/dri" Mode="" Description="Optional GPU devices for thumbnail acceleration (Intel/AMD VAAPI via /dev/dri). If not present on the host, remove this mapping and leave THUMB_HWACCEL empty / THUMB_VAAPI=false." Type="Device" Display="advanced" Required="false" Mask="false">/dev/dri</Config>
   <Config Name="ADMIN_USER" Target="ADMIN_USER" Default="admin" Description="Seed admin username on first boot only." Type="Variable" Display="advanced" Required="false" Mask="false">admin</Config>
   <Config Name="ADMIN_PASSWORD" Target="ADMIN_PASSWORD" Default="" Description="Optional. Leave empty on first boot so the entrypoint generates a password into /data/admin-credentials.txt. Only seeds the first boot; later changes must be made in Settings." Type="Variable" Display="advanced" Required="false" Mask="true"/>

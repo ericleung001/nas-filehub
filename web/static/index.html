@@ -98,6 +98,7 @@
               </div>
               <button id="btn-mkdir" title="New folder">+ Folder</button>
               <label class="btn file-btn">Upload<input id="file-input" type="file" multiple hidden /></label>
+              <label class="btn file-btn">Upload folder<input id="folder-input" type="file" webkitdirectory multiple hidden /></label>
               <button id="btn-refresh" class="ghost">Refresh</button>
             </div>
           </div>
@@ -110,7 +111,7 @@
             <button type="button" id="btn-bulk-clear" class="ghost">Clear</button>
           </div>
           <div id="files-dropzone" class="files-wrap" tabindex="-1">
-            <div id="drop-hint" class="drop-hint" hidden>Drop files to upload here</div>
+            <div id="drop-hint" class="drop-hint" hidden>Drop files or folders to upload here</div>
             <table class="files" id="files-table">
               <colgroup>
                 <col class="col-check" />
@@ -154,7 +155,7 @@
           <button type="button" class="settings-nav-item" data-tab="my-sessions">Active sessions</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="users" hidden>Users</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="shares" hidden>Shares</button>
-          <button type="button" class="settings-nav-item admin-only" data-tab="sessions" hidden>Sessions</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="sessions" hidden>Session duration</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="registration" hidden>Registration</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="security" hidden>Security</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="audit" hidden>Audit log</button>
@@ -389,7 +390,7 @@
           </div>
           <div id="tab-sessions" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
-              <h3>Sessions</h3>
+              <h3>Session duration</h3>
               <p class="muted">How long users stay logged in after a new login. Changing these values applies to <strong>new logins only</strong>; existing sessions keep their current expiry.</p>
               <form id="session-settings-form" class="admin-form policy-form">
                 <label>Session duration
@@ -423,7 +424,7 @@
           <div id="tab-registration" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>Registration</h3>
-              <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. By default, self-registered accounts stay pending until an administrator approves them under Settings → Users. Existing active accounts are not affected. Rejecting a pending account deletes it so the username can be reused. Email notification is optional and is not required.</p>
+              <p class="muted">When enabled, the login page links to <strong>/register</strong> (Sign up). New accounts need username, email, and a password that meets the password policy. By default, self-registered accounts stay pending until an administrator approves them under Settings → Users. Existing active accounts are not affected. Rejecting a pending account deletes it so the username can be reused. If SMTP is configured, administrators with an email address are notified when a new account is waiting for approval. Email is not required for registration itself.</p>
               <label class="check"><input id="open-registration" type="checkbox" /> Allow open registration</label>
               <label class="check"><input id="registration-require-approval" type="checkbox" /> Require admin approval for new sign-ups</label>
               <p id="open-registration-msg" class="muted" hidden></p>
@@ -478,7 +479,7 @@
           <div id="tab-email" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>Email (SMTP)</h3>
-              <p class="muted">Used for forgot-password reset links. SMTP password is stored in settings and never shown again; leave blank to keep the current password. Env <code>SMTP_*</code> / <code>PUBLIC_BASE_URL</code> override UI when set.</p>
+              <p class="muted">Used for forgot-password reset links, a notice to admins when a new open-registration account is waiting for approval, and a notice to a user when they are granted access to a shared folder (if that user has an email). If SMTP is not configured, those notices are skipped and the original action still succeeds. The SMTP password is stored in settings and never shown again; leave blank to keep the current password. Env <code>SMTP_*</code> / <code>PUBLIC_BASE_URL</code> override UI when set.</p>
               <form id="smtp-form" class="admin-form policy-form">
                 <label class="check"><input name="smtpEnabled" type="checkbox" /> Enable email</label>
                 <label>SMTP host<input name="smtpHost" placeholder="smtp.example.com" /></label>
@@ -627,7 +628,7 @@
   <dialog id="upload-conflict-dialog">
     <form method="dialog" class="dialog-close"><button value="cancel" class="ghost" aria-label="Close">✕</button></form>
     <h3>File already exists</h3>
-    <p class="muted" id="upload-conflict-intro">A file with the same name is already in this folder. Choose Skip, Overwrite, or Rename. Rename adds _1, _2, … before the extension.</p>
+    <p class="muted" id="upload-conflict-intro">A file with the same name is already in this folder. Choose Skip, Overwrite, or Rename. Rename adds _1, _2, … before the extension. Overwrite moves the existing file to the Recycle bin, then saves the new file.</p>
     <div id="upload-conflict-apply" class="conflict-apply" hidden>
       <span>Apply to all</span>
       <div class="conflict-actions" role="group" aria-label="Apply to all">

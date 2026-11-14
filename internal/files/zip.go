@@ -94,7 +94,7 @@ func WriteZip(w io.Writer, root, rel string, started time.Time) (int, error) {
 		if err != nil {
 			return nil
 		}
-		if info.IsDir() && info.Name() == TrashDirName && path != full {
+		if info.IsDir() && IsInternalDirName(info.Name()) && path != full {
 			return filepath.SkipDir
 		}
 		relPath, rerr := filepath.Rel(full, path)

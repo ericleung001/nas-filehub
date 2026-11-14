@@ -91,6 +91,9 @@ func List(root, rel string) ([]Entry, error) {
 			continue
 		}
 		name := e.Name()
+		if IsInternalDirName(name) {
+			continue
+		}
 		p := name
 		if baseRel != "" && baseRel != "." {
 			p = filepath.ToSlash(filepath.Join(baseRel, name))
@@ -391,6 +394,9 @@ func DirSize(root, rel string) (int64, error) {
 			return nil
 		}
 		if d.IsDir() {
+			if IsInternalDirName(d.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		// skip symlinks to avoid escaping / double-count
