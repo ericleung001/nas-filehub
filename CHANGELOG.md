@@ -8,6 +8,18 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-11-14
+
+### Added
+- **Share with users** — from the file manager, Share on a file or folder can grant access to one or more Filehub users, create a public link (optional expiry and password), or both. Recipients see the items under a **Shared with me** sidebar root (also in WebDAV). Default access is read; folders can be granted write. The owner or an admin can revoke a user grant from the same Share dialog. You can only share items you can already read, and not from the Recycle bin or from Shared with me. Recipients with an email address are notified when SMTP is configured; missing SMTP or a missing address does not fail the share.
+- **Per-user quota override** — Settings → Storage quota remains the default for users without a custom limit, including new accounts. Admins can still set a different quota for an individual user under Users → Edit, even while the default is on. The Users table shows whether a quota is default or custom.
+
+### Changed
+- **Recycle bin toolbar** — Folder, Upload, and Upload folder are hidden while the Recycle bin is open (restore and empty actions stay).
+
+### Fixed
+- **Active sessions and Audit log** — opening those Settings tabs did not load any rows because the refresh functions were scoped inside an unrelated search/trash initializer and were never called. Both lists now load; the current session is listed and can be distinguished from other devices; audit events already being recorded (sign-in, public links, share grants, and the new user-to-user shares) are shown. A fetch error is displayed in the table instead of leaving it blank.
+
 ## [0.4.9] - 2026-11-14
 
 ### Added

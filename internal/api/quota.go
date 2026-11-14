@@ -45,16 +45,45 @@ func (s *Server) usedBytes(u *db.User) int64 {
 
 func (s *Server) homeUsedBytes(u *db.User) int64 { return s.usedBytes(u) }
 
+func (s *Server) effectiveQuota(u *db.User) int64 {
+	if s == nil || s.DB == nil {
+		if u == nil {
+			return 0
+		}
+		return u.QuotaBytes
+	}
+	return s.DB.EffectiveQuota(u)
+}
+
+func (s *Server) quotaUser(u *db.User, sc *scope) *db.User {
+	if sc != nil && sc.QuotaUser != nil {
+		return sc.QuotaUser
+	}
+	return u
+}
+
 func (s *Server) checkUserQuota(u *db.User, extra int64) error {
-	if u == nil || u.QuotaBytes <= 0 {
+	return s.checkUserQuotaOn(u, extra)
+}
+
+func (s *Server) checkScopeQuota(u *db.User, sc *scope, extra int64) error {
+	return s.checkUserQuotaOn(s.quotaUser(u, sc), extra)
+}
+
+func (s *Server) checkUserQuotaOn(u *db.User, extra int64) error {
+	if u == nil {
+		return nil
+	}
+	limit := s.effectiveQuota(u)
+	if limit <= 0 {
 		return nil
 	}
 	if extra < 0 {
 		extra = 0
 	}
 	used := s.usedBytes(u)
-	if used+extra > u.QuotaBytes {
-		return fmt.Errorf("quota exceeded: used %d + %d > limit %d bytes", used, extra, u.QuotaBytes)
+	if used+extra > limit {
+		return fmt.Errorf("quota exceeded: used %d + %d > limit %d bytes", used, extra, limit)
 	}
 	return nil
 }
@@ -76,14 +105,44 @@ func (s *Server) attributeWrite(u *db.User, sc *scope, rel string) {
 	}
 }
 
+func (sc *scope) shareRootID() string {
+	if sc == nil {
+		return ""
+	}
+	if sc.OriginRootID != "" {
+		return sc.OriginRootID
+	}
+	if sc.Kind == "home" {
+		return "home"
+	}
+	if sc.Kind == "share" && sc.ID > 0 {
+		return "share:" + itoaLocal(sc.ID)
+	}
+	return ""
+}
+
 func (s *Server) afterRename(sc *scope, from, to string) {
-	if sc == nil || sc.Kind != "share" {
+	if sc == nil {
 		return
 	}
-	_ = s.DB.RelocateFileOwnerPrefix(sc.dataRel(from), sc.dataRel(to))
+	if rootID := sc.shareRootID(); rootID != "" {
+		_ = s.DB.RelocateItemSharesForPath(rootID, from, to)
+	}
+	if sc.Kind == "share" {
+		_ = s.DB.RelocateFileOwnerPrefix(sc.dataRel(from), sc.dataRel(to))
+	}
 }
 
 func (s *Server) afterTransfer(u *db.User, src, dst *scope, srcRel, dstRel string, move bool) {
+	if move && src != nil {
+		if rootID := src.shareRootID(); rootID != "" {
+			if dst != nil && src.Root == dst.Root && dst.shareRootID() == rootID {
+				_ = s.DB.RelocateItemSharesForPath(rootID, srcRel, dstRel)
+			} else {
+				_, _ = s.DB.DeleteItemSharesForPath(rootID, srcRel)
+			}
+		}
+	}
 	if dst != nil && dst.Kind == "share" {
 		if move && src != nil && src.Kind == "share" {
 			_ = s.DB.RelocateFileOwnerPrefix(src.dataRel(srcRel), dst.dataRel(dstRel))
@@ -133,6 +192,7 @@ func (s *Server) trashDelete(u *db.User, sc *scope, rel, rootID string) error {
 		s.ledgerTrashPayload(it, ownerID)
 	}
 	_, _ = s.DB.DeleteLinkSharesForPath(rootID, rel)
+	_, _ = s.DB.DeleteItemSharesForPath(rootID, rel)
 	return nil
 }
 

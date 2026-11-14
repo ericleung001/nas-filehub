@@ -125,7 +125,7 @@ func (s *Server) applyUploadedFile(u *db.User, sc *scope, rootID, filename strin
 	if size < 0 {
 		size = 0
 	}
-	if err := s.checkUserQuota(u, size); err != nil {
+	if err := s.checkScopeQuota(u, sc, size); err != nil {
 		return files.SaveUploadResult{}, err
 	}
 	id, err := s.writeStaging("", r)

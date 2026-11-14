@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -110,4 +111,32 @@ func (s *Server) notifyShareGranted(userID, shareID int64, perm string, canDelet
 		sh.Name, access, deleteNote,
 	)
 	s.notifyEmail(u.Email, subject, body)
+}
+
+func (s *Server) notifyItemShared(r *http.Request, from *db.User, to *db.User, label string, isDir bool) {
+	if to == nil || strings.TrimSpace(to.Email) == "" {
+		return
+	}
+	who := "Someone"
+	if from != nil && strings.TrimSpace(from.Username) != "" {
+		who = from.Username
+	}
+	kind := "file"
+	if isDir {
+		kind = "folder"
+	}
+	if strings.TrimSpace(label) == "" {
+		label = kind
+	}
+	subject := "Filehub: a " + kind + " was shared with you"
+	body := fmt.Sprintf(
+		"%s shared the %s %q with you.\n\nSign in to Filehub and open Shared with me to view it.\n",
+		who, kind, label,
+	)
+	if r != nil {
+		if base := strings.TrimSpace(s.publicBaseURL(r)); base != "" {
+			body += "\n" + base + "\n"
+		}
+	}
+	s.notifyEmail(to.Email, subject, body)
 }

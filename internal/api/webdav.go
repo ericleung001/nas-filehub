@@ -19,6 +19,7 @@ import (
 type davUserKey struct{}
 
 const davHomeName = "My Files"
+const davIncomingName = "Shared with me"
 
 func (s *Server) webdavEnabled() bool {
 	return s.Cfg.WebDAVEnabled
@@ -131,12 +132,12 @@ type davFS struct {
 }
 
 func (fs *davFS) mounts(u *db.User) ([]davMount, error) {
-	out := []davMount{{rootID: "home", name: davHomeName}}
+	out := []davMount{{rootID: "home", name: davHomeName}, {rootID: "incoming", name: davIncomingName}}
 	shares, err := fs.s.DB.SharesForUser(u.ID, u.IsAdmin)
 	if err != nil {
 		return nil, err
 	}
-	used := map[string]bool{strings.ToLower(davHomeName): true}
+	used := map[string]bool{strings.ToLower(davHomeName): true, strings.ToLower(davIncomingName): true}
 	for _, sa := range shares {
 		name := strings.TrimSpace(sa.Share.Name)
 		if name == "" {
@@ -171,6 +172,9 @@ func (fs *davFS) resolve(ctx context.Context, name string) (*davMount, error) {
 	}
 	for _, m := range mounts {
 		if m.name == first || strings.EqualFold(m.name, first) {
+			if m.rootID == "incoming" {
+				return fs.resolveIncoming(u, rest)
+			}
 			sc, err := fs.s.resolveScope(u, m.rootID, rest)
 			if err != nil {
 				return nil, err
@@ -198,7 +202,7 @@ func (fs *davFS) Mkdir(ctx context.Context, name string, perm os.FileMode) error
 		return os.ErrPermission
 	}
 	u := davUser(ctx)
-	if err := fs.s.checkUserQuota(u, 0); err != nil {
+	if err := fs.s.checkScopeQuota(u, m.sc, 0); err != nil {
 		return err
 	}
 	return files.Mkdir(m.sc.Root, m.sc.Rel)
@@ -220,6 +224,12 @@ func (fs *davFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 	if err != nil {
 		return nil, err
 	}
+	if m != nil && m.rootID == "incoming" && m.sc == nil {
+		if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC) != 0 {
+			return nil, os.ErrPermission
+		}
+		return fs.openIncoming(u)
+	}
 	if m.sc == nil {
 		return nil, os.ErrNotExist
 	}
@@ -238,9 +248,11 @@ func (fs *davFS) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 		}
 	}
 	leftover := int64(-1)
-	if write && u.QuotaBytes > 0 {
-		used := fs.s.usedBytes(u)
-		left := u.QuotaBytes - used
+	bill := fs.s.quotaUser(u, m.sc)
+	limit := fs.s.effectiveQuota(bill)
+	if write && limit > 0 {
+		used := fs.s.usedBytes(bill)
+		left := limit - used
 		if st, err := os.Lstat(full); err == nil && !st.IsDir() && flag&os.O_TRUNC != 0 {
 			left += st.Size()
 		}
@@ -345,6 +357,9 @@ func (fs *davFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	m, err := fs.resolve(ctx, name)
 	if err != nil {
 		return nil, err
+	}
+	if m != nil && m.rootID == "incoming" && m.sc == nil {
+		return virtInfo{name: davIncomingName, mode: os.ModeDir | 0o755, mod: time.Now()}, nil
 	}
 	if m.sc == nil {
 		return nil, os.ErrNotExist
@@ -463,4 +478,69 @@ func (f *davFile) Close() error {
 		f.s.attributeWrite(f.u, f.sc, rel)
 	}
 	return err
+}
+
+func (fs *davFS) resolveIncoming(u *db.User, rest string) (*davMount, error) {
+	rest = strings.Trim(rest, "/")
+	if rest == "" {
+		return &davMount{rootID: "incoming", name: davIncomingName, rel: ""}, nil
+	}
+	first, rem, _ := strings.Cut(rest, "/")
+	entries, err := fs.s.listIncomingEntries(u)
+	if err != nil {
+		return nil, err
+	}
+	var idStr string
+	for _, e := range entries {
+		name, _ := e["name"].(string)
+		if name == first || strings.EqualFold(name, first) {
+			idStr, _ = e["path"].(string)
+			break
+		}
+	}
+	if idStr == "" {
+		return nil, os.ErrNotExist
+	}
+	rel := idStr
+	if rem != "" {
+		rel = idStr + "/" + rem
+	}
+	sc, err := fs.s.resolveScope(u, "incoming", rel)
+	if err != nil {
+		return nil, err
+	}
+	return &davMount{rootID: "incoming", name: davIncomingName, rel: rel, sc: sc}, nil
+}
+
+func (fs *davFS) openIncoming(u *db.User) (webdav.File, error) {
+	entries, err := fs.s.listIncomingEntries(u)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	children := make([]os.FileInfo, 0, len(entries))
+	for _, e := range entries {
+		name, _ := e["name"].(string)
+		if name == "" {
+			continue
+		}
+		isDir, _ := e["isDir"].(bool)
+		var size int64
+		switch v := e["size"].(type) {
+		case int64:
+			size = v
+		case int:
+			size = int64(v)
+		}
+		mod := now
+		if t, ok := e["modTime"].(time.Time); ok {
+			mod = t
+		}
+		mode := os.FileMode(0o644)
+		if isDir {
+			mode = os.ModeDir | 0o755
+		}
+		children = append(children, virtInfo{name: name, mode: mode, size: size, mod: mod})
+	}
+	return &virtDir{info: virtInfo{name: davIncomingName, mode: os.ModeDir | 0o755, mod: now}, children: children}, nil
 }

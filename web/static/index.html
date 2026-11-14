@@ -107,7 +107,7 @@
             <button type="button" id="btn-bulk-delete" class="ghost danger">Delete</button>
             <button type="button" id="btn-bulk-move" class="ghost">Move…</button>
             <button type="button" id="btn-bulk-copy" class="ghost">Copy…</button>
-            <button type="button" id="btn-bulk-share" class="ghost">Share link…</button>
+            <button type="button" id="btn-bulk-share" class="ghost">Share…</button>
             <button type="button" id="btn-bulk-clear" class="ghost">Clear</button>
           </div>
           <div id="files-dropzone" class="files-wrap" tabindex="-1">
@@ -280,7 +280,7 @@
                 <input name="password" type="password" placeholder="password" required />
                 <input name="homePath" placeholder="home path (optional)" />
                 <input name="quota" id="create-user-quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
-                <p id="create-user-quota-note" class="muted admin-form-note" hidden>The global quota under Settings → Storage quota applies to all users.</p>
+                <p id="create-user-quota-note" class="muted admin-form-note" hidden>New users receive the default quota from Settings → Storage quota. You can set a custom limit later under Edit.</p>
                 <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
                 <button type="submit">Create user</button>
               </form>
@@ -313,8 +313,9 @@
                   <label>Username<input name="username" required /></label>
                   <label>Email<input name="email" type="email" placeholder="optional" /></label>
                   <label>Home path<input name="homePath" required /></label>
+                  <label class="check" id="edit-user-quota-custom-wrap" hidden><input name="quotaCustom" type="checkbox" /> Use a custom quota for this user</label>
                   <label id="edit-user-quota-label">Quota<input name="quota" placeholder="5GB / 500MB / 0 = unlimited" /></label>
-                  <p id="edit-user-quota-note" class="muted admin-form-note" hidden>Quota is set for all users under Settings → Storage quota and cannot be changed per user while that setting is on.</p>
+                  <p id="edit-user-quota-note" class="muted admin-form-note" hidden>This user is using the default quota from Settings → Storage quota. Tick “Use a custom quota” to set a different limit.</p>
                   <label class="check"><input name="isAdmin" type="checkbox" /> admin</label>
                   <label class="check"><input name="disabled" type="checkbox" /> disabled</label>
                   <label class="check"><input name="totpRequired" type="checkbox" /> require 2FA</label>
@@ -454,7 +455,7 @@
           <div id="tab-audit" class="settings-panel" role="tabpanel" hidden>
             <div class="settings-card admin-section">
               <h3>Audit log</h3>
-              <p class="muted">Recent sign-in attempts, public link create/revoke, and shared-folder permission changes. Passwords and tokens are never recorded.</p>
+              <p class="muted">Recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares. Passwords and tokens are never recorded.</p>
               <div class="links-toolbar">
                 <button type="button" id="btn-audit-prev" class="ghost" disabled>Previous</button>
                 <button type="button" id="btn-audit-next" class="ghost" disabled>Next</button>
@@ -479,7 +480,7 @@
           <div id="tab-email" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>Email (SMTP)</h3>
-              <p class="muted">Used for forgot-password reset links, a notice to admins when a new open-registration account is waiting for approval, and a notice to a user when they are granted access to a shared folder (if that user has an email). If SMTP is not configured, those notices are skipped and the original action still succeeds. The SMTP password is stored in settings and never shown again; leave blank to keep the current password. Env <code>SMTP_*</code> / <code>PUBLIC_BASE_URL</code> override UI when set.</p>
+              <p class="muted">Used for forgot-password reset links, a notice to admins when a new open-registration account is waiting for approval, a notice when a user is granted access to a shared folder, and a notice when a file or folder is shared with a specific user (if that user has an email). If SMTP is not configured, those notices are skipped and the original action still succeeds. The SMTP password is stored in settings and never shown again; leave blank to keep the current password. Env <code>SMTP_*</code> / <code>PUBLIC_BASE_URL</code> override UI when set.</p>
               <form id="smtp-form" class="admin-form policy-form">
                 <label class="check"><input name="smtpEnabled" type="checkbox" /> Enable email</label>
                 <label>SMTP host<input name="smtpHost" placeholder="smtp.example.com" /></label>
@@ -501,7 +502,7 @@
               <form id="global-quota-form" class="admin-form policy-form">
                 <label class="check"><input name="globalQuotaEnabled" type="checkbox" /> Apply the same quota to all users</label>
                 <label>Quota<input name="globalQuota" placeholder="e.g. 5GB / 1G / 0 = unlimited" /></label>
-                <p class="muted admin-form-note">When enabled, every existing user is updated to this quota, and new accounts (admin-created and open registration) get this quota. Per-user quota editing is disabled while it is on. Quota applies to each user’s home only (shared folders are not billed).</p>
+                <p class="muted admin-form-note">When enabled, this is the default quota for users who do not have a custom limit, including new accounts. You can still set a different quota for an individual user under Users → Edit. Quota accounting is unchanged: each user’s home, files they wrote into shared folders, and items in the Recycle bin until purged.</p>
                 <button type="submit">Save quota setting</button>
                 <p id="global-quota-msg" class="muted" hidden></p>
               </form>
@@ -598,28 +599,52 @@
 
   <dialog id="share-dialog">
     <form method="dialog" class="dialog-close"><button value="cancel" class="ghost">✕</button></form>
-    <h3>Share link</h3>
+    <h3>Share</h3>
     <p id="share-target" class="meta"></p>
     <form id="share-form" class="admin-form">
-      <label>Label (optional)<input id="share-label" placeholder="display name" /></label>
-      <label>Expires
-        <select id="share-expires">
-          <option value="">Never</option>
-          <option value="1d">1 day</option>
-          <option value="7d">7 days</option>
-          <option value="30d">30 days</option>
-        </select>
-      </label>
-      <label>Password (optional)<input id="share-password" type="password" autocomplete="new-password" /></label>
-      <button type="submit" id="btn-create-share">Create link</button>
+      <fieldset class="share-fieldset">
+        <legend>Share with users</legend>
+        <p class="muted">Choose one or more Filehub users. They will see the item under Shared with me. Users with an email address are notified if SMTP is configured.</p>
+        <input id="share-user-filter" type="search" placeholder="Filter users" autocomplete="off" aria-label="Filter users" />
+        <div id="share-user-list" class="share-user-list" role="group" aria-label="Users"></div>
+        <p id="share-user-empty" class="muted" hidden>No other users are available.</p>
+        <label id="share-perm-wrap" hidden>Folder access
+          <select id="share-perm">
+            <option value="read">Read</option>
+            <option value="write">Write</option>
+          </select>
+        </label>
+      </fieldset>
+      <fieldset class="share-fieldset">
+        <legend>Public link</legend>
+        <label class="check"><input id="share-public" type="checkbox" /> Also create a public link</label>
+        <div id="share-link-options" hidden>
+          <label>Label (optional)<input id="share-label" placeholder="display name" /></label>
+          <label>Expires
+            <select id="share-expires">
+              <option value="">Never</option>
+              <option value="1d">1 day</option>
+              <option value="7d">7 days</option>
+              <option value="30d">30 days</option>
+            </select>
+          </label>
+          <label>Password (optional)<input id="share-password" type="password" autocomplete="new-password" /></label>
+        </div>
+      </fieldset>
+      <button type="submit" id="btn-create-share">Share</button>
       <p id="share-error" class="error" hidden></p>
     </form>
+    <div id="share-existing" class="share-existing" hidden>
+      <h4>Current access</h4>
+      <ul id="share-existing-users" class="share-existing-list"></ul>
+      <ul id="share-existing-links" class="share-existing-list"></ul>
+    </div>
     <div id="share-result" hidden>
-      <h4 id="share-success-title">Link created</h4>
-      <p class="muted">Anyone with this URL can download or browse (read-only).</p>
-      <input id="share-url" readonly />
+      <h4 id="share-success-title">Shared</h4>
+      <p id="share-success-msg" class="muted"></p>
+      <input id="share-url" readonly hidden />
       <div class="share-result-actions">
-        <button type="button" id="btn-copy-share-url">Copy URL</button>
+        <button type="button" id="btn-copy-share-url" hidden>Copy URL</button>
         <button type="button" id="btn-share-done" class="ghost">Done</button>
       </div>
     </div>

@@ -209,7 +209,7 @@ func (s *Server) collectQuotaTotals() quotaTotals {
 	rows := make([]userQuotaUsage, 0, len(users))
 	for i := range users {
 		u := &users[i]
-		rows = append(rows, userQuotaUsage{Used: s.homeUsedBytes(u), Quota: u.QuotaBytes})
+		rows = append(rows, userQuotaUsage{Used: s.homeUsedBytes(u), Quota: s.effectiveQuota(u)})
 	}
 	return summarizeUserQuotas(rows)
 }

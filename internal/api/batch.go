@@ -110,7 +110,11 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 			ok++
 			continue
 		}
-		if err := s.trashDelete(u, itemScope, pth, rootID); err != nil {
+		delRoot := rootID
+		if itemScope.OriginRootID != "" {
+			delRoot = itemScope.OriginRootID
+		}
+		if err := s.trashDelete(u, itemScope, itemScope.Rel, delRoot); err != nil {
 			failed = append(failed, map[string]string{"path": pth, "error": err.Error()})
 			continue
 		}
@@ -143,15 +147,6 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 		writeErr(w, 400, err.Error())
 		return
 	}
-	srcScope, err := s.resolveScope(u, body.Root, "")
-	if err != nil {
-		writeErr(w, 403, "forbidden")
-		return
-	}
-	if move && !srcScope.canDelete() {
-		writeErr(w, 403, "forbidden")
-		return
-	}
 	destRoot := body.DestRoot
 	if destRoot == "" {
 		destRoot = body.Root
@@ -161,21 +156,33 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	destDir := strings.TrimPrefix(body.DestPath, "/")
+	destDir := dstScope.Rel
 
 	var failed []map[string]string
 	ok := 0
 	for _, p := range paths {
-		base := filepath.Base(p)
+		srcScope, err := s.resolveScope(u, body.Root, p)
+		if err != nil {
+			failed = append(failed, map[string]string{"path": p, "error": "forbidden"})
+			continue
+		}
+		if move && !srcScope.canDelete() {
+			failed = append(failed, map[string]string{"path": p, "error": "forbidden"})
+			continue
+		}
+		base := filepath.Base(srcScope.Rel)
+		if base == "" || base == "." {
+			base = filepath.Base(p)
+		}
 		destName := joinDest(destDir, base)
 		// Skip no-op move into same path
-		if move && body.Root == destRoot && p == destName {
+		if move && srcScope.Root == dstScope.Root && srcScope.Rel == destName {
 			ok++
 			continue
 		}
-		// Prevent moving/copying a folder into its own descendant when same root
-		if body.Root == destRoot {
-			if destName == p || strings.HasPrefix(destName+"/", p+"/") {
+		// Prevent moving/copying a folder into its own descendant when same filesystem root
+		if srcScope.Root == dstScope.Root {
+			if destName == srcScope.Rel || strings.HasPrefix(destName+"/", srcScope.Rel+"/") {
 				failed = append(failed, map[string]string{"path": p, "error": "cannot move/copy into itself"})
 				continue
 			}
@@ -184,31 +191,31 @@ func (s *Server) handleBatchTransfer(w http.ResponseWriter, r *http.Request, mov
 			failed = append(failed, map[string]string{"path": p, "error": "cannot move or copy recycle bin items here"})
 			continue
 		}
-		sameHomeMove := move && body.Root == destRoot && srcScope.Kind == "home" && dstScope.Kind == "home"
+		sameHomeMove := move && srcScope.Kind == "home" && dstScope.Kind == "home" && srcScope.Root == dstScope.Root
 		shareToShareMove := move && srcScope.Kind == "share" && dstScope.Kind == "share"
 		homeToShareMove := move && srcScope.Kind == "home" && dstScope.Kind == "share"
 		if !sameHomeMove && !shareToShareMove && !homeToShareMove {
-			extra, err := files.EntrySize(srcScope.Root, p)
+			extra, err := files.EntrySize(srcScope.Root, srcScope.Rel)
 			if err != nil {
 				failed = append(failed, map[string]string{"path": p, "error": err.Error()})
 				continue
 			}
-			if err := s.checkUserQuota(u, extra); err != nil {
+			if err := s.checkScopeQuota(u, dstScope, extra); err != nil {
 				failed = append(failed, map[string]string{"path": p, "error": err.Error()})
 				continue
 			}
 		}
 		var opErr error
 		if move {
-			opErr = files.MoveEntry(srcScope.Root, p, dstScope.Root, destName)
+			opErr = files.MoveEntry(srcScope.Root, srcScope.Rel, dstScope.Root, destName)
 		} else {
-			opErr = files.CopyEntry(srcScope.Root, p, dstScope.Root, destName)
+			opErr = files.CopyEntry(srcScope.Root, srcScope.Rel, dstScope.Root, destName)
 		}
 		if opErr != nil {
 			failed = append(failed, map[string]string{"path": p, "error": opErr.Error()})
 			continue
 		}
-		s.afterTransfer(u, srcScope, dstScope, p, destName, move)
+		s.afterTransfer(u, srcScope, dstScope, srcScope.Rel, destName, move)
 		ok++
 	}
 	writeJSON(w, 200, map[string]any{"ok": ok, "failed": failed})

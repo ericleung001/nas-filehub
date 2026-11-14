@@ -83,6 +83,8 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   flex-shrink: 0;
 }
 .file-btn { display: inline-flex; align-items: center; margin: 0; cursor: pointer; }
+#btn-mkdir[hidden],
+.actions .file-btn[hidden] { display: none !important; }
 
 .file-search {
   flex: 1 1 160px;
@@ -1034,9 +1036,45 @@ tr.drop-folder-target td,
 #share-dialog #share-target { margin: 0 0 .75rem; }
 #share-form[hidden],
 #share-result[hidden],
-#share-error[hidden] {
+#share-error[hidden],
+#share-link-options[hidden],
+#share-perm-wrap[hidden],
+#share-existing[hidden],
+#share-user-empty[hidden],
+#share-url[hidden],
+#btn-copy-share-url[hidden] {
   display: none !important;
 }
+.share-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .6rem .75rem .75rem;
+  margin: 0 0 .75rem;
+  min-width: 0;
+}
+.share-fieldset legend { padding: 0 .35rem; font-weight: 600; }
+.share-user-list {
+  max-height: 12rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  margin: .4rem 0;
+  padding: .25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.share-user-list label.check { margin: 0; }
+#share-user-filter { width: 100%; margin: .35rem 0 0; }
+.share-existing { text-align: left; margin: .5rem 0; }
+.share-existing h4 { margin: 0 0 .35rem; font-size: 1rem; }
+.share-existing-list { list-style: none; padding: 0; margin: 0 0 .5rem; }
+.share-existing-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: .3rem 0; border-bottom: 1px solid var(--border);
+}
+.share-existing-list .meta { flex: 1; min-width: 0; }
+
 .share-result-actions {
   display: flex;
   flex-wrap: wrap;

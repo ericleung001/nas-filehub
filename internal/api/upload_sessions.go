@@ -297,7 +297,7 @@ func (s *Server) handleUploadSessionInit(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 200, map[string]any{"path": joinDest(sc.Rel, filename), "name": filename, "skipped": true})
 		return
 	}
-	if err := s.checkUserQuota(u, body.Size); err != nil {
+	if err := s.checkScopeQuota(u, sc, body.Size); err != nil {
 		writeErr(w, 403, err.Error())
 		return
 	}
@@ -308,6 +308,9 @@ func (s *Server) handleUploadSessionInit(w http.ResponseWriter, r *http.Request)
 	}
 	now := time.Now().UTC()
 	rootID := body.Root
+	if sc != nil && sc.OriginRootID != "" {
+		rootID = sc.OriginRootID
+	}
 	if rootID == "" {
 		rootID = "home"
 	}
@@ -503,7 +506,7 @@ func (s *Server) handleUploadSessionComplete(w http.ResponseWriter, r *http.Requ
 		sess.FinalName = chosen
 		sess.Overwrite = overwrite
 	}
-	if err := s.checkUserQuota(u, sess.Size); err != nil {
+	if err := s.checkScopeQuota(u, sc, sess.Size); err != nil {
 		writeErr(w, 403, err.Error())
 		return
 	}

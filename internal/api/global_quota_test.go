@@ -166,22 +166,27 @@ func TestGlobalQuotaSettingsAPI(t *testing.T) {
 		t.Fatalf("registered user quota %d, want %d", dave.QuotaBytes, fiveGB)
 	}
 
-	// Per-user quota PATCH rejected while enabled
+	// Per-user quota PATCH is allowed while the default is enabled
 	st, data = doJSON(t, http.MethodPatch, ts.URL+"/api/admin/users/"+itoa(alice.ID), cookies, map[string]any{
-		"quotaBytes": 1,
+		"quotaBytes":  1,
+		"quotaCustom": true,
 	})
-	if st != 400 {
-		t.Fatalf("expected 400 for per-user quota patch, got %d: %v", st, data)
+	if st != 200 {
+		t.Fatalf("expected 200 for per-user quota patch, got %d: %v", st, data)
 	}
-	if msg, _ := data["error"].(string); msg == "" || !containsFold(msg, "global quota") {
-		t.Fatalf("unexpected error: %v", data)
+	user, _ = data["user"].(map[string]any)
+	if user["quotaCustom"] != true {
+		t.Fatalf("response should mark custom: %v", user)
+	}
+	if n, _ := user["quotaBytes"].(float64); int64(n) != 1 {
+		t.Fatalf("effective quota %v, want 1", user["quotaBytes"])
 	}
 	alice2, _ := database.GetUserByID(alice.ID)
-	if alice2.QuotaBytes != fiveGB {
-		t.Fatalf("alice quota mutated: %d", alice2.QuotaBytes)
+	if alice2.QuotaBytes != 1 || !alice2.QuotaCustom {
+		t.Fatalf("alice override not stored: %+v", alice2)
 	}
 
-	// Changing the value while enabled updates everyone
+	// Changing the default updates users without an override, not custom users
 	const oneGB int64 = 1024 * 1024 * 1024
 	st, data = doJSON(t, http.MethodPut, ts.URL+"/api/admin/settings", cookies, map[string]any{
 		"globalQuotaEnabled": true,
@@ -190,17 +195,21 @@ func TestGlobalQuotaSettingsAPI(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("change quota %d: %v", st, data)
 	}
-	for _, name := range []string{"admin", "alice", "bob", "carol", "dave"} {
+	for _, name := range []string{"admin", "bob", "carol", "dave"} {
 		u, err := database.GetUserByUsername(name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if u.QuotaBytes != oneGB {
-			t.Fatalf("%s quota %d, want %d", name, u.QuotaBytes, oneGB)
+		if u.QuotaBytes != oneGB || u.QuotaCustom {
+			t.Fatalf("%s stored=%d custom=%v, want default %d", name, u.QuotaBytes, u.QuotaCustom, oneGB)
 		}
 	}
+	aliceKeep, _ := database.GetUserByID(alice.ID)
+	if aliceKeep.QuotaBytes != 1 || !aliceKeep.QuotaCustom {
+		t.Fatalf("alice custom overwritten: stored=%d custom=%v", aliceKeep.QuotaBytes, aliceKeep.QuotaCustom)
+	}
 
-	// Disable leaves stored quotas; per-user edit works again
+	// Disable leaves stored quotas; alice remains on her custom value
 	st, data = doJSON(t, http.MethodPut, ts.URL+"/api/admin/settings", cookies, map[string]any{
 		"globalQuotaEnabled": false,
 	})
@@ -211,8 +220,8 @@ func TestGlobalQuotaSettingsAPI(t *testing.T) {
 		t.Fatalf("not disabled: %v", data)
 	}
 	alice3, _ := database.GetUserByID(alice.ID)
-	if alice3.QuotaBytes != oneGB {
-		t.Fatalf("alice quota after disable = %d, want last global %d", alice3.QuotaBytes, oneGB)
+	if alice3.QuotaBytes != 1 {
+		t.Fatalf("alice quota after disable = %d, want 1", alice3.QuotaBytes)
 	}
 	st, data = doJSON(t, http.MethodPatch, ts.URL+"/api/admin/users/"+itoa(alice.ID), cookies, map[string]any{
 		"quotaBytes": 4242,
@@ -226,7 +235,7 @@ func TestGlobalQuotaSettingsAPI(t *testing.T) {
 	}
 	bob2, _ := database.GetUserByID(bob.ID)
 	if bob2.QuotaBytes != oneGB {
-		t.Fatalf("bob should stay at last global %d, got %d", oneGB, bob2.QuotaBytes)
+		t.Fatalf("bob should stay at last default %d, got %d", oneGB, bob2.QuotaBytes)
 	}
 }
 

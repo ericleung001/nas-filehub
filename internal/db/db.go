@@ -26,7 +26,8 @@ type User struct {
 	PasswordHash          string    `json:"-"`
 	IsAdmin               bool      `json:"isAdmin"`
 	HomePath              string    `json:"homePath"`   // relative to DATA_ROOT
-	QuotaBytes            int64     `json:"quotaBytes"` // 0 = unlimited
+	QuotaBytes            int64     `json:"quotaBytes"` // stored; 0 = unlimited
+	QuotaCustom           bool      `json:"quotaCustom"`
 	Disabled              bool      `json:"disabled"`
 	TotpSecret            string    `json:"-"`
 	TotpLegacy            bool      `json:"-"` // stored as plaintext; re-encrypt on next write
@@ -155,6 +156,9 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureAuditLogTable(); err != nil {
 		return err
 	}
+	if err := d.ensureItemShareTables(); err != nil {
+		return err
+	}
 	return d.ensureLoginLockoutTable()
 }
 
@@ -191,6 +195,7 @@ func (d *DB) ensureUserColumns() error {
 		{"password_policy_version", `ALTER TABLE users ADD COLUMN password_policy_version INTEGER NOT NULL DEFAULT 0`},
 		{"email", `ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`},
 		{"status", `ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`},
+		{"quota_custom", `ALTER TABLE users ADD COLUMN quota_custom INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, a := range alters {
 		if cols[a.name] {
@@ -355,15 +360,16 @@ func (d *DB) scanUser(scanner interface {
 	Scan(dest ...any) error
 }) (*User, error) {
 	u := &User{}
-	var admin, disabled, totpEnabled, totpRequired int
+	var admin, disabled, totpEnabled, totpRequired, quotaCustom int
 	var created, pwChanged string
 	var storedSecret string
-	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &disabled, &storedSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created)
+	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &quotaCustom, &disabled, &storedSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created)
 	if err != nil {
 		return nil, err
 	}
 	u.Status = NormalizeUserStatus(u.Status)
 	u.IsAdmin = admin == 1
+	u.QuotaCustom = quotaCustom == 1
 	u.Disabled = disabled == 1
 	u.TotpEnabled = totpEnabled == 1
 	u.TotpRequired = totpRequired == 1
@@ -375,7 +381,7 @@ func (d *DB) scanUser(scanner interface {
 	return u, nil
 }
 
-const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, status, created_at`
+const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, quota_custom, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, status, created_at`
 
 func (d *DB) GetUserByUsername(username string) (*User, error) {
 	row := d.SQL.QueryRow(
@@ -475,7 +481,7 @@ func (d *DB) CreateUser(username, password, homePath string, isAdmin bool, quota
 	now := time.Now().UTC().Format(time.RFC3339)
 	pol, _ := d.GetPasswordPolicy()
 	res, err := d.SQL.Exec(
-		`INSERT INTO users(username, email, password_hash, is_admin, home_path, quota_bytes, disabled, password_changed_at, password_policy_version, status, created_at) VALUES(?,?,?,?,?,?,0,?,?,?,?)`,
+		`INSERT INTO users(username, email, password_hash, is_admin, home_path, quota_bytes, quota_custom, disabled, password_changed_at, password_policy_version, status, created_at) VALUES(?,?,?,?,?,?,0,0,?,?,?,?)`,
 		username, email, hash, admin, homePath, quotaBytes, now, pol.Version, UserStatusActive, now,
 	)
 	if err != nil {
@@ -501,6 +507,7 @@ type UserUpdate struct {
 	IsAdmin      *bool
 	HomePath     *string
 	QuotaBytes   *int64
+	QuotaCustom  *bool
 	Disabled     *bool
 	TotpRequired *bool
 }
@@ -548,16 +555,23 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 		}
 	}
 	quota := cur.QuotaBytes
+	quotaCustom := cur.QuotaCustom
 	if upd.QuotaBytes != nil {
-		if gq, err := d.GetGlobalQuotaSettings(); err != nil {
-			return nil, err
-		} else if gq.Enabled {
-			return nil, fmt.Errorf("per-user quota cannot be changed while the global quota setting is enabled")
-		}
 		if *upd.QuotaBytes < 0 {
 			return nil, fmt.Errorf("quotaBytes must be >= 0")
 		}
 		quota = *upd.QuotaBytes
+	}
+	if upd.QuotaCustom != nil {
+		quotaCustom = *upd.QuotaCustom
+	} else if upd.QuotaBytes != nil {
+		// Setting a quota value without an explicit flag means a custom override
+		// when a default/all-users quota is in effect.
+		if gq, err := d.GetGlobalQuotaSettings(); err != nil {
+			return nil, err
+		} else if gq.Enabled {
+			quotaCustom = true
+		}
 	}
 	disabled := cur.Disabled
 	if upd.Disabled != nil {
@@ -579,9 +593,13 @@ func (d *DB) UpdateUser(id int64, upd UserUpdate) (*User, error) {
 	if totpRequired {
 		req = 1
 	}
+	customFlag := 0
+	if quotaCustom {
+		customFlag = 1
+	}
 	_, err = d.SQL.Exec(
-		`UPDATE users SET username=?, email=?, is_admin=?, home_path=?, quota_bytes=?, disabled=?, totp_required=? WHERE id=?`,
-		username, email, admin, homePath, quota, dis, req, id,
+		`UPDATE users SET username=?, email=?, is_admin=?, home_path=?, quota_bytes=?, quota_custom=?, disabled=?, totp_required=? WHERE id=?`,
+		username, email, admin, homePath, quota, customFlag, dis, req, id,
 	)
 	if err != nil {
 		if isUniqueConstraint(err) && strings.Contains(strings.ToLower(err.Error()), "email") {

@@ -37,9 +37,28 @@ func (d *DB) GetGlobalQuotaSettings() (GlobalQuotaSettings, error) {
 	return s, nil
 }
 
+// EffectiveQuota returns the quota that should be enforced for u.
+// When the all-users default is enabled and the user has no custom override,
+// the default applies. Otherwise the stored per-user value is used (0 = unlimited).
+func (d *DB) EffectiveQuota(u *User) int64 {
+	if u == nil {
+		return 0
+	}
+	if u.QuotaCustom {
+		return u.QuotaBytes
+	}
+	gq, err := d.GetGlobalQuotaSettings()
+	if err != nil || !gq.Enabled {
+		return u.QuotaBytes
+	}
+	return gq.Bytes
+}
+
 // SetGlobalQuotaSettings persists the global quota policy in one transaction.
-// When the resulting policy is enabled, every user's stored quota_bytes is
-// updated to Bytes. When disabled, existing per-user quotas are left as-is.
+// When the resulting policy is enabled, users without a custom override have
+// their stored quota_bytes updated to Bytes so the value remains if the default
+// is later turned off. Users marked custom are left unchanged.
+// When disabled, stored quotas are left as-is.
 // A negative Bytes is rejected and no settings or user rows are written.
 func (d *DB) SetGlobalQuotaSettings(enabled *bool, bytes *int64) (GlobalQuotaSettings, error) {
 	cur, err := d.GetGlobalQuotaSettings()
@@ -82,7 +101,7 @@ func (d *DB) SetGlobalQuotaSettings(enabled *bool, bytes *int64) (GlobalQuotaSet
 		return cur, err
 	}
 	if next.Enabled {
-		if _, err := tx.Exec(`UPDATE users SET quota_bytes=?`, next.Bytes); err != nil {
+		if _, err := tx.Exec(`UPDATE users SET quota_bytes=? WHERE quota_custom=0`, next.Bytes); err != nil {
 			return cur, err
 		}
 	}

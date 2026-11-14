@@ -43,13 +43,16 @@ type Server struct {
 }
 
 type scope struct {
-	Root      string // absolute filesystem root for this scope
-	Rel       string // relative path inside that root (requested)
-	Perm      string // read|write
-	CanDelete bool
-	Kind      string // home|share|trash
-	ID        int64  // share id if share
-	BaseRel   string // path of this root relative to DATA_ROOT
+	Root         string // absolute filesystem root for this scope
+	Rel          string // relative path inside that root (requested)
+	Perm         string // read|write
+	CanDelete    bool
+	Kind         string // home|share|trash
+	ID           int64  // share id if share
+	BaseRel      string // path of this root relative to DATA_ROOT
+	OriginRootID string // owner's root id for incoming item shares (home or share:N)
+	QuotaUser    *db.User
+	ItemShareID  int64
 }
 
 func (sc *scope) canWrite() bool  { return sc != nil && sc.Perm == "write" }
@@ -100,6 +103,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/trash/purge", s.requireAuth(s.handleTrashPurge))
 	mux.HandleFunc("/api/links", s.requireAuth(s.handleLinks))
 	mux.HandleFunc("/api/links/", s.requireAuth(s.handleLinkID))
+	mux.HandleFunc("/api/directory", s.requireAuth(s.handleDirectory))
+	mux.HandleFunc("/api/item-shares", s.requireAuth(s.handleItemShares))
+	mux.HandleFunc("/api/item-shares/", s.requireAuth(s.handleItemShareID))
 	mux.HandleFunc("/api/public/links/", s.handlePublicLinks)
 	mux.HandleFunc("/api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("/api/admin/users/", s.requireAdmin(s.handleAdminUserID))
@@ -434,7 +440,8 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 	// Password gate takes priority over 2FA enroll for the flag the UI reads first.
 	return map[string]any{
 		"id": u.ID, "username": u.Username, "email": u.Email, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
-		"quotaBytes": u.QuotaBytes, "disabled": u.Disabled, "status": db.NormalizeUserStatus(u.Status),
+		"quotaBytes": s.effectiveQuota(u), "quotaCustom": u.QuotaCustom,
+		"disabled": u.Disabled, "status": db.NormalizeUserStatus(u.Status),
 		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
 		"force2faAll": forceAll, "mustEnrollTotp": mustEnroll && !mustChange,
 		"mustChangePassword": mustChange,
@@ -536,6 +543,7 @@ func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
 		CanDelete bool   `json:"canDelete"`
 	}
 	out := []root{{ID: "home", Name: "My Files", Kind: "home", Perm: "write", CanDelete: true}}
+	out = append(out, root{ID: "incoming", Name: "Shared with me", Kind: "incoming", Perm: "read", CanDelete: false})
 	shares, err := s.DB.SharesForUser(u.ID, u.IsAdmin)
 	if err != nil {
 		writeErr(w, 500, "db error")
@@ -571,6 +579,9 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 	if rootID == "trash" {
 		return &scope{Root: trash.Root(s.Cfg.DataRoot), Rel: rel, Perm: "write", CanDelete: true, Kind: "trash", BaseRel: files.TrashDirName}, nil
 	}
+	if rootID == "incoming" {
+		return s.resolveIncomingScope(u, rel)
+	}
 	if strings.HasPrefix(rootID, "share:") {
 		idStr := strings.TrimPrefix(rootID, "share:")
 		id, err := strconv.ParseInt(idStr, 10, 64)
@@ -600,6 +611,61 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 	return nil, os.ErrNotExist
 }
 
+func (s *Server) resolveIncomingScope(u *db.User, rel string) (*scope, error) {
+	if strings.Trim(rel, "/") == "" {
+		return &scope{Rel: "", Perm: "read", CanDelete: false, Kind: "incoming"}, nil
+	}
+	id, rest, ok := splitIncomingPath(rel)
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	sh, err := s.DB.GetItemShare(id)
+	if err != nil || sh == nil {
+		return nil, os.ErrNotExist
+	}
+	if !u.IsAdmin && sh.UserID != u.ID && sh.OwnerID != u.ID {
+		return nil, os.ErrPermission
+	}
+	owner, err := s.DB.GetUserByID(sh.OwnerID)
+	if err != nil || owner == nil || owner.Disabled || !userActive(owner) {
+		return nil, os.ErrPermission
+	}
+	target := sh.Path
+	if sh.IsDir && rest != "" {
+		cleanRest := filepath.ToSlash(filepath.Clean(rest))
+		if cleanRest == ".." || strings.HasPrefix(cleanRest, "../") {
+			return nil, os.ErrPermission
+		}
+		target = filepath.ToSlash(filepath.Join(sh.Path, rest))
+	} else if !sh.IsDir && rest != "" && rest != filepath.Base(sh.Path) {
+		return nil, os.ErrNotExist
+	}
+	sc, err := s.resolveScope(owner, sh.RootID, target)
+	if err != nil {
+		return nil, err
+	}
+	perm := sh.Perm
+	if perm != "write" || !sh.IsDir {
+		perm = "read"
+	}
+	canDelete := perm == "write" && rest != ""
+	if rest == "" {
+		// The shared item itself cannot be renamed, deleted, or replaced by the recipient.
+		canDelete = false
+		if !sh.IsDir {
+			perm = "read"
+		}
+	}
+	sc.Perm = perm
+	sc.CanDelete = canDelete
+	sc.OriginRootID = incomingRootID(sh)
+	sc.ItemShareID = sh.ID
+	if sc.Kind == "home" {
+		sc.QuotaUser = owner
+	}
+	return sc, nil
+}
+
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	u := s.currentUser(r)
 	rootID := r.URL.Query().Get("root")
@@ -607,6 +673,15 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	sc, err := s.resolveScope(u, rootID, rel)
 	if err != nil {
 		writeErr(w, 403, "forbidden")
+		return
+	}
+	if rootID == "incoming" && strings.Trim(rel, "/") == "" {
+		entries, err := s.listIncomingEntries(u)
+		if err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, map[string]any{"path": "", "perm": "read", "canDelete": false, "entries": entries, "kind": "incoming"})
 		return
 	}
 	if sc.Kind == "trash" {
@@ -617,6 +692,21 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"path": "", "perm": "write", "canDelete": true, "entries": entries, "kind": "trash"})
 		return
+	}
+	// A shared file listed as incoming/{id} is not a directory.
+	if rootID == "incoming" {
+		full, err := files.SafeJoin(sc.Root, sc.Rel)
+		if err == nil {
+			if st, err := os.Stat(full); err == nil && !st.IsDir() {
+				name := filepath.Base(sc.Rel)
+				entry := files.Entry{
+					Name: name, Path: rel, IsDir: false, Size: st.Size(),
+					ModTime: st.ModTime().UTC(), Ext: strings.ToLower(filepath.Ext(name)), Kind: files.KindOf(name, false),
+				}
+				writeJSON(w, 200, map[string]any{"path": sc.Rel, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": []files.Entry{entry}})
+				return
+			}
+		}
 	}
 	entries, err := files.List(sc.Root, sc.Rel)
 	if err != nil {
@@ -645,7 +735,7 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	if err := s.checkUserQuota(u, 0); err != nil {
+	if err := s.checkScopeQuota(u, sc, 0); err != nil {
 		writeErr(w, 403, err.Error())
 		return
 	}
@@ -676,11 +766,20 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	if err := files.Rename(sc.Root, body.From, body.To); err != nil {
+	if _, rest, ok := splitIncomingPath(body.From); body.Root == "incoming" && (!ok || rest == "") {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	dst, err := s.resolveScope(u, body.Root, body.To)
+	if err != nil || dst == nil || dst.Root != sc.Root {
+		writeErr(w, 403, "forbidden")
+		return
+	}
+	if err := files.Rename(sc.Root, sc.Rel, dst.Rel); err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	s.afterRename(sc, body.From, body.To)
+	s.afterRename(sc, sc.Rel, dst.Rel)
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
@@ -722,6 +821,9 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rootID := body.Root
+	if sc.OriginRootID != "" {
+		rootID = sc.OriginRootID
+	}
 	if rootID == "" {
 		rootID = "home"
 	}
@@ -959,6 +1061,7 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 				IsAdmin      *bool   `json:"isAdmin"`
 				HomePath     *string `json:"homePath"`
 				QuotaBytes   *int64  `json:"quotaBytes"`
+				QuotaCustom  *bool   `json:"quotaCustom"`
 				Disabled     *bool   `json:"disabled"`
 				TotpRequired *bool   `json:"totpRequired"`
 			}
@@ -977,7 +1080,7 @@ func (s *Server) handleAdminUserID(w http.ResponseWriter, r *http.Request) {
 			}
 			u, err := s.DB.UpdateUser(id, db.UserUpdate{
 				Username: body.Username, Email: body.Email, IsAdmin: body.IsAdmin, HomePath: body.HomePath,
-				QuotaBytes: body.QuotaBytes, Disabled: body.Disabled, TotpRequired: body.TotpRequired,
+				QuotaBytes: body.QuotaBytes, QuotaCustom: body.QuotaCustom, Disabled: body.Disabled, TotpRequired: body.TotpRequired,
 			})
 			if err != nil {
 				if errors.Is(err, db.ErrEmailInUse) {

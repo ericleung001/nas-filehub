@@ -796,11 +796,16 @@ function renderBreadcrumbs() {
     nav.appendChild(b);
     nav.appendChild(document.createTextNode(' / '));
   };
-  add('root', '');
+  const root = (state.roots || []).find((r) => r.id === state.root);
+  add((root && root.name) || 'root', '');
   let acc = '';
   for (const p of parts) {
     acc = acc ? acc + '/' + p : p;
-    add(p, acc);
+    let label = p;
+    if (state.root === 'incoming' && state.incomingNames && state.incomingNames[p]) {
+      label = state.incomingNames[p];
+    }
+    add(label, acc);
   }
 }
 
@@ -883,6 +888,22 @@ function cycleSortHeader(by) {
   }
 }
 
+function setCreateActionsVisible(visible) {
+  const mkdir = $('#btn-mkdir');
+  if (mkdir) {
+    mkdir.hidden = !visible;
+    mkdir.disabled = !visible;
+  }
+  const fileInput = $('#file-input');
+  const fileLabel = fileInput && fileInput.closest('label');
+  if (fileInput) fileInput.disabled = !visible;
+  if (fileLabel) fileLabel.hidden = !visible;
+  const folderInput = $('#folder-input');
+  const folderLabel = folderInput && folderInput.closest('label');
+  if (folderInput) folderInput.disabled = !visible;
+  if (folderLabel) folderLabel.hidden = !visible;
+}
+
 async function loadList() {
   if (state.searchQuery) {
     await runFileSearch(state.searchQuery, false);
@@ -893,14 +914,17 @@ async function loadList() {
   state.canDelete = !!data.canDelete;
   const canWrite = state.perm === 'write';
   const inTrash = state.root === 'trash';
-  $('#btn-mkdir').disabled = !canWrite || inTrash;
-  $('#file-input').disabled = !canWrite || inTrash;
-  const folderInput = $('#folder-input');
-  if (folderInput) folderInput.disabled = !canWrite || inTrash;
+  setCreateActionsVisible(canWrite && !inTrash);
   const trashBar = $('#trash-actions');
   if (trashBar) trashBar.hidden = !inTrash;
-  renderBreadcrumbs();
   state.entries = data.entries || [];
+  if (state.root === 'incoming' && !(state.path || '')) {
+    state.incomingNames = {};
+    for (const e of state.entries) {
+      if (e && e.path) state.incomingNames[String(e.path).split('/')[0]] = e.name;
+    }
+  }
+  renderBreadcrumbs();
   state.selected.clear();
   applyViewMode();
   applySortControls();
@@ -924,10 +948,7 @@ async function runFileSearch(q, updateInput) {
   }));
   state.perm = 'read';
   state.canDelete = false;
-  $('#btn-mkdir').disabled = true;
-  $('#file-input').disabled = true;
-  const folderInput = $('#folder-input');
-  if (folderInput) folderInput.disabled = true;
+  setCreateActionsVisible(false);
   renderBreadcrumbs();
   const nav = $('#breadcrumbs');
   if (nav) {
@@ -1107,15 +1128,15 @@ function appendEntryActions(container, e, canWrite, compact) {
     };
     container.appendChild(dl);
   }
-  if (state.root === 'trash' || e.searchRoot) {
-    // Recycle bin and search results: no share button.
+  if (state.root === 'trash' || state.root === 'incoming' || e.searchRoot) {
+    // Recycle bin, Shared with me, and search results: no share button.
   } else {
   const share = document.createElement('button');
   share.type = 'button';
   share.textContent = '🔗';
   share.className = 'ghost';
-  share.title = 'Share link';
-  share.setAttribute('aria-label', 'Share link');
+  share.title = 'Share';
+  share.setAttribute('aria-label', 'Share');
   share.onclick = (ev) => {
     ev.stopPropagation();
     openShareDialog({ path: e.path, isDir: e.isDir, name: e.name });
@@ -1179,10 +1200,11 @@ function updateBulkBar() {
   const count = $('#bulk-count');
   if (count) count.textContent = n + ' selected';
   const inTrash = state.root === 'trash';
+  const inIncoming = state.root === 'incoming';
   const shareBtn = $('#btn-bulk-share');
   if (shareBtn) {
-    shareBtn.hidden = inTrash;
-    shareBtn.disabled = inTrash || n !== 1;
+    shareBtn.hidden = inTrash || inIncoming;
+    shareBtn.disabled = inTrash || inIncoming || n !== 1;
   }
   const canDelete = !!state.canDelete;
 
@@ -1281,7 +1303,7 @@ function renderEntries(entries, canWrite) {
 
       const name = document.createElement('div');
       name.className = 'card-name';
-      name.textContent = e.name;
+      name.textContent = e.sharedBy ? (e.name + '  ·  ' + e.sharedBy) : e.name;
 
       const actions = document.createElement('div');
       actions.className = 'card-actions';
@@ -1308,8 +1330,8 @@ function renderEntries(entries, canWrite) {
     const nameWrap = tr.querySelector('.name-wrap');
     const nameBtn = document.createElement('button');
     nameBtn.className = 'name-btn';
-    nameBtn.textContent = e.name;
-    nameBtn.title = e.name;
+    nameBtn.textContent = e.sharedBy ? (e.name + '  ·  ' + e.sharedBy) : e.name;
+    nameBtn.title = e.sharedBy ? (e.name + ' (from ' + e.sharedBy + ')') : e.name;
     nameBtn.onclick = () => openEntry(e);
     nameWrap.appendChild(nameBtn);
     appendEntryActions(tr.querySelector('.row-actions'), e, canWrite, false);
@@ -2131,6 +2153,10 @@ function openUserEdit(u) {
   if (form.email) form.email.value = u.email || '';
   form.homePath.value = u.homePath;
   form.quota.value = u.quotaBytes ? fmtQuota(u.quotaBytes).replace(' ', '') : '0';
+  if (form.quotaCustom) {
+    form.quotaCustom.checked = !!u.quotaCustom;
+    form.dataset.prevCustomQuota = u.quotaCustom && u.quotaBytes ? fmtQuota(u.quotaBytes).replace(' ', '') : '';
+  }
   applyGlobalQuotaUI();
   form.isAdmin.checked = !!u.isAdmin;
   form.disabled.checked = !!u.disabled;
@@ -2413,6 +2439,14 @@ $('#session-settings-form')?.addEventListener('submit', async (e) => {
   }
 });
 
+document.querySelector('#edit-user')?.quotaCustom?.addEventListener('change', () => {
+  const form = $('#edit-user');
+  if (form && form.quotaCustom && form.quotaCustom.checked && form.dataset.prevCustomQuota) {
+    form.quota.value = form.dataset.prevCustomQuota;
+  }
+  applyGlobalQuotaUI();
+});
+
 function applyGlobalQuotaUI() {
   const on = !!state.globalQuotaEnabled;
   const createQuota = $('#create-user-quota');
@@ -2422,13 +2456,27 @@ function applyGlobalQuotaUI() {
     createQuota.hidden = on;
   }
   if (createNote) createNote.hidden = !on;
-  const editQuota = $('#edit-user')?.quota;
+  const form = $('#edit-user');
+  const customWrap = $('#edit-user-quota-custom-wrap');
+  if (customWrap) customWrap.hidden = !on;
+  const customBox = form && form.quotaCustom;
+  const editQuota = form && form.quota;
+  const custom = !!(customBox && customBox.checked);
   if (editQuota) {
-    editQuota.disabled = on;
-    editQuota.readOnly = on;
+    const lock = on && !custom;
+    editQuota.disabled = lock;
+    editQuota.readOnly = lock;
+    if (lock) {
+      editQuota.value = state.globalQuotaBytes ? fmtQuota(state.globalQuotaBytes).replace(' ', '') : '0';
+    }
   }
   const editNote = $('#edit-user-quota-note');
-  if (editNote) editNote.hidden = !on;
+  if (editNote) {
+    editNote.hidden = !on;
+    editNote.textContent = (on && !custom)
+      ? 'This user is using the default quota from Settings → Storage quota. Tick “Use a custom quota” to set a different limit.'
+      : (on ? 'This user has a custom quota that overrides the default.' : '');
+  }
 }
 
 $('#global-quota-form')?.addEventListener('submit', async (e) => {
@@ -2732,9 +2780,12 @@ async function refreshAdmin() {
     if (u.totpEnabled) badges.push('<span class="badge admin">2FA</span>');
     else if (u.totpRequired || u.force2faAll) badges.push('<span class="badge disabled">2FA req</span>');
     if (!badges.length) badges.push('<span class="badge">user</span>');
-    const quotaLabel = quota
+    let quotaLabel = quota
       ? `${fmtSize(used)} / ${fmtQuota(quota)} (${pct}%)`
       : `${fmtSize(used)} / unlimited`;
+    if (state.globalQuotaEnabled) {
+      quotaLabel += u.quotaCustom ? ' · custom' : ' · default';
+    }
     tr.innerHTML = `
       <td class="user-cell">
         <div class="user-name" title="${u.username}">${u.username}</div>
@@ -2950,8 +3001,9 @@ $('#edit-user').addEventListener('submit', async (e) => {
   const fd = new FormData(e.target);
   const errEl = $('#edit-user-error');
   errEl.hidden = true;
+  const custom = !state.globalQuotaEnabled || !!fd.get('quotaCustom');
   let quotaBytes = 0;
-  if (!state.globalQuotaEnabled) {
+  if (custom) {
     try { quotaBytes = parseQuotaInput(fd.get('quota')); }
     catch (err) { errEl.textContent = err.message; errEl.hidden = false; return; }
   }
@@ -2963,8 +3015,10 @@ $('#edit-user').addEventListener('submit', async (e) => {
       isAdmin: !!fd.get('isAdmin'),
       disabled: !!fd.get('disabled'),
       totpRequired: !!fd.get('totpRequired'),
+      quotaCustom: custom && !!state.globalQuotaEnabled,
     };
-    if (!state.globalQuotaEnabled) body.quotaBytes = quotaBytes;
+    if (custom) body.quotaBytes = quotaBytes;
+    if (state.globalQuotaEnabled && !custom) body.quotaCustom = false;
     await api('/api/admin/users/' + fd.get('id'), {
       method: 'PATCH',
       body: JSON.stringify(body),
@@ -3303,13 +3357,126 @@ $('#transfer-form')?.addEventListener('submit', async (e) => {
   }
 });
 
+function shareRootId() {
+  return state.root || 'home';
+}
+
+function selectedShareUserIds() {
+  return [...document.querySelectorAll('#share-user-list input[type="checkbox"]:checked')]
+    .map((el) => Number(el.value))
+    .filter((id) => id > 0);
+}
+
+function renderShareUserList(users, filter) {
+  const box = $('#share-user-list');
+  const empty = $('#share-user-empty');
+  if (!box) return;
+  const q = (filter || '').trim().toLowerCase();
+  const list = (users || []).filter((u) => !q || String(u.username || '').toLowerCase().includes(q));
+  box.innerHTML = list.map((u) => {
+    return '<label class="check"><input type="checkbox" value="' + u.id + '" /> ' + escapeHtml(u.username) + '</label>';
+  }).join('');
+  if (empty) empty.hidden = (users || []).length > 0;
+}
+
+async function loadShareDirectory() {
+  const data = await api('/api/directory');
+  state.shareDirectory = data.users || [];
+  renderShareUserList(state.shareDirectory, $('#share-user-filter') && $('#share-user-filter').value);
+}
+
+function setShareLinkOptionsVisible() {
+  const box = $('#share-link-options');
+  const on = !!($('#share-public') && $('#share-public').checked);
+  if (box) box.hidden = !on;
+}
+
+async function loadExistingShares(target) {
+  const usersEl = $('#share-existing-users');
+  const linksEl = $('#share-existing-links');
+  const wrap = $('#share-existing');
+  if (!usersEl || !linksEl || !wrap) return;
+  usersEl.innerHTML = '';
+  linksEl.innerHTML = '';
+  let any = false;
+  try {
+    const data = await api('/api/item-shares?root=' + encodeURIComponent(shareRootId()) + '&path=' + encodeURIComponent(target.path));
+    const shares = data.shares || [];
+    for (const sh of shares) {
+      any = true;
+      const li = document.createElement('li');
+      const perm = sh.perm === 'write' ? 'write' : 'read';
+      li.innerHTML = '<span class="meta">' + escapeHtml(sh.username || ('user #' + sh.userId)) + ' · ' + perm + '</span>';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost danger';
+      btn.textContent = 'Revoke';
+      btn.addEventListener('click', async () => {
+        if (!confirm('Revoke access for ' + (sh.username || 'this user') + '?')) return;
+        await api('/api/item-shares/' + sh.id, { method: 'DELETE' });
+        await loadExistingShares(target);
+      });
+      li.appendChild(btn);
+      usersEl.appendChild(li);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  try {
+    const data = await api('/api/links');
+    const links = (data.links || []).filter((l) => l.rootId === shareRootId() && l.path === target.path && !l.revoked);
+    for (const link of links) {
+      any = true;
+      const li = document.createElement('li');
+      const url = location.origin + '/s/' + link.token;
+      li.innerHTML = '<span class="meta">Public link: <code>' + escapeHtml(url) + '</code></span>';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'ghost';
+      copy.textContent = 'Copy';
+      copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1500); }
+        catch { /* ignore */ }
+      });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'ghost danger';
+      del.textContent = 'Delete';
+      del.addEventListener('click', async () => {
+        if (!confirm('Delete this public link?')) return;
+        await api('/api/links/' + link.id, { method: 'DELETE' });
+        await loadExistingShares(target);
+      });
+      li.appendChild(copy);
+      li.appendChild(del);
+      linksEl.appendChild(li);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  wrap.hidden = !any;
+}
+
 function openShareDialog(target) {
   state.shareTarget = target;
   state.shareCreating = false;
+  state.shareDirectory = state.shareDirectory || [];
   $('#share-target').textContent = (target.isDir ? 'Folder: ' : 'File: ') + (target.name || target.path);
-  $('#share-label').value = target.name || '';
-  $('#share-expires').value = '';
-  $('#share-password').value = '';
+  const label = $('#share-label');
+  if (label) label.value = target.name || '';
+  const exp = $('#share-expires');
+  if (exp) exp.value = '';
+  const pw = $('#share-password');
+  if (pw) pw.value = '';
+  const pub = $('#share-public');
+  if (pub) pub.checked = false;
+  setShareLinkOptionsVisible();
+  const permWrap = $('#share-perm-wrap');
+  if (permWrap) permWrap.hidden = !target.isDir;
+  const perm = $('#share-perm');
+  if (perm) perm.value = 'read';
+  const filter = $('#share-user-filter');
+  if (filter) filter.value = '';
   const errEl = $('#share-error');
   if (errEl) {
     errEl.hidden = true;
@@ -3317,15 +3484,30 @@ function openShareDialog(target) {
   }
   $('#share-result').hidden = true;
   $('#share-form').hidden = false;
+  const existing = $('#share-existing');
+  if (existing) existing.hidden = true;
   const submit = $('#btn-create-share');
   if (submit) {
     submit.disabled = false;
-    submit.textContent = 'Create link';
+    submit.textContent = 'Share';
   }
   const copyBtn = $('#btn-copy-share-url');
-  if (copyBtn) copyBtn.textContent = 'Copy URL';
-  $('#share-url').value = '';
+  if (copyBtn) {
+    copyBtn.textContent = 'Copy URL';
+    copyBtn.hidden = true;
+  }
+  const urlInp = $('#share-url');
+  if (urlInp) {
+    urlInp.value = '';
+    urlInp.hidden = true;
+  }
+  renderShareUserList(state.shareDirectory, '');
   $('#share-dialog').showModal();
+  loadShareDirectory().catch((err) => {
+    const el = $('#share-error');
+    if (el) { el.textContent = err.message || 'Could not load users'; el.hidden = false; }
+  });
+  loadExistingShares(target).catch((err) => console.error(err));
 }
 
 $('#btn-bulk-share')?.addEventListener('click', () => {
@@ -3342,41 +3524,89 @@ function expiresToRFC3339(v) {
   return new Date(Date.now() + days * 86400000).toISOString();
 }
 
+$('#share-public')?.addEventListener('change', setShareLinkOptionsVisible);
+$('#share-user-filter')?.addEventListener('input', () => {
+  renderShareUserList(state.shareDirectory || [], $('#share-user-filter').value);
+});
+
 $('#share-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const t = state.shareTarget;
   if (!t || state.shareCreating) return;
   const errEl = $('#share-error');
   const submit = $('#btn-create-share');
-  errEl.hidden = true;
+  if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+  const userIds = selectedShareUserIds();
+  const wantLink = !!($('#share-public') && $('#share-public').checked);
+  if (!userIds.length && !wantLink) {
+    if (errEl) {
+      errEl.textContent = 'Choose at least one user, or create a public link.';
+      errEl.hidden = false;
+    }
+    return;
+  }
   state.shareCreating = true;
   if (submit) {
     submit.disabled = true;
-    submit.textContent = 'Creating…';
+    submit.textContent = 'Sharing…';
   }
+  const notes = [];
+  let linkUrl = '';
   try {
-    const res = await api('/api/links', {
-      method: 'POST',
-      body: JSON.stringify({
-        root: state.root,
-        path: t.path,
-        label: $('#share-label').value.trim(),
-        password: $('#share-password').value,
-        expiresAt: expiresToRFC3339($('#share-expires').value),
-      }),
-    });
-    const url = location.origin + (res.url || ('/s/' + res.link.token));
-    $('#share-url').value = url;
+    if (userIds.length) {
+      const res = await api('/api/item-shares', {
+        method: 'POST',
+        body: JSON.stringify({
+          root: shareRootId(),
+          path: t.path,
+          userIds,
+          perm: t.isDir ? (($('#share-perm') && $('#share-perm').value) || 'read') : 'read',
+        }),
+      });
+      const n = (res.shares || []).length;
+      notes.push('Shared with ' + n + ' user' + (n === 1 ? '' : 's') + '. Email is sent when SMTP is configured and the user has an address.');
+    }
+    if (wantLink) {
+      const res = await api('/api/links', {
+        method: 'POST',
+        body: JSON.stringify({
+          root: shareRootId(),
+          path: t.path,
+          label: ($('#share-label') && $('#share-label').value.trim()) || '',
+          password: ($('#share-password') && $('#share-password').value) || '',
+          expiresAt: expiresToRFC3339($('#share-expires') && $('#share-expires').value),
+        }),
+      });
+      linkUrl = location.origin + (res.url || ('/s/' + res.link.token));
+      notes.push('Public link created. Anyone with the URL can download or browse (read-only).');
+    }
+    const msg = $('#share-success-msg');
+    if (msg) msg.textContent = notes.join(' ');
+    const title = $('#share-success-title');
+    if (title) title.textContent = 'Shared';
+    const urlInp = $('#share-url');
     const copyBtn = $('#btn-copy-share-url');
-    if (copyBtn) copyBtn.textContent = 'Copy URL';
+    if (linkUrl && urlInp) {
+      urlInp.value = linkUrl;
+      urlInp.hidden = false;
+      if (copyBtn) { copyBtn.hidden = false; copyBtn.textContent = 'Copy URL'; }
+    } else {
+      if (urlInp) { urlInp.value = ''; urlInp.hidden = true; }
+      if (copyBtn) copyBtn.hidden = true;
+    }
     $('#share-form').hidden = true;
+    const existing = $('#share-existing');
+    if (existing) existing.hidden = true;
     $('#share-result').hidden = false;
+    try { await loadRoots(); } catch { /* ignore */ }
   } catch (err) {
-    errEl.textContent = err.message;
-    errEl.hidden = false;
+    if (errEl) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    }
     if (submit) {
       submit.disabled = false;
-      submit.textContent = 'Create link';
+      submit.textContent = 'Share';
     }
   } finally {
     state.shareCreating = false;
@@ -4012,7 +4242,7 @@ bootstrap();
     await loadRoots();
     await loadList();
   });
-
+})();
 
 const auditState = { offset: 0, limit: 50, total: 0 };
 
@@ -4034,7 +4264,13 @@ async function refreshMySessions() {
   const tbody = $('#session-list');
   const msg = $('#sessions-msg');
   if (!tbody) return;
-  const data = await api('/api/me/sessions');
+  let data;
+  try {
+    data = await api('/api/me/sessions');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5" class="error">Could not load sessions: ' + escapeHtml(err.message || 'error') + '</td></tr>';
+    throw err;
+  }
   const list = data.sessions || [];
   if (!list.length) {
     tbody.innerHTML = '<tr><td colspan="5" class="muted">No active sessions.</td></tr>';
@@ -4087,6 +4323,8 @@ function auditActionLabel(action) {
     case 'share_link_revoke': return 'Link share revoked';
     case 'share_grant_set': return 'Share grant updated';
     case 'share_grant_remove': return 'Share grant removed';
+    case 'item_share_grant': return 'File or folder shared with user';
+    case 'item_share_revoke': return 'User share revoked';
     case 'password_reset_request': return 'Password reset requested';
     default: return action || '';
   }
@@ -4094,7 +4332,14 @@ function auditActionLabel(action) {
 
 async function refreshAudit(offset) {
   if (typeof offset === 'number') auditState.offset = Math.max(0, offset);
-  const data = await api('/api/admin/audit?limit=' + auditState.limit + '&offset=' + auditState.offset);
+  let data;
+  try {
+    data = await api('/api/admin/audit?limit=' + auditState.limit + '&offset=' + auditState.offset);
+  } catch (err) {
+    const tbody = $('#audit-list');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="error">Could not load audit log: ' + escapeHtml(err.message || 'error') + '</td></tr>';
+    throw err;
+  }
   auditState.total = data.total || 0;
   auditState.limit = data.limit || auditState.limit;
   const tbody = $('#audit-list');
@@ -4131,4 +4376,3 @@ $('#btn-audit-next')?.addEventListener('click', async () => {
   try { await refreshAudit(auditState.offset + auditState.limit); } catch (err) { console.error(err); }
 });
 
-})();
