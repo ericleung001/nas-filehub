@@ -11,7 +11,7 @@
   <Description>
     Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server.
 
-    Features include per-user home folders, shared folders with read/write access and an optional Allow delete flag, public link shares, image/PDF/video previews, ffmpeg thumbnails, and optional TOTP 2FA.
+    Features include per-user home folders, shared folders with read/write access and an optional Allow delete flag, sharing a file or folder with other Filehub users or a public link, WebDAV at /dav/, folder and resumable (chunked) uploads, a 100 GiB default upload cap, SMTP notices, image/PDF/video previews, ffmpeg thumbnails, and optional TOTP 2FA.
 
     First boot: leave ADMIN_PASSWORD unset. After the container starts, open /mnt/user/appdata/nas-filehub/admin-credentials.txt for the generated admin password, sign in, then change it under Settings → Change password. That credentials file is written once and is never overwritten.
 
@@ -34,7 +34,7 @@
   <Screenshot>https://raw.githubusercontent.com/ericleung001/nas-filehub/main/templates/screenshots/02-after-login.png</Screenshot>
   <Date>2026-11-14</Date>
   <Requires>After the first start, read the generated admin password in /mnt/user/appdata/nas-filehub/admin-credentials.txt, then change it under Settings → Change password. Prefer a reverse proxy; do not expose the WebUI port to the public internet. For hardware thumbnails, keep /dev/dri mapped (or an NVIDIA runtime) and set THUMB_HWACCEL=auto, or THUMB_VAAPI=true for the same auto path. If no GPU device is present, remove the device mapping. PUID/PGID default to 1000:1000.</Requires>
-  <Changes>Community Apps template and GHCR image for Filehub. Leave ADMIN_PASSWORD unset on first boot and read the generated password from appdata/nas-filehub/admin-credentials.txt.</Changes>
+  <Changes>Filehub v0.4.13 template and GHCR image. Features include share with users or a public link, WebDAV, folder and resumable uploads, a 100 GiB default upload cap, and an optional User files mapping. Leave ADMIN_PASSWORD unset on first boot and read the generated password from appdata/nas-filehub/admin-credentials.txt.</Changes>
 
   <Config Name="WebUI" Target="8080" Default="8088" Mode="tcp" Description="HTTP WebUI port (container 8080). Prefer a reverse proxy; do not expose this port directly to the public internet." Type="Port" Display="always" Required="true" Mask="false"/>
   <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/nas-filehub" Mode="rw" Description="Database, thumbnails, and generated admin-credentials.txt. User files default to /data/files inside this folder unless User files is mapped separately." Type="Path" Display="always" Required="true" Mask="false"/>
@@ -52,7 +52,7 @@
   <Config Name="UMASK" Target="UMASK" Default="" Description="Optional umask for created files (for example 002). Leave empty to use the default." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="PUBLIC_BASE_URL" Target="PUBLIC_BASE_URL" Default="" Description="Public site URL used in password-reset emails (for example https://filehub.example.com). Required for public HTTPS deployments, together with SECURE_COOKIES=true." Type="Variable" Display="always" Required="false" Mask="false"/>
   <Config Name="TRUSTED_PROXIES" Target="TRUSTED_PROXIES" Default="" Description="Optional comma-separated IPs or CIDRs of reverse proxies allowed to set X-Forwarded-For. Loopback is always trusted. Set this if the proxy is not on localhost." Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="LOGIN_RATE_LIMIT" Target="LOGIN_RATE_LIMIT" Default="10" Description="Max login and share-link unlock attempts per client IP per minute." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
+  <Config Name="LOGIN_RATE_LIMIT" Target="LOGIN_RATE_LIMIT" Default="10" Description="Max login and share-link unlock attempts per client IP per minute. Authenticated WebDAV requests are not counted." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
   <Config Name="LOGIN_LOCKOUT_LIMIT" Target="LOGIN_LOCKOUT_LIMIT" Default="10" Description="Failed logins per username before a temporary account lock." Type="Variable" Display="advanced" Required="false" Mask="false">10</Config>
   <Config Name="LOGIN_LOCKOUT_MINUTES" Target="LOGIN_LOCKOUT_MINUTES" Default="15" Description="Account lock duration in minutes. Further attempts during the lock do not extend the window." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
   <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="102400" Description="Maximum upload size in MiB (application default is 102400, or 100 GiB). Set 0 to disable the application cap; user and storage quotas still apply." Type="Variable" Display="advanced" Required="false" Mask="false">102400</Config>

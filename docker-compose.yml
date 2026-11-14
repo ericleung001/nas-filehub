@@ -34,6 +34,8 @@ services:
       # LOGIN_LOCKOUT_LIMIT: "10"
       # LOGIN_LOCKOUT_MINUTES: "15"
       MAX_UPLOAD_MB: "102400"
+      # WebDAV is on by default at /dav/. Set false to disable.
+      # WEBDAV_ENABLED: "true"
       CREDENTIALS_FILE: /data/admin-credentials.txt
       DOTENV_FILE: /data/.env
     volumes:

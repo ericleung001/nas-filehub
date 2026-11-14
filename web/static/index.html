@@ -276,7 +276,7 @@
               <h3>Users</h3>
               <form id="create-user" class="admin-form">
                 <input name="username" placeholder="username" required />
-                <input name="email" type="email" placeholder="email (optional, for password reset)" />
+                <input name="email" type="email" placeholder="email (optional, for password reset and notices)" />
                 <input name="password" type="password" placeholder="password" required />
                 <input name="homePath" placeholder="home path (optional)" />
                 <input name="quota" id="create-user-quota" placeholder="quota e.g. 5GB / 500MB / 0=unlimited" />
@@ -559,14 +559,14 @@
               <ul class="system-notes muted">
                 <li>Homes: <code>DATA_ROOT/homes/&lt;user&gt;</code></li>
                 <li>Shares: paths under <code>DATA_ROOT</code></li>
-                <li>Quota applies to each user’s home only (shared folders are not billed). Admins can set a shared limit under Settings → Storage quota.</li>
+                <li>Quota counts each user’s home, files that user wrote into shared folders, and Recycle bin items until they are permanently purged. A whole share is never billed to every grantee. Admins set a default limit under Settings → Storage quota and can override it per user under Users → Edit.</li>
               </ul>
             </div>
           </div>
           <div id="tab-about" class="settings-panel" role="tabpanel" hidden>
             <div class="settings-card about-card">
               <h3>About</h3>
-              <p>Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server.</p>
+              <p>Filehub is a lightweight, self-hosted file manager for sharing folders among users on your own server. You can share items with other Filehub users or with a public link, browse over WebDAV, and upload files or folders with resumable transfers.</p>
               <p>Open source under Apache-2.0.</p>
               <p><a href="https://github.com/ericleung001/nas-filehub" target="_blank" rel="noopener noreferrer">GitHub: ericleung001/nas-filehub</a></p>
               <p>If Filehub is useful, you can buy me a coffee.</p>

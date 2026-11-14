@@ -16,6 +16,10 @@ where version tags are used.
 ### Fixed
 - **Share public-link overflow** — in the Share dialog, Current access no longer lets a long public URL collide with the Copy and Delete buttons on a narrow or mobile layout. The URL is shown on its own line and truncated with an ellipsis; Copy still copies the full URL. The full address remains available from the tooltip. Settings → Link shares already truncated the URL in that table.
 
+### Documentation
+- README, contributing notes, the Unraid Community Apps template overview, changelog compare links, and Settings → System quota help now match the shipped v0.4.13 behavior (including quota accounting for share writes and the Recycle bin, user-to-user share email, WebDAV, and the 100 GiB upload cap).
+
+## [0.4.12] - 2026-11-14
 
 ### Changed
 - **Share user search** — the Share dialog always shows the keyword field, including when there are five or fewer eligible users. Typing still filters the list by username or email; selected people stay visible. With more than five users, the default list is still your five most frequent recipients.
@@ -350,7 +354,21 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.3.22...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.13...HEAD
+[0.4.13]: https://github.com/ericleung001/nas-filehub/compare/v0.4.12...v0.4.13
+[0.4.12]: https://github.com/ericleung001/nas-filehub/compare/v0.4.11...v0.4.12
+[0.4.11]: https://github.com/ericleung001/nas-filehub/compare/v0.4.10...v0.4.11
+[0.4.10]: https://github.com/ericleung001/nas-filehub/compare/v0.4.9...v0.4.10
+[0.4.9]: https://github.com/ericleung001/nas-filehub/compare/v0.4.8...v0.4.9
+[0.4.8]: https://github.com/ericleung001/nas-filehub/compare/v0.4.7...v0.4.8
+[0.4.7]: https://github.com/ericleung001/nas-filehub/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/ericleung001/nas-filehub/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/ericleung001/nas-filehub/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/ericleung001/nas-filehub/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/ericleung001/nas-filehub/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/ericleung001/nas-filehub/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/ericleung001/nas-filehub/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/ericleung001/nas-filehub/compare/v0.3.22...v0.4.0
 [0.3.22]: https://github.com/ericleung001/nas-filehub/compare/v0.3.21...v0.3.22
 [0.3.21]: https://github.com/ericleung001/nas-filehub/compare/v0.3.20...v0.3.21
 [0.3.20]: https://github.com/ericleung001/nas-filehub/compare/v0.3.19...v0.3.20
