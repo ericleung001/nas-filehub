@@ -1,4 +1,4 @@
-# Filehub v0.4.14
+# Filehub v0.4.15
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
@@ -32,10 +32,10 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **App icon** — favicon and Apple touch icon; mark on the login / auth pages and in the top bar after sign-in
 - **Settings** — one top-bar entry; left vertical menu, right content panel
   - **Account** — username, home, quota used/limit
-  - **Change password** — `POST /api/me/password` (enforces admin password policy)
+  - **Change password** / **Set password** — `POST /api/me/password` (enforces admin password policy). Accounts with no Filehub password (SSO-only) can set an initial password here without a current password
   - **2FA** — enable/disable TOTP
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all); select multiple to delete together
-  - **Users / Shares / Session duration / Registration / Security / Email / Storage quota / System** (admins only) — user/share tables; **Session duration** (login lifetime + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Email** (SMTP for password reset, pending-registration, shared-folder grants, and user-to-user file/folder shares); **Storage quota** (optional default quota for all users, with per-user overrides under Users → Edit); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
+  - **Users / Shares / Session duration / Registration / Security / Sign-in / SSO / Email / Storage quota / System** (admins only) — user/share tables; **Session duration** (login lifetime + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Sign-in / SSO** (optional OpenID Connect; local login stays available); **Email** (SMTP for password reset, pending-registration, shared-folder grants, and user-to-user file/folder shares); **Storage quota** (optional default quota for all users, with per-user overrides under Users → Edit); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
   - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
 - **Sidebar** — expandable folder tree under My Files / Shared with me / shares / Recycle bin; a count badge appears to the right of Recycle bin when it has items (`99+` after 99); storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
@@ -43,8 +43,9 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 - **Forgot password and email notices** — admin configures SMTP; users with an email can request a reset link at `/forgot` (linked from login when ready; rate-limited; generic responses). When SMTP is ready, Filehub also emails administrators (who have an email address) if a new open-registration account is waiting for approval, emails a user when they are granted access to a shared folder or when a file or folder is shared with them (if that user has an email). If SMTP is not configured or the recipient has no email, the original action still succeeds.
 - **Open registration** — optional admin toggle; `/register` (linked from login) creates username/email/password accounts under the password policy. New sign-ups require admin approval by default (Settings → Registration and Users). Pending accounts cannot sign in until approved. Rejecting a pending account deletes it so the username can be reused. Already-active users are unchanged. Email notification is optional and is not required.
 - **Session duration** — admin sets normal login lifetime (default **7 days**) and may allow **Stay signed in** (default **30 days**); applies to new logins only; existing sessions keep their expiry
-- **WebDAV** — mount Filehub as a network drive at `/dav/` with your Filehub username and password (HTTPS). The virtual root lists **My Files**, **Shared with me**, and the shared folders you can access, with the same read / write / delete rules as the web UI. Delete moves items to the Recycle bin. Disabled with `WEBDAV_ENABLED=false`. No anonymous access.
-- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; container drops to PUID/PGID (default 1000:1000); SMTP password never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
+- **WebDAV** — mount Filehub as a network drive at `/dav/` with your Filehub username and password (HTTPS). The virtual root lists **My Files**, **Shared with me**, and the shared folders you can access, with the same read / write / delete rules as the web UI. Delete moves items to the Recycle bin. Disabled with `WEBDAV_ENABLED=false`. No anonymous access. Accounts that only sign in with SSO must first set a Filehub password under Settings → Set password.
+- **Optional OpenID Connect (SSO)** — off by default. After install, an admin signs in with a local password and can enable SSO under Settings → Sign-in / SSO (Authentik, Authelia, Pocket ID, Dex, Keycloak, and other providers that support OpenID discovery). Local username and password sign-in stays available even when SSO is on. The login page then shows **Sign in with SSO** next to the existing form. `PUBLIC_BASE_URL` is required; the redirect URI is `{PUBLIC_BASE_URL}/api/oidc/callback`. New accounts can optionally be created on first SSO sign-in (off by default). Existing accounts are matched by a previously linked identity, then by email — not by username alone. OIDC sessions skip Filehub TOTP. Logout ends the Filehub session only.
+- **Security defaults** — no remote command/shell execution; bcrypt passwords; HttpOnly session cookies; login / reset rate limits; path-traversal guards; container drops to PUID/PGID (default 1000:1000); SMTP password and OIDC client secret never returned by the API; `X-Frame-Options: DENY` except same-origin framing for `/api/raw`, `/api/thumb`, and public `/raw` preview URLs
 
 Quota counts the user’s **home** directory plus files in shared folders that this Filehub user wrote (upload, copy, or replace). Bytes are attributed to the acting writer; a whole share is never billed to every grantee. Existing share files with no recorded writer stay **unbilled** until a Filehub user writes or replaces them. Recycle-bin items still count toward the owner’s quota until they are permanently purged. Admins can turn on **Apply the same quota to all users** under Settings → Storage quota as the default for users without a custom limit, including new accounts. A different quota can still be set for an individual user under Users → Edit. Settings → System and the Users storage bar use this same definition.
 
@@ -88,15 +89,15 @@ Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reve
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.14`, not `v0.4.14`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.15`, not `v0.4.15`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.14
+docker pull ericleung001/nas-filehub:0.4.15
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.14
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.15
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.14`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.14` or `image: ghcr.io/ericleung001/nas-filehub:0.4.14` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.15`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.15` or `image: ghcr.io/ericleung001/nas-filehub:0.4.15` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -134,17 +135,20 @@ Or set `ADMIN_PASSWORD` yourself and run `make run` / `make smoke`.
 | `LOGIN_LOCKOUT_MINUTES` | `15` | Account lock window; further attempts during the lock do not extend it |
 | `MAX_UPLOAD_MB` | `102400` (100 GiB) | Max upload size in MiB. `0` disables the application cap (user and storage quotas still apply) |
 | `FORCE_2FA_ALL` | `false` | If true, every user must enroll TOTP (overrides UI off) |
-| `PUBLIC_BASE_URL` | — | Absolute site URL for password-reset emails (e.g. `https://filehub.example.com`). **Required** for public HTTPS deployments so reset links cannot follow a spoofed host |
+| `PUBLIC_BASE_URL` | — | Absolute site URL (e.g. `https://filehub.example.com`). **Required** for public HTTPS deployments so password-reset links and the OIDC redirect URI (`{PUBLIC_BASE_URL}/api/oidc/callback`) cannot follow a spoofed host |
 | `SMTP_ENABLED` | `false` | Env override: enable SMTP |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | — | Env overrides for SMTP (password never logged) |
 | `WEBDAV_ENABLED` | `true` | Expose WebDAV at `/dav/`. Set `false` to disable |
+| `OIDC_ENABLED` | — | Env override: enable or disable OpenID Connect (when set, overrides Settings) |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | — | Env overrides for the OIDC issuer and client (secret never logged or returned by the API) |
+| `OIDC_AUTO_CREATE` | — | Env override: create Filehub users automatically on first SSO sign-in (default off in Settings) |
 
 ## Settings
 
 Sign in → **Settings** (single top-bar button):
 
 1. **Account** (everyone) — username, email, admin badge (if any), home path, storage used / quota
-2. **Change password** — requires current password; must meet the admin password policy; other sessions cleared, current kept
+2. **Change password** / **Set password** — changing a password requires the current one; accounts with no Filehub password (SSO-only) can set an initial password without it. Must meet the admin password policy; other sessions cleared, current kept
 3. **2FA** — enable/disable TOTP (Authenticator app + backup codes)
 4. **Link shares** — copy or revoke (permanently delete) public file/folder links, or select several and **Delete selected**; deleted rows leave the list
 5. **Active sessions** (everyone) — list signed-in devices, revoke one session, or revoke all other sessions. When WebDAV is enabled, Settings → Account also shows the mount URL (`/dav/`)
@@ -153,11 +157,12 @@ Sign in → **Settings** (single top-bar button):
 8. **Session duration** (admins) — normal session duration and optional Stay signed in (applies to new logins only)
 9. **Registration** (admins) — allow open registration; each sign-up email must be unique (including pending and disabled accounts). When admin approval is required, the sign-up page tells the user their account is waiting for approval
 10. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
-11. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares
-12. **Email** (admins) — SMTP for forgot-password, pending-registration notices, shared-folder access notices, and user-to-user file or folder share notices
-13. **Storage quota** (admins) — optional default quota for users without a custom limit
-14. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
-15. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
+11. **Sign-in / SSO** (admins) — optional OpenID Connect. Off by default. Requires `PUBLIC_BASE_URL`. Local username and password sign-in stays available. The client secret is write-only (leave blank to keep). Creating users on first SSO sign-in is off by default. Logout ends the Filehub session only; it does not sign the user out of the identity provider.
+12. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares
+13. **Email** (admins) — SMTP for forgot-password, pending-registration notices, shared-folder access notices, and user-to-user file or folder share notices
+14. **Storage quota** (admins) — optional default quota for users without a custom limit
+15. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
+16. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -171,7 +176,7 @@ Disabled users cannot log in. Uploads / mkdir that would exceed home quota are r
 2. Add a Proxy Host → your domain → forward to `http://<host>:8088` (or the Docker network hostname)
 3. Enable SSL (Let’s Encrypt)
 4. Prefer an Access List, Authelia, or Cloudflare Access in front
-5. Set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL=https://your.domain` (required for public HTTPS so password-reset emails use a fixed origin)
+5. Set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL=https://your.domain` (required for public HTTPS so password-reset emails and the OIDC redirect URI use a fixed origin)
 6. If the reverse proxy is not on loopback, set `TRUSTED_PROXIES` to the proxy’s address or CIDR
 7. Set HTTP Strict-Transport-Security on the reverse proxy; Filehub does not enable HSTS itself (LAN HTTP and first-boot must keep working)
 
@@ -270,7 +275,8 @@ NVIDIA hosts also need the NVIDIA Container Toolkit / GPU runtime; this image do
 - No remote command / shell execution surface
 - bcrypt password hashes
 - Session cookie: `HttpOnly`, `SameSite=Lax`, optional `Secure`
-- Login rate limiting
+- Login rate limiting (password login, OIDC start/callback, and share-link unlock)
+- Optional OpenID Connect uses Authorization Code + PKCE (S256), state, and nonce; the redirect URI is taken from `PUBLIC_BASE_URL`, not the request Host header; the client secret is never returned by the API; existing accounts are matched by a linked identity, then by email (not by username); missing ID token email or preferred_username may be filled from the provider UserInfo endpoint
 - All file ops confined under the resolved scope root (path traversal protected)
 - Container starts as root only to apply `PUID`/`PGID` (default 1000:1000), chown `/data`, then drops privileges with `gosu`
 
@@ -281,8 +287,10 @@ Auth / session:
 - `POST /api/login` · `POST /api/logout` · `GET /api/me` · `POST /api/me/password` · `GET /api/health`
 - `GET /api/me/sessions` · `DELETE /api/me/sessions/{id}` · `POST /api/me/sessions/revoke-others`
 - `GET /api/me` includes `usedBytes` (home + attributed share writes + trash) alongside effective `quotaBytes`, `quotaCustom`, `email`, and `status`
-- `GET /api/auth/features` (`openRegistration`, `registrationRequireApproval`, `allowRememberMe`, password policy, forgotPassword) · `POST /api/register` (may return `pending`) · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
+- `GET /api/auth/features` (`openRegistration`, `registrationRequireApproval`, `allowRememberMe`, password policy, forgotPassword, `oidcEnabled`, `oidcLabel`) · `POST /api/register` (may return `pending`) · `POST /api/forgot-password` · `GET /api/reset-password/meta` · `POST /api/reset-password`
+- `GET /api/oidc/start` · `GET /api/oidc/callback` — optional OpenID Connect (404 when disabled). `rememberMe=1` on start is honored when Stay signed in is allowed
 - `POST /api/login` accepts optional `rememberMe` (honored only when admin allows Stay signed in)
+- `POST /api/me/password` — requires the current password unless the account has no Filehub password yet (SSO-only users can set an initial password)
 
 Files:
 
@@ -306,7 +314,7 @@ Admin (requires admin session):
 - `GET|POST /api/admin/users` (email on create)
 - `PATCH|DELETE /api/admin/users/{id}` (email on patch)
 - `POST /api/admin/users/{id}/password`
-- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, `globalQuotaEnabled`, `globalQuotaBytes`, password policy, SMTP — password write-only)
+- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, `globalQuotaEnabled`, `globalQuotaBytes`, password policy, SMTP — password write-only, OIDC — client secret write-only, plus `oidcRedirectURL` and `oidcClientSecretSet`)
 - `GET /api/admin/system/status` (CPU, RAM, user quota totals, `DATA_ROOT` disk; admin only)
 - `GET /api/admin/audit` (`limit`, `offset`) — append-only audit log (admin only)
 - `POST /api/admin/smtp/test`
@@ -329,7 +337,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Do not commit secrets, deploy env files,
 
 1. Admin → Settings → **Email**: enable, host, port, username, password, from address. Save. Optionally **Send test email**. The same SMTP settings are used for password-reset mail, pending-registration notices to admins, shared-folder access notices, and user-to-user file or folder share notices to users who have an email address.
 2. Set each user’s **email** under Users → Create / Edit (required for that user to receive reset mail).
-3. Public HTTPS deployments must set `PUBLIC_BASE_URL` to your public origin (and `SECURE_COOKIES=true`) so reset links cannot follow a spoofed host.
+3. Public HTTPS deployments must set `PUBLIC_BASE_URL` to your public origin (and `SECURE_COOKIES=true`) so reset links and the OIDC redirect URI cannot follow a spoofed host.
 4. The login page links to **Forgot password?** (`/forgot`) when SMTP is ready. The user enters username or email; if a matching account has an email, a one-hour link is sent. The `/reset?token=…` page enforces the current password policy.
 
 SMTP credentials can also be supplied via env (`SMTP_*`); env values override the DB for the running process. The API never returns the SMTP password — only `passwordSet: true|false`.
@@ -340,7 +348,7 @@ WebDAV is enabled by default at `/dav/`. Set `WEBDAV_ENABLED=false` to turn it o
 
 1. Prefer a reverse proxy with HTTPS. Do not expose the Filehub port directly to the public internet.
 2. Mount `https://your-host/dav/` (trailing slash recommended) as a network drive.
-3. Sign in with your Filehub username and password. There is no anonymous access. WebDAV uses the account password even if 2FA is required for the web UI.
+3. Sign in with your Filehub username and password. There is no anonymous access. WebDAV uses the account password even if 2FA is required for the web UI, or if you signed in to the web UI with SSO. Accounts that have no Filehub password (SSO-only) must set one under Settings → Set password before WebDAV will accept them.
 4. The virtual root lists **My Files**, **Shared with me**, and each shared folder you can access. Read, write, and delete follow the same grants as the web UI. Deleting a file or folder through WebDAV moves it to the Recycle bin. Authenticated WebDAV traffic is not counted toward the login rate limit, so clients such as macOS Finder that send many PROPFIND requests when opening a folder are not blocked with HTTP 429. Failed passwords are still rate-limited.
 
 macOS Finder: Go → Connect to Server → `https://your-host/dav/`. Windows: Map a network drive to that HTTPS URL (the WebClient service must be running). Other clients (rclone, Cyberduck, davfs2) can use the same URL and credentials.

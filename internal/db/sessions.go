@@ -43,6 +43,7 @@ func (d *DB) ensureSessionMetaColumns() error {
 		{"last_seen_at", `ALTER TABLE sessions ADD COLUMN last_seen_at TEXT NOT NULL DEFAULT ''`},
 		{"ip", `ALTER TABLE sessions ADD COLUMN ip TEXT NOT NULL DEFAULT ''`},
 		{"user_agent", `ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''`},
+		{"auth_method", `ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, a := range alters {
 		if cols[a.name] {

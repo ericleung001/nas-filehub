@@ -8,6 +8,14 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.15] - 2026-11-16
+
+### Added
+- **Optional OpenID Connect (SSO)** — administrators can enable single sign-on under Settings → Sign-in / SSO after the first local admin login (Authentik, Authelia, Pocket ID, Dex, Keycloak, and other providers that support discovery). OIDC is off by default. Local username and password sign-in always remains available, including when SSO is on, so an identity-provider outage cannot lock out an administrator. The login page shows a **Sign in with SSO** button (optional custom label) next to the existing form. Authorization Code + PKCE is used; the redirect URI is `{PUBLIC_BASE_URL}/api/oidc/callback` and is shown read-only in the admin form. New users can optionally be created on first SSO sign-in (off by default); otherwise only an existing Filehub account is linked, by a stored issuer and subject, then by email (when present and not explicitly unverified). Existing accounts are not linked by username alone, and an email match does not overwrite an account already linked to a different sign-in identity. If the ID token omits email or preferred_username, only those missing fields are filled from the provider UserInfo endpoint when available. Disabled or pending accounts cannot sign in. OIDC sessions skip Filehub TOTP (the identity provider may already require 2FA). The client secret is write-only, like the SMTP password, and can be set with `OIDC_ENABLED`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_AUTO_CREATE` environment overrides. Logout ends the Filehub session only.
+
+### Changed
+- **Set an initial password** — accounts that signed in with SSO and have no Filehub password can set one under Settings → Set password without entering a current password (the password policy still applies). WebDAV still uses the Filehub username and password; those accounts cannot use WebDAV until a password is set. Forgot-password reset can also set a password when SMTP is configured.
+
 ## [0.4.14] - 2026-11-14
 
 ### Fixed
@@ -360,6 +368,7 @@ where version tags are used.
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
 [Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.14...HEAD
+[0.4.15]: https://github.com/ericleung001/nas-filehub/compare/v0.4.14...v0.4.15
 [0.4.14]: https://github.com/ericleung001/nas-filehub/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/ericleung001/nas-filehub/compare/v0.4.12...v0.4.13
 [0.4.12]: https://github.com/ericleung001/nas-filehub/compare/v0.4.11...v0.4.12

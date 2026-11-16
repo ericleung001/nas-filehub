@@ -67,6 +67,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/login/totp/setup", s.handleLoginTotpSetup)
 	mux.HandleFunc("/api/login/totp/enable", s.handleLoginTotpEnable)
 	mux.HandleFunc("/api/auth/features", s.handleAuthFeatures)
+	mux.HandleFunc("/api/oidc/start", s.handleOIDCStart)
+	mux.HandleFunc("/api/oidc/callback", s.handleOIDCCallback)
 	mux.HandleFunc("/api/register", s.handleRegister)
 	mux.HandleFunc("/api/forgot-password", s.handleForgotPassword)
 	mux.HandleFunc("/api/reset-password", s.handleResetPassword)
@@ -261,7 +263,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 				writeErr(w, http.StatusForbidden, "password change required")
 				return
 			}
-		} else if s.userMustEnrollTotp(u) {
+		} else if !s.sessionIsOIDC(r) && s.userMustEnrollTotp(u) {
 			allowed := path == "/api/me" ||
 				path == "/api/me/totp/setup" ||
 				path == "/api/me/totp/confirm" ||
@@ -429,7 +431,34 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
+func (s *Server) sessionAuthMethod(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	c, err := r.Cookie(auth.CookieName)
+	if err != nil || c.Value == "" {
+		return ""
+	}
+	m, err := s.DB.GetSessionAuthMethod(c.Value)
+	if err != nil {
+		return ""
+	}
+	return m
+}
+
+func (s *Server) sessionIsOIDC(r *http.Request) bool {
+	return s.sessionAuthMethod(r) == "oidc"
+}
+
 func (s *Server) userPublic(u *db.User) map[string]any {
+	return s.userPublicAuth(u, "")
+}
+
+func (s *Server) userPublicFor(r *http.Request, u *db.User) map[string]any {
+	return s.userPublicAuth(u, s.sessionAuthMethod(r))
+}
+
+func (s *Server) userPublicAuth(u *db.User, authMethod string) map[string]any {
 	if u == nil {
 		return map[string]any{}
 	}
@@ -438,6 +467,10 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 	pol, _ := s.DB.GetPasswordPolicy()
 	mustChange := s.userMustChangePassword(u)
 	mustEnroll := required && !u.TotpEnabled
+	if authMethod == "oidc" {
+		// OIDC sessions skip Filehub TOTP; the IdP may already have done 2FA.
+		mustEnroll = false
+	}
 	// Password gate takes priority over 2FA enroll for the flag the UI reads first.
 	return map[string]any{
 		"id": u.ID, "username": u.Username, "email": u.Email, "isAdmin": u.IsAdmin, "homePath": u.HomePath,
@@ -446,6 +479,9 @@ func (s *Server) userPublic(u *db.User) map[string]any {
 		"totpEnabled": u.TotpEnabled, "totpRequired": u.TotpRequired,
 		"force2faAll": forceAll, "mustEnrollTotp": mustEnroll && !mustChange,
 		"mustChangePassword": mustChange,
+		"hasLocalPassword":   u.HasLocalPassword(),
+		"oidcLinked":         u.OIDCLinked(),
+		"oidcSession":        authMethod == "oidc",
 		"passwordPolicy":     pol,
 		"passwordPolicyHint": db.PasswordPolicySummary(pol),
 	}
@@ -460,7 +496,7 @@ func (s *Server) passwordPolicy() db.PasswordPolicy {
 }
 
 func (s *Server) userMustChangePassword(u *db.User) bool {
-	if u == nil {
+	if u == nil || !u.HasLocalPassword() {
 		return false
 	}
 	pol := s.passwordPolicy()
@@ -488,7 +524,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := s.currentUser(r)
-	m := s.userPublic(u)
+	m := s.userPublicFor(r, u)
 	m["usedBytes"] = s.homeUsedBytes(u)
 	m["webdav"] = map[string]any{"enabled": s.webdavEnabled(), "path": "/dav/"}
 	writeJSON(w, 200, map[string]any{"user": m})
@@ -516,9 +552,11 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	if !db.CheckPassword(u.PasswordHash, body.CurrentPassword) {
-		writeErr(w, 401, "current password incorrect")
-		return
+	if u.HasLocalPassword() {
+		if !db.CheckPassword(u.PasswordHash, body.CurrentPassword) {
+			writeErr(w, 401, "current password incorrect")
+			return
+		}
 	}
 	keep := ""
 	if c, err := r.Cookie(auth.CookieName); err == nil {
@@ -529,7 +567,7 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u2, _ := s.DB.GetUserByID(u.ID)
-	m := s.userPublic(u2)
+	m := s.userPublicFor(r, u2)
 	m["usedBytes"] = s.homeUsedBytes(u2)
 	writeJSON(w, 200, map[string]any{"ok": "1", "user": m})
 }

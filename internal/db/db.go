@@ -37,6 +37,8 @@ type User struct {
 	PasswordPolicyVersion int       `json:"passwordPolicyVersion"`
 	Status                string    `json:"status"` // active|pending|rejected
 	CreatedAt             time.Time `json:"createdAt"`
+	OIDCIssuer            string    `json:"-"`
+	OIDCSubject           string    `json:"-"`
 }
 
 type Share struct {
@@ -159,7 +161,10 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureItemShareTables(); err != nil {
 		return err
 	}
-	return d.ensureLoginLockoutTable()
+	if err := d.ensureLoginLockoutTable(); err != nil {
+		return err
+	}
+	return d.ensureOIDCSchema()
 }
 
 func (d *DB) ensureUserColumns() error {
@@ -363,7 +368,7 @@ func (d *DB) scanUser(scanner interface {
 	var admin, disabled, totpEnabled, totpRequired, quotaCustom int
 	var created, pwChanged string
 	var storedSecret string
-	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &quotaCustom, &disabled, &storedSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created)
+	err := scanner.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &admin, &u.HomePath, &u.QuotaBytes, &quotaCustom, &disabled, &storedSecret, &totpEnabled, &totpRequired, &pwChanged, &u.PasswordPolicyVersion, &u.Status, &created, &u.OIDCIssuer, &u.OIDCSubject)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +386,7 @@ func (d *DB) scanUser(scanner interface {
 	return u, nil
 }
 
-const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, quota_custom, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, status, created_at`
+const userSelectCols = `id, username, email, password_hash, is_admin, home_path, quota_bytes, quota_custom, disabled, totp_secret, totp_enabled, totp_required, password_changed_at, password_policy_version, status, created_at, oidc_issuer, oidc_subject`
 
 func (d *DB) GetUserByUsername(username string) (*User, error) {
 	row := d.SQL.QueryRow(
@@ -694,14 +699,28 @@ func (d *DB) DeleteUser(id int64) error {
 }
 
 func (d *DB) CreateSession(token string, userID int64, expires time.Time, ip, userAgent string) error {
+	return d.CreateSessionAuth(token, userID, expires, ip, userAgent, "")
+}
+
+func (d *DB) CreateSessionAuth(token string, userID int64, expires time.Time, ip, userAgent, authMethod string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	ip = truncateMeta(ip, 128)
 	userAgent = truncateMeta(userAgent, 512)
+	authMethod = strings.TrimSpace(authMethod)
 	_, err := d.SQL.Exec(
-		`INSERT INTO sessions(token, user_id, expires_at, created_at, last_seen_at, ip, user_agent) VALUES(?,?,?,?,?,?,?)`,
-		token, userID, expires.UTC().Format(time.RFC3339), now, now, ip, userAgent,
+		`INSERT INTO sessions(token, user_id, expires_at, created_at, last_seen_at, ip, user_agent, auth_method) VALUES(?,?,?,?,?,?,?,?)`,
+		token, userID, expires.UTC().Format(time.RFC3339), now, now, ip, userAgent, authMethod,
 	)
 	return err
+}
+
+func (d *DB) GetSessionAuthMethod(token string) (string, error) {
+	var method string
+	err := d.SQL.QueryRow(`SELECT auth_method FROM sessions WHERE token=?`, token).Scan(&method)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return method, err
 }
 
 func (d *DB) GetSessionUser(token string) (*User, error) {
@@ -733,6 +752,7 @@ func (d *DB) CleanupSessions() {
 	_, _ = d.SQL.Exec(`DELETE FROM pending_logins WHERE expires_at < ?`, now)
 	d.CleanupPasswordResets()
 	d.CleanupLinkUnlocks()
+	d.CleanupOIDCStates()
 }
 
 func (d *DB) CreateShare(name, path string, createdBy int64) (*Share, error) {

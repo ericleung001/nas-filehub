@@ -18,6 +18,10 @@
         <h1>Filehub</h1>
       </div>
       <p class="muted">Multi-user file manager</p>
+      <div id="oidc-login" hidden>
+        <a id="oidc-start" class="btn" href="/api/oidc/start">Sign in with SSO</a>
+      </div>
+      <p id="login-divider" class="login-divider" hidden>or</p>
       <form id="login-form">
         <label>Username<input name="username" autocomplete="username" required /></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
@@ -149,7 +153,7 @@
       <div class="settings-layout">
         <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
           <button type="button" class="settings-nav-item active" data-tab="account">Account</button>
-          <button type="button" class="settings-nav-item" data-tab="password">Change password</button>
+          <button type="button" class="settings-nav-item" data-tab="password" id="nav-password">Change password</button>
           <button type="button" class="settings-nav-item" data-tab="2fa">2FA</button>
           <button type="button" class="settings-nav-item" data-tab="links">Link shares</button>
           <button type="button" class="settings-nav-item" data-tab="my-sessions">Active sessions</button>
@@ -158,6 +162,7 @@
           <button type="button" class="settings-nav-item admin-only" data-tab="sessions" hidden>Session duration</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="registration" hidden>Registration</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="security" hidden>Security</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="sso" hidden>Sign-in / SSO</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="audit" hidden>Audit log</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="email" hidden>Email</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="storage-quota" hidden>Storage quota</button>
@@ -174,13 +179,14 @@
           </div>
           <div id="tab-password" class="settings-panel" role="tabpanel" hidden>
             <div class="settings-card">
-              <h3>Change password</h3>
+              <h3 id="password-tab-title">Change password</h3>
+              <p id="password-set-note" class="muted" hidden>This account has no Filehub password yet. Set one to use WebDAV or to sign in with a username and password. Single sign-on will still work.</p>
               <p id="password-policy-hint" class="muted">Requirements: min 4 characters</p>
               <form id="change-password" class="admin-form">
-                <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+                <label id="current-password-label">Current password<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
                 <label>New password<input name="newPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
                 <label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="4" /></label>
-                <button type="submit">Update password</button>
+                <button type="submit" id="password-submit">Update password</button>
                 <p id="change-password-msg" class="muted" hidden></p>
               </form>
             </div>
@@ -452,7 +458,28 @@
               </form>
             </div>
           </div>
-          <div id="tab-audit" class="settings-panel" role="tabpanel" hidden>
+                    <div id="tab-sso" class="settings-panel" role="tabpanel" hidden>
+            <div class="admin-section settings-card">
+              <h3>Sign-in / SSO</h3>
+              <p class="muted">Optional OpenID Connect sign-in (Authentik, Authelia, Pocket ID, Dex, Keycloak, and other standard providers). Local username and password sign-in always stays available, including when SSO is on, so an identity-provider outage cannot lock out the administrator. OIDC is off by default. After install, sign in as an admin and configure it here. Logout ends the Filehub session only; it does not sign the user out of the identity provider. Set <code>PUBLIC_BASE_URL</code> to your public HTTPS origin before enabling SSO. Env <code>OIDC_*</code> overrides UI values when set.</p>
+              <form id="oidc-form" class="admin-form policy-form">
+                <label class="check"><input name="oidcEnabled" type="checkbox" /> Enable OpenID Connect</label>
+                <label>Issuer URL<input name="oidcIssuer" placeholder="https://idp.example.com/application/o/filehub" /></label>
+                <label>Client ID<input name="oidcClientId" autocomplete="off" /></label>
+                <label>Client secret<input name="oidcClientSecret" type="password" autocomplete="new-password" placeholder="leave blank to keep" /></label>
+                <p id="oidc-secret-set" class="meta" hidden></p>
+                <label>Button label<input name="oidcLabel" placeholder="Sign in with SSO" /></label>
+                <label class="check"><input name="oidcAutoCreate" type="checkbox" /> Create Filehub users automatically on first SSO sign-in</label>
+                <p class="muted admin-form-note">When this is off (the default), only people who already have a Filehub account can sign in with SSO. Accounts are matched by a previously linked identity, then by email. Existing accounts are not linked by username alone. Disabled or pending accounts cannot sign in. New auto-created accounts have no local password until the user sets one under Settings.</p>
+                <label>Redirect URI<input name="oidcRedirectURL" readonly /></label>
+                <p class="muted admin-form-note">Register this exact redirect URI with your identity provider. It is <code>{PUBLIC_BASE_URL}/api/oidc/callback</code> and is not taken from the request Host header.</p>
+                <button type="submit">Save SSO settings</button>
+                <p id="oidc-msg" class="muted" hidden></p>
+                <p id="oidc-ready" class="meta"></p>
+              </form>
+            </div>
+          </div>
+<div id="tab-audit" class="settings-panel" role="tabpanel" hidden>
             <div class="settings-card admin-section">
               <h3>Audit log</h3>
               <p class="muted">Recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares. Passwords and tokens are never recorded.</p>

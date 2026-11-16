@@ -141,10 +141,21 @@ async function bootstrap() {
   } catch {
     show('login');
     await refreshForgotLink();
-    const registered = new URLSearchParams(location.search).get('registered');
+    const params = new URLSearchParams(location.search);
+    const registered = params.get('registered');
     if (registered) {
       const loginUser = $('#login-form')?.username;
       if (loginUser) loginUser.value = registered;
+    }
+    const oidcErr = params.get('oidc_error');
+    if (oidcErr) {
+      const el = $('#login-error');
+      if (el) {
+        el.textContent = oidcErr;
+        el.hidden = false;
+      }
+    }
+    if (registered || oidcErr) {
       history.replaceState(null, '', '/');
     }
   }
@@ -219,6 +230,21 @@ function showLoginStep(step) {
   $('#totp-enroll-login').hidden = step !== 'enroll';
 }
 
+function applyOidcLoginButton(data) {
+  const box = $('#oidc-login');
+  const divider = $('#login-divider');
+  const link = $('#oidc-start');
+  const on = !!(data && data.oidcEnabled);
+  if (box) box.hidden = !on;
+  if (divider) divider.hidden = !on;
+  if (link) {
+    link.textContent = (data && data.oidcLabel) ? data.oidcLabel : 'Sign in with SSO';
+    const rememberEl = $('#login-form')?.rememberMe;
+    const stay = !!(rememberEl && rememberEl.checked);
+    link.href = stay ? '/api/oidc/start?rememberMe=1' : '/api/oidc/start';
+  }
+}
+
 async function refreshAuthFeatures() {
   const forgot = $('#link-forgot');
   const signup = $('#link-signup');
@@ -228,6 +254,7 @@ async function refreshAuthFeatures() {
     if (forgot) forgot.hidden = !data.forgotPassword;
     if (signup) signup.hidden = !data.openRegistration;
     if (rememberLabel) rememberLabel.hidden = !data.allowRememberMe;
+    applyOidcLoginButton(data);
     const hint = $('#signup-policy-hint');
     if (hint) {
       hint.textContent = data.passwordPolicyHint
@@ -244,6 +271,7 @@ async function refreshAuthFeatures() {
     if (forgot) forgot.hidden = true;
     if (signup) signup.hidden = true;
     if (rememberLabel) rememberLabel.hidden = true;
+    applyOidcLoginButton(null);
     return null;
   }
 }
@@ -265,6 +293,14 @@ async function startLoginEnroll(pendingToken) {
   $('#login-totp-secret').textContent = data.secret || '';
   showLoginStep('enroll');
 }
+
+$('#login-form')?.addEventListener('change', () => {
+  const link = $('#oidc-start');
+  if (!link || $('#oidc-login')?.hidden) return;
+  const rememberEl = $('#login-form')?.rememberMe;
+  const stay = !!(rememberEl && rememberEl.checked);
+  link.href = stay ? '/api/oidc/start?rememberMe=1' : '/api/oidc/start';
+});
 
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -580,6 +616,27 @@ function applySettingsGate() {
   });
 }
 
+function applyPasswordFormMode(u) {
+  const has = !!(u && u.hasLocalPassword);
+  const nav = $('#nav-password');
+  if (nav) nav.textContent = has ? 'Change password' : 'Set password';
+  const title = $('#password-tab-title');
+  if (title) title.textContent = has ? 'Change password' : 'Set password';
+  const note = $('#password-set-note');
+  if (note) note.hidden = has;
+  const cur = $('#current-password-label');
+  if (cur) {
+    cur.hidden = !has;
+    const input = cur.querySelector('input');
+    if (input) {
+      input.required = has;
+      if (!has) input.value = '';
+    }
+  }
+  const btn = $('#password-submit');
+  if (btn) btn.textContent = has ? 'Update password' : 'Set password';
+}
+
 function updatePasswordPolicyHints(u) {
   const hint = (u && (u.passwordPolicyHint || (u.passwordPolicy && formatPolicyHint(u.passwordPolicy)))) || 'min 4 characters';
   const el = $('#password-policy-hint');
@@ -610,7 +667,7 @@ document.querySelectorAll('.settings-nav-item').forEach((btn) => {
     if (tab === 'users' || tab === 'shares') {
       try { await refreshAdmin(); } catch (err) { console.error(err); }
     }
-    if (tab === 'sessions' || tab === 'registration' || tab === 'security' || tab === 'email' || tab === 'storage-quota') {
+    if (tab === 'sessions' || tab === 'registration' || tab === 'security' || tab === 'email' || tab === 'storage-quota' || tab === 'sso') {
       try { await loadSystemSettings(); } catch (err) { console.error(err); }
     }
     if (tab === 'links') {
@@ -636,6 +693,7 @@ async function openSettings() {
   }
   applySettingsGate();
   updatePasswordPolicyHints(u);
+  applyPasswordFormMode(u);
   let tab = 'account';
   if (u.mustChangePassword) tab = 'password';
   else if (u.mustEnrollTotp) tab = '2fa';
@@ -646,12 +704,25 @@ async function openSettings() {
   const used = u.usedBytes || 0;
   const quota = u.quotaBytes || 0;
   const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
+  let webdavNote = '';
+  if (u.webdav && u.webdav.enabled) {
+    webdavNote = `<div class="meta">WebDAV: <code>${window.location.origin + (u.webdav.path || '/dav/')}</code></div>`;
+    if (u.hasLocalPassword) {
+      webdavNote += `<p class="muted">Mount this URL as a network drive with your Filehub username and password over HTTPS. Do not expose the app port directly. WebDAV uses your account password even if 2FA is enabled for the web sign-in, or if you signed in with SSO.</p>`;
+    } else {
+      webdavNote += `<p class="muted">WebDAV needs a Filehub password. This account has none yet — set one under Set password before mounting a network drive.</p>`;
+    }
+  }
+  const ssoNote = u.oidcSession
+    ? '<p class="muted">You signed in with single sign-on. Filehub 2FA is not required for this session.</p>'
+    : (u.oidcLinked ? '<p class="muted">This account is linked to an OpenID Connect identity and can also sign in with SSO.</p>' : '');
   acc.innerHTML = `
     <div><strong>${u.username}</strong> ${badges.join(' ')}</div>
     <div class="meta">Email: ${u.email ? `<code>${u.email}</code>` : '<span class="muted">not set (ask admin)</span>'}</div>
     <div class="meta">Home: <code>${u.homePath || ''}</code></div>
     <div class="meta">Storage: ${fmtSize(used)} / ${fmtQuota(quota)}${quota ? ` (${pct}%)` : ''}</div>
-    ${u.webdav && u.webdav.enabled ? `<div class="meta">WebDAV: <code>${window.location.origin + (u.webdav.path || '/dav/')}</code></div><p class="muted">Mount this URL as a network drive with your Filehub username and password over HTTPS. Do not expose the app port directly. WebDAV uses your account password even if 2FA is enabled for the web sign-in.</p>` : ''}
+    ${ssoNote}
+    ${webdavNote}
   `;
   const bar = $('#settings-quota-bar');
   if (quota > 0) {
@@ -687,10 +758,11 @@ $('#change-password').addEventListener('submit', async (e) => {
       }),
     });
     if (data.user) state.user = data.user;
-    msg.textContent = 'Password updated';
+    msg.textContent = state.user && state.user.hasLocalPassword ? 'Password updated' : 'Password set';
     msg.hidden = false;
     e.target.reset();
     updatePasswordPolicyHints(state.user);
+    applyPasswordFormMode(state.user);
     applySettingsGate();
     if (state.user.mustEnrollTotp) {
       setSettingsTab('2fa');
@@ -2411,7 +2483,82 @@ async function loadSystemSettings() {
     gqMsg.hidden = true;
     gqMsg.classList.remove('error');
   }
+  const oidc = data.oidc || {};
+  const of = $('#oidc-form');
+  if (of) {
+    of.oidcEnabled.checked = !!oidc.enabled;
+    of.oidcIssuer.value = oidc.issuer || '';
+    of.oidcClientId.value = oidc.clientId || '';
+    of.oidcClientSecret.value = '';
+    of.oidcLabel.value = oidc.label || 'Sign in with SSO';
+    of.oidcAutoCreate.checked = !!oidc.autoCreate;
+    if (of.oidcRedirectURL) of.oidcRedirectURL.value = oidc.redirectURL || data.oidcRedirectURL || '';
+    const setNote = $('#oidc-secret-set');
+    if (setNote) {
+      const saved = !!(oidc.clientSecretSet || data.oidcClientSecretSet);
+      setNote.textContent = saved ? 'A client secret is saved (leave field blank to keep it).' : 'No client secret saved yet.';
+      setNote.hidden = false;
+    }
+    const ready = $('#oidc-ready');
+    if (ready) {
+      let t = '';
+      if (!oidc.publicBaseURLSet && !data.publicBaseURL) {
+        t = 'Set PUBLIC_BASE_URL before enabling SSO (the redirect URI is based on it).';
+      } else if (oidc.enabled && oidc.issuer && oidc.clientId && (oidc.clientSecretSet || data.oidcClientSecretSet)) {
+        t = 'SSO is enabled. Local username and password sign-in remains available.';
+      } else {
+        t = 'SSO is off. Local username and password sign-in is unchanged.';
+      }
+      if (oidc.envOverride) t += ' Env OIDC_* overrides apply on top of saved settings.';
+      if (data.publicBaseURL) t += ' PUBLIC_BASE_URL=' + data.publicBaseURL;
+      ready.textContent = t;
+    }
+  }
+  const oidcMsg = $('#oidc-msg');
+  if (oidcMsg) {
+    oidcMsg.hidden = true;
+    oidcMsg.classList.remove('error');
+  }
   applyGlobalQuotaUI();
+}
+
+$('#oidc-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#oidc-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  const body = {
+    oidcEnabled: !!e.target.oidcEnabled.checked,
+    oidcIssuer: e.target.oidcIssuer.value,
+    oidcClientId: e.target.oidcClientId.value,
+    oidcAutoCreate: !!e.target.oidcAutoCreate.checked,
+    oidcLabel: e.target.oidcLabel.value,
+  };
+  const secret = e.target.oidcClientSecret.value;
+  if (secret !== '') body.oidcClientSecret = secret;
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    await loadSystemSettingsFrom(data);
+    msg.textContent = 'SSO settings saved';
+    msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+async function loadSystemSettingsFrom(data) {
+  if (!data) {
+    await loadSystemSettings();
+    return;
+  }
+  // Reuse GET-shaped payload from PUT.
+  // loadSystemSettings always GETs; after save, refresh from GET so nested oidc is consistent.
+  await loadSystemSettings();
 }
 
 $('#allow-remember-me')?.addEventListener('change', (e) => {

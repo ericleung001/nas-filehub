@@ -44,6 +44,14 @@ type Config struct {
 	// WebDAVEnabled exposes /dav/ for mounting with a Filehub username and password.
 	// Default is true; set WEBDAV_ENABLED=false to disable.
 	WebDAVEnabled bool
+	// Optional OIDC env overrides (take precedence over Settings → Sign-in / SSO).
+	OIDCEnabledSet    bool
+	OIDCEnabled       bool
+	OIDCIssuer        string
+	OIDCClientID      string
+	OIDCClientSecret  string
+	OIDCAutoCreateSet bool
+	OIDCAutoCreate    bool
 }
 
 func getenv(k, def string) string {
@@ -73,36 +81,58 @@ func getenvInt(k string, def int) int {
 	return n
 }
 
+func getenvBoolSet(k string) (set bool, val bool) {
+	v, ok := os.LookupEnv(k)
+	if !ok {
+		return false, false
+	}
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return true, false
+	}
+	return true, v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
 func Load() Config {
 	dataRoot := getenv("DATA_ROOT", "/data/files")
 	dbPath := getenv("DB_PATH", "/data/filehub.db")
-	return Config{
-		ListenAddr:      getenv("LISTEN_ADDR", ":8080"),
-		DataRoot:        dataRoot,
-		DBPath:          dbPath,
-		AdminUser:       getenv("ADMIN_USER", "admin"),
-		AdminPassword:   getenv("ADMIN_PASSWORD", ""),
-		SessionSecret:   getenv("SESSION_SECRET", ""),
-		SecureCookies:   getenvBool("SECURE_COOKIES", false),
-		ThumbEnable:     getenvBool("THUMB_ENABLE", true),
-		ThumbVAAPI:      getenvBool("THUMB_VAAPI", false),
-		ThumbHWAccel:    strings.ToLower(strings.TrimSpace(getenv("THUMB_HWACCEL", ""))),
-		ThumbCacheDir:   getenv("THUMB_CACHE_DIR", "/data/thumbs"),
-		MaxUploadMB:     int64(getenvInt("MAX_UPLOAD_MB", DefaultMaxUploadMB)),
-		RateLimitPerMin: getenvInt("LOGIN_RATE_LIMIT", 10),
-		Force2FAAll:     getenvBool("FORCE_2FA_ALL", false),
-		PublicBaseURL:   strings.TrimRight(getenv("PUBLIC_BASE_URL", ""), "/"),
-		TrustedProxies:  getenv("TRUSTED_PROXIES", ""),
-		LockoutLimit:    getenvInt("LOGIN_LOCKOUT_LIMIT", 10),
-		LockoutMinutes:  getenvInt("LOGIN_LOCKOUT_MINUTES", 15),
-		SMTPHost:        getenv("SMTP_HOST", ""),
-		SMTPPort:        getenvInt("SMTP_PORT", 0),
-		SMTPUsername:    getenv("SMTP_USERNAME", ""),
-		SMTPPassword:    getenv("SMTP_PASSWORD", ""),
-		SMTPFrom:        getenv("SMTP_FROM", ""),
-		SMTPEnabled:     getenvBool("SMTP_ENABLED", false),
-		WebDAVEnabled:   getenvBool("WEBDAV_ENABLED", true),
+	cfg := Config{
+		ListenAddr:       getenv("LISTEN_ADDR", ":8080"),
+		DataRoot:         dataRoot,
+		DBPath:           dbPath,
+		AdminUser:        getenv("ADMIN_USER", "admin"),
+		AdminPassword:    getenv("ADMIN_PASSWORD", ""),
+		SessionSecret:    getenv("SESSION_SECRET", ""),
+		SecureCookies:    getenvBool("SECURE_COOKIES", false),
+		ThumbEnable:      getenvBool("THUMB_ENABLE", true),
+		ThumbVAAPI:       getenvBool("THUMB_VAAPI", false),
+		ThumbHWAccel:     strings.ToLower(strings.TrimSpace(getenv("THUMB_HWACCEL", ""))),
+		ThumbCacheDir:    getenv("THUMB_CACHE_DIR", "/data/thumbs"),
+		MaxUploadMB:      int64(getenvInt("MAX_UPLOAD_MB", DefaultMaxUploadMB)),
+		RateLimitPerMin:  getenvInt("LOGIN_RATE_LIMIT", 10),
+		Force2FAAll:      getenvBool("FORCE_2FA_ALL", false),
+		PublicBaseURL:    strings.TrimRight(getenv("PUBLIC_BASE_URL", ""), "/"),
+		TrustedProxies:   getenv("TRUSTED_PROXIES", ""),
+		LockoutLimit:     getenvInt("LOGIN_LOCKOUT_LIMIT", 10),
+		LockoutMinutes:   getenvInt("LOGIN_LOCKOUT_MINUTES", 15),
+		SMTPHost:         getenv("SMTP_HOST", ""),
+		SMTPPort:         getenvInt("SMTP_PORT", 0),
+		SMTPUsername:     getenv("SMTP_USERNAME", ""),
+		SMTPPassword:     getenv("SMTP_PASSWORD", ""),
+		SMTPFrom:         getenv("SMTP_FROM", ""),
+		SMTPEnabled:      getenvBool("SMTP_ENABLED", false),
+		WebDAVEnabled:    getenvBool("WEBDAV_ENABLED", true),
+		OIDCIssuer:       strings.TrimRight(strings.TrimSpace(getenv("OIDC_ISSUER", "")), "/"),
+		OIDCClientID:     strings.TrimSpace(getenv("OIDC_CLIENT_ID", "")),
+		OIDCClientSecret: getenv("OIDC_CLIENT_SECRET", ""),
 	}
+	enSet, enVal := getenvBoolSet("OIDC_ENABLED")
+	acSet, acVal := getenvBoolSet("OIDC_AUTO_CREATE")
+	cfg.OIDCEnabledSet = enSet
+	cfg.OIDCEnabled = enVal
+	cfg.OIDCAutoCreateSet = acSet
+	cfg.OIDCAutoCreate = acVal
+	return cfg
 }
 
 func (c Config) SessionTTL() time.Duration {

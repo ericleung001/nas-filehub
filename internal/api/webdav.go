@@ -58,6 +58,11 @@ func (s *Server) webDAVHandler() http.Handler {
 
 func (s *Server) authenticateDAV(w http.ResponseWriter, r *http.Request) *db.User {
 	if u := s.currentUser(r); u != nil && !u.Disabled && userActive(u) {
+		if !u.HasLocalPassword() {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Filehub WebDAV"`)
+			writeErr(w, http.StatusUnauthorized, "set a Filehub password in Settings to use WebDAV")
+			return nil
+		}
 		return u
 	}
 	username, password, ok := r.BasicAuth()
@@ -73,7 +78,7 @@ func (s *Server) authenticateDAV(w http.ResponseWriter, r *http.Request) *db.Use
 		return nil
 	}
 	u, err := s.DB.GetUserByUsername(username)
-	if err != nil || u == nil || !db.CheckPassword(u.PasswordHash, password) {
+	if err != nil || u == nil || !u.HasLocalPassword() || !db.CheckPassword(u.PasswordHash, password) {
 		// Only failed logins count against the login rate limit. Finder and
 		// other WebDAV clients issue many PROPFIND/GET requests at once;
 		// treating those like login attempts returns 429 and the folder looks empty.

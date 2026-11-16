@@ -75,6 +75,11 @@ func (s *Server) handleAuthFeatures(w http.ResponseWriter, r *http.Request) {
 	}
 	pol := s.passwordPolicy()
 	sess := s.sessionSettings()
+	oidcCfg, err := s.effectiveOIDC()
+	if err != nil {
+		writeErr(w, 500, "db error")
+		return
+	}
 	writeJSON(w, 200, map[string]any{
 		"forgotPassword":              cfg.Ready(),
 		"openRegistration":            s.openRegistration(),
@@ -82,6 +87,8 @@ func (s *Server) handleAuthFeatures(w http.ResponseWriter, r *http.Request) {
 		"allowRememberMe":             sess.AllowRememberMe,
 		"passwordPolicy":              pol,
 		"passwordPolicyHint":          db.PasswordPolicySummary(pol),
+		"oidcEnabled":                 oidcCfg.Ready() && s.Cfg.PublicBaseURL != "",
+		"oidcLabel":                   oidcCfg.ButtonLabel(),
 	})
 }
 

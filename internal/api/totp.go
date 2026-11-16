@@ -48,6 +48,10 @@ func (s *Server) sessionTTL(rememberMe bool) time.Duration {
 }
 
 func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *db.User, rememberMe bool) error {
+	return s.issueSessionMethod(w, r, u, rememberMe, "password")
+}
+
+func (s *Server) issueSessionMethod(w http.ResponseWriter, r *http.Request, u *db.User, rememberMe bool, authMethod string) error {
 	token, err := auth.NewToken()
 	if err != nil {
 		return err
@@ -58,7 +62,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *db.User
 		ip = s.clientIP(r)
 		ua = r.UserAgent()
 	}
-	if err := s.DB.CreateSession(token, u.ID, exp, ip, ua); err != nil {
+	if err := s.DB.CreateSessionAuth(token, u.ID, exp, ip, ua, authMethod); err != nil {
 		return err
 	}
 	s.setSessionCookie(w, token, exp)
@@ -399,6 +403,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	settingsPayload := func() map[string]any {
 		pol := s.passwordPolicy()
 		smtpCfg, _ := s.effectiveSMTP()
+		oidcCfg, _ := s.effectiveOIDC()
 		sess := s.sessionSettings()
 		gq, _ := s.DB.GetGlobalQuotaSettings()
 		return map[string]any{
@@ -415,6 +420,9 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			"passwordPolicyHint":          db.PasswordPolicySummary(pol),
 			"smtp":                        s.smtpPublic(smtpCfg),
 			"publicBaseURL":               s.Cfg.PublicBaseURL,
+			"oidc":                        s.oidcPublic(oidcCfg),
+			"oidcRedirectURL":             s.oidcRedirectURL(),
+			"oidcClientSecretSet":         oidcCfg.ClientSecretSet,
 		}
 	}
 	switch r.Method {
@@ -440,6 +448,12 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			SMTPFrom                    *string `json:"smtpFrom"`
 			GlobalQuotaEnabled          *bool   `json:"globalQuotaEnabled"`
 			GlobalQuotaBytes            *int64  `json:"globalQuotaBytes"`
+			OIDCEnabled                 *bool   `json:"oidcEnabled"`
+			OIDCIssuer                  *string `json:"oidcIssuer"`
+			OIDCClientID                *string `json:"oidcClientId"`
+			OIDCClientSecret            *string `json:"oidcClientSecret"`
+			OIDCAutoCreate              *bool   `json:"oidcAutoCreate"`
+			OIDCLabel                   *string `json:"oidcLabel"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
@@ -547,6 +561,45 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if quotaTouch {
 			if _, err := s.DB.SetGlobalQuotaSettings(body.GlobalQuotaEnabled, body.GlobalQuotaBytes); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			touched = true
+		}
+		oidcTouch := body.OIDCEnabled != nil || body.OIDCIssuer != nil || body.OIDCClientID != nil ||
+			body.OIDCClientSecret != nil || body.OIDCAutoCreate != nil || body.OIDCLabel != nil
+		if oidcTouch {
+			cur, err := s.DB.GetOIDCSettings()
+			if err != nil {
+				writeErr(w, 500, "db error")
+				return
+			}
+			if body.OIDCEnabled != nil {
+				cur.Enabled = *body.OIDCEnabled
+			}
+			if body.OIDCIssuer != nil {
+				cur.Issuer = *body.OIDCIssuer
+			}
+			if body.OIDCClientID != nil {
+				cur.ClientID = *body.OIDCClientID
+			}
+			if body.OIDCAutoCreate != nil {
+				cur.AutoCreate = *body.OIDCAutoCreate
+			}
+			if body.OIDCLabel != nil {
+				cur.Label = *body.OIDCLabel
+			}
+			var secret *string
+			if body.OIDCClientSecret != nil {
+				secret = body.OIDCClientSecret
+				cur.ClientSecret = *body.OIDCClientSecret
+			}
+			// Validate the config that will actually be stored (existing secret if unchanged).
+			if err := s.validateOIDCSettings(cur); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			if _, err := s.DB.SetOIDCSettings(cur, secret); err != nil {
 				writeErr(w, 400, err.Error())
 				return
 			}
