@@ -54,6 +54,16 @@ questions:
           schema:
             type: boolean
             default: false
+        - variable: public_base_url
+          label: Public Base URL
+          description: |
+            Public HTTPS origin of this Filehub install (for example https://filehub.example.com).
+            Required to enable OpenID Connect / SSO (the redirect URI is {PUBLIC_BASE_URL}/api/oidc/callback)
+            and for password-reset email links. Leave empty if you only use http://IP:port.
+            Set Secure Cookies when Filehub is served over HTTPS.
+          schema:
+            type: string
+            default: ""
         - variable: additional_envs
           label: Additional Environment Variables
           schema:

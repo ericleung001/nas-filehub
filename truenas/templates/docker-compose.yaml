@@ -14,6 +14,10 @@
 {% do c1.environment.add_env("THUMB_ENABLE", true) %}
 {% do c1.environment.add_env("THUMB_VAAPI", tpl.funcs.has_intel_gpu() or tpl.funcs.has_amd_gpu()) %}
 {% do c1.environment.add_env("SECURE_COOKIES", values.filehub.secure_cookies) %}
+{% set public_base_url = values.filehub.public_base_url | default("") %}
+{% if public_base_url %}
+{% do c1.environment.add_env("PUBLIC_BASE_URL", public_base_url) %}
+{% endif %}
 {% do c1.environment.add_env("ADMIN_USER", values.filehub.admin_username) %}
 {% do c1.environment.add_env("ADMIN_PASSWORD", values.filehub.admin_password) %}
 {% do c1.environment.add_env("CREDENTIALS_FILE", "%s/admin-credentials.txt"|format(values.consts.data_path)) %}

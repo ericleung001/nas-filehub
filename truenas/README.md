@@ -9,6 +9,7 @@ These files are the Filehub app package submitted to the official [TrueNAS Apps 
 - Default WebUI host port in the catalog wizard: `30568`
 - Install requires an initial admin username and password (seeds the first admin on first boot)
 - Run-as user and group are configurable in the wizard (default `568`, the TrueNAS `apps` user)
+- The wizard includes **Public Base URL** (`PUBLIC_BASE_URL`) and **Secure Cookies**. Set Public Base URL to the public HTTPS origin (for example `https://filehub.example.com`) before enabling SSO under Settings → Sign-in / SSO; the redirect URI is `{PUBLIC_BASE_URL}/api/oidc/callback`. Set Secure Cookies when Filehub is served over HTTPS. Until the official catalog includes the Public Base URL field, it can also be added under **Additional Environment Variables**. Do not expose the WebUI port directly to the public internet.
 
 This copy is a reference snapshot of the catalog package (currently pinned to image tag `0.4.7` in `app.yaml` / `ix_values.yaml`) and may lag the live [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) listing. Once Filehub is listed, already-published versions follow new GitHub releases automatically. Do not open catalog pull requests just to bump the app version.
 

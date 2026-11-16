@@ -89,6 +89,8 @@ cat ./data/admin-credentials.txt
 Open <http://127.0.0.1:8088> and sign in as `admin` with the password from `./data/admin-credentials.txt`.  
 Compose binds `127.0.0.1:8088` only — put Nginx Proxy Manager (or another reverse proxy) in front.
 
+To enable SSO, set `PUBLIC_BASE_URL` to your public HTTPS origin in compose or `.env` (and keep `SECURE_COOKIES=true` when behind HTTPS), then sign in as a local admin and enable it under **Settings → Sign-in / SSO**. OpenID Connect stays off until you do this; local username and password login remains available.
+
 ### Pull a published image
 
 Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.15`, not `v0.4.15`).
@@ -178,7 +180,7 @@ Disabled users cannot log in. Uploads / mkdir that would exceed home quota are r
 2. Add a Proxy Host → your domain → forward to `http://<host>:8088` (or the Docker network hostname)
 3. Enable SSL (Let’s Encrypt)
 4. Prefer an Access List, Authelia, or Cloudflare Access in front
-5. Set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL=https://your.domain` (required for public HTTPS so password-reset emails and the OIDC redirect URI use a fixed origin)
+5. Set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL=https://your.domain` (required for public HTTPS so password-reset emails and the OIDC redirect URI use a fixed origin). This is also required before enabling SSO under **Settings → Sign-in / SSO**.
 6. If the reverse proxy is not on loopback, set `TRUSTED_PROXIES` to the proxy’s address or CIDR
 7. Set HTTP Strict-Transport-Security on the reverse proxy; Filehub does not enable HSTS itself (LAN HTTP and first-boot must keep working)
 
@@ -209,6 +211,8 @@ export DATA_ROOT=./data/files DB_PATH=./data/filehub.db THUMB_CACHE_DIR=./data/t
 
 Sign in as `admin` with the password from `./data/admin-credentials.txt` (or the one you exported), then change it under **Settings → Change password**. Prefer Docker Compose for production (bind to loopback and put a reverse proxy in front) — first `docker compose up` auto-writes that credentials file when `ADMIN_PASSWORD` is unset.
 
+To enable SSO, put `PUBLIC_BASE_URL` (and `SECURE_COOKIES=true` when behind HTTPS) in the environment or `.env`, then enable it under **Settings → Sign-in / SSO** after the first admin login. The redirect URI is `{PUBLIC_BASE_URL}/api/oidc/callback`.
+
 ## Install on TrueNAS (Community Apps)
 
 Filehub is listed in the official [TrueNAS Apps Market](https://apps.truenas.com/catalog/filehub_community/) on the **Community** train. After the initial listing, already-published Filehub versions follow new GitHub releases automatically — you do not need to open a catalog pull request just to bump the version. See the Market page for the version currently offered.
@@ -218,12 +222,14 @@ In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install w
 - An initial admin username and password (required; these seed the first admin on first boot)
 - WebUI port (default **30568**)
 - Run-as user and group (default **568**, the TrueNAS `apps` user)
+- **Public Base URL** (`PUBLIC_BASE_URL`) — set this to your public HTTPS origin (for example `https://filehub.example.com`) when you will use password-reset emails or OpenID Connect / SSO
+- **Secure Cookies** — set this when Filehub is served over HTTPS
 
-After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**.
+After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**. To enable SSO, set `PUBLIC_BASE_URL` and Secure Cookies (when behind HTTPS), then configure your identity provider under **Settings → Sign-in / SSO**. OpenID Connect stays off by default; local username and password login remains available.
 
 Notes:
 
-- Prefer a reverse proxy with HTTPS, then set `SECURE_COOKIES=true` and `PUBLIC_BASE_URL`. **Do not** expose the WebUI port directly to the public internet.
+- Prefer a reverse proxy with HTTPS, then set Secure Cookies and `PUBLIC_BASE_URL` to the public HTTPS origin. **Public Base URL** is a wizard field in this repository’s `truenas/` snapshot; until the official catalog picks that change up, you can also add `PUBLIC_BASE_URL` under **Additional Environment Variables**. **Do not** expose the WebUI port directly to the public internet.
 - If the TrueNAS host has an Intel or AMD GPU selected for the app, the catalog enables VAAPI thumbnail acceleration. See also [Hardware thumbnail acceleration](#hardware-thumbnail-acceleration-optional).
 
 ## Install on Unraid (Community Apps)
@@ -238,7 +244,7 @@ First boot:
 
 Notes:
 
-- The WebUI listens on container port **8080** (template default host port **8088**). Prefer a reverse proxy with HTTPS, then set `SECURE_COOKIES=true`. **Do not** expose the WebUI port directly to the public internet.
+- The WebUI listens on container port **8080** (template default host port **8088**). Prefer a reverse proxy with HTTPS, then fill the template’s **PUBLIC_BASE_URL** with `https://your.domain` and set `SECURE_COOKIES=true`. After the first admin login, enable SSO under **Settings → Sign-in / SSO**. **Do not** expose the WebUI port directly to the public internet.
 - **Appdata** is mounted at `/data` (database, thumbnails, and `admin-credentials.txt`). User files default to `/data/files` inside appdata unless you set the optional **User files** path.
 - **User files** (optional) maps host `/mnt/user/nas-filehub` to container `/data/files` (`DATA_ROOT`) so homes and Filehub-created shares live on a share instead of under appdata. If the container has already been started, move any existing files from `appdata/nas-filehub/files` into the new location before adding this mapping; otherwise the new mount hides the old directory. The entrypoint `chown`s `/data` (including this mount) to `PUID`/`PGID`.
 - The optional **Unraid shares** path is mounted at `/data/files/shares` so you can create shared folders with paths such as `shares/Movies` from the Unraid `/mnt/user` tree. Remove that mapping if you do not need host shares. If **User files** is also set, keep **Unraid shares** only when you still want host shares visible under `shares/`.

@@ -30,7 +30,7 @@ services:
       # UMASK: ${UMASK:-}
       LOGIN_RATE_LIMIT: "10"
       # TRUSTED_PROXIES: "10.0.0.0/8"
-      # PUBLIC_BASE_URL: https://filehub.example.com
+      # PUBLIC_BASE_URL: https://filehub.example.com  # required before enabling SSO in Settings
       # LOGIN_LOCKOUT_LIMIT: "10"
       # LOGIN_LOCKOUT_MINUTES: "15"
       MAX_UPLOAD_MB: "102400"
