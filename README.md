@@ -276,7 +276,7 @@ NVIDIA hosts also need the NVIDIA Container Toolkit / GPU runtime; this image do
 - bcrypt password hashes
 - Session cookie: `HttpOnly`, `SameSite=Lax`, optional `Secure`
 - Login rate limiting (password login, OIDC start/callback, and share-link unlock)
-- Optional OpenID Connect uses Authorization Code + PKCE (S256), state, and nonce; the redirect URI is taken from `PUBLIC_BASE_URL`, not the request Host header; the client secret is never returned by the API; existing accounts are matched by a linked identity, then by email (not by username); missing ID token email or preferred_username may be filled from the provider UserInfo endpoint
+- Optional OpenID Connect uses Authorization Code + PKCE (S256), state, and nonce; the start state is bound to an HttpOnly `SameSite=Lax` cookie; the redirect URI is taken from `PUBLIC_BASE_URL`, not the request Host header; the client secret is never returned by the API; existing accounts are matched by a linked identity, then by email (not by username); missing ID token email or preferred_username may be filled from the provider UserInfo endpoint
 - All file ops confined under the resolved scope root (path traversal protected)
 - Container starts as root only to apply `PUID`/`PGID` (default 1000:1000), chown `/data`, then drops privileges with `gosu`
 

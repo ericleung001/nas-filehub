@@ -247,6 +247,60 @@ func noFollowClient() *http.Client {
 	}
 }
 
+func oidcStateCookieFrom(t *testing.T, resp *http.Response) *http.Cookie {
+	t.Helper()
+	for _, c := range resp.Cookies() {
+		if c.Name == oidcStateCookieName && c.Value != "" {
+			return c
+		}
+	}
+	t.Fatalf("missing %s cookie in %v", oidcStateCookieName, resp.Cookies())
+	return nil
+}
+
+func assertOIDCStateCookie(t *testing.T, c *http.Cookie, wantState string) {
+	t.Helper()
+	if c.Value != wantState {
+		t.Fatalf("state cookie %q want %q", c.Value, wantState)
+	}
+	if !c.HttpOnly {
+		t.Fatalf("state cookie should be HttpOnly")
+	}
+	if c.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("state cookie SameSite=%v want Lax", c.SameSite)
+	}
+	if c.Path != "/" && c.Path != "/api/oidc" && c.Path != "/api/oidc/callback" && c.Path != "" {
+		t.Fatalf("state cookie Path=%q does not cover callback", c.Path)
+	}
+	if c.MaxAge != oidcStateCookieMaxAge && c.MaxAge != 0 {
+		// httptest may surface MaxAge; require ~10 minutes when set
+		if c.MaxAge < 9*60 || c.MaxAge > 10*60 {
+			t.Fatalf("state cookie MaxAge=%d want ~10 minutes", c.MaxAge)
+		}
+	}
+	if c.Secure {
+		t.Fatalf("state cookie Secure=true unexpectedly (SECURE_COOKIES off in tests)")
+	}
+}
+
+func getNoFollow(t *testing.T, rawURL string, cookies ...*http.Cookie) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cookies {
+		if c != nil {
+			req.AddCookie(c)
+		}
+	}
+	resp, err := noFollowClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func enableTestOIDC(t *testing.T, s *Server, ts *httptest.Server, m *mockOIDC, autoCreate bool) {
 	t.Helper()
 	s.Cfg.PublicBaseURL = ts.URL
@@ -376,6 +430,8 @@ func TestOIDCStartRedirectsWithStateAndPKCE(t *testing.T) {
 	if q.Get("redirect_uri") != wantRedir {
 		t.Fatalf("redirect_uri %s want %s", q.Get("redirect_uri"), wantRedir)
 	}
+	ck := oidcStateCookieFrom(t, resp)
+	assertOIDCStateCookie(t, ck, q.Get("state"))
 }
 
 func TestOIDCCallbackLinksExistingEmailAndKeepsLocalLogin(t *testing.T) {
@@ -452,22 +508,7 @@ func TestOIDCAutoCreateOffRejectsUnknownUser(t *testing.T) {
 	m.setUser(mockOIDCUser{Subject: "idp-unknown", Email: "unknown@example.com", EmailVerified: true, PreferredUsername: "unknown"})
 	enableTestOIDC(t, s, ts, m, false)
 
-	resp, err := noFollowClient().Get(ts.URL + "/api/oidc/start")
-	if err != nil {
-		t.Fatal(err)
-	}
-	idpLoc := resp.Header.Get("Location")
-	resp.Body.Close()
-	resp, err = noFollowClient().Get(idpLoc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cb := resp.Header.Get("Location")
-	resp.Body.Close()
-	resp, err = noFollowClient().Get(cb)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := oidcFollowToCallback(t, ts.URL)
 	defer resp.Body.Close()
 	if resp.StatusCode != 302 {
 		t.Fatalf("callback %d", resp.StatusCode)
@@ -501,22 +542,7 @@ func TestOIDCDisabledUserRejected(t *testing.T) {
 	m.setUser(mockOIDCUser{Subject: "idp-dis", Email: "disabled@example.com", EmailVerified: true, PreferredUsername: "disabledone"})
 	enableTestOIDC(t, s, ts, m, false)
 
-	resp, err := noFollowClient().Get(ts.URL + "/api/oidc/start")
-	if err != nil {
-		t.Fatal(err)
-	}
-	idpLoc := resp.Header.Get("Location")
-	resp.Body.Close()
-	resp, err = noFollowClient().Get(idpLoc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cb := resp.Header.Get("Location")
-	resp.Body.Close()
-	resp, err = noFollowClient().Get(cb)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := oidcFollowToCallback(t, ts.URL)
 	defer resp.Body.Close()
 	loc := resp.Header.Get("Location")
 	if urlUnescape(t, loc) != "account disabled" {
@@ -661,30 +687,111 @@ func TestOIDCSettingsSecretWriteOnly(t *testing.T) {
 
 func oidcFollowToCallback(t *testing.T, tsURL string) *http.Response {
 	t.Helper()
-	client := noFollowClient()
-	resp, err := client.Get(tsURL + "/api/oidc/start")
-	if err != nil {
-		t.Fatal(err)
-	}
-	idpLoc := resp.Header.Get("Location")
-	resp.Body.Close()
+	start, loc, stateCookie := oidcStartAndCallbackURL(t, tsURL)
+	_ = start
+	resp := getNoFollow(t, loc, stateCookie)
+	return resp
+}
+
+// oidcStartAndCallbackURL starts SSO and follows the IdP once, returning the
+// Filehub start response, the callback URL, and the state cookie to replay.
+func oidcStartAndCallbackURL(t *testing.T, tsURL string) (start *http.Response, callback string, stateCookie *http.Cookie) {
+	t.Helper()
+	start = getNoFollow(t, tsURL+"/api/oidc/start")
+	idpLoc := start.Header.Get("Location")
+	stateCookie = oidcStateCookieFrom(t, start)
+	start.Body.Close()
 	if idpLoc == "" {
-		t.Fatalf("start missing Location (status %d)", resp.StatusCode)
+		t.Fatalf("start missing Location (status %d)", start.StatusCode)
 	}
-	resp, err = client.Get(idpLoc)
+	resp, err := noFollowClient().Get(idpLoc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cb := resp.Header.Get("Location")
+	callback = resp.Header.Get("Location")
 	resp.Body.Close()
-	if cb == "" {
+	if callback == "" {
 		t.Fatalf("idp missing callback Location (status %d)", resp.StatusCode)
 	}
-	resp, err = client.Get(cb)
-	if err != nil {
-		t.Fatal(err)
+	return start, callback, stateCookie
+}
+
+func sessionCookieIssued(resp *http.Response) bool {
+	for _, c := range resp.Cookies() {
+		if c.Name == "filehub_session" && c.Value != "" && c.MaxAge != -1 {
+			return true
+		}
 	}
-	return resp
+	return false
+}
+
+func TestOIDCCallbackRequiresStateCookie(t *testing.T) {
+	s, ts, _ := testServer(t)
+	m := newMockOIDC(t, "filehub", "s3cret")
+	m.setUser(mockOIDCUser{Subject: "idp-ck", Email: "cookieuser@example.com", EmailVerified: true, PreferredUsername: "cookieuser"})
+	enableTestOIDC(t, s, ts, m, true)
+
+	// Happy path: start sets the cookie; callback with that cookie succeeds.
+	_, cb, ck := oidcStartAndCallbackURL(t, ts.URL)
+	resp := getNoFollow(t, cb, ck)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 302 {
+		t.Fatalf("happy callback %d %s", resp.StatusCode, body)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/" && loc != ts.URL+"/" {
+		t.Fatalf("happy callback loc %s", loc)
+	}
+	if !sessionCookieIssued(resp) {
+		t.Fatalf("happy callback issued no session cookie: %v", resp.Cookies())
+	}
+	cleared := false
+	for _, c := range resp.Cookies() {
+		if c.Name == oidcStateCookieName && (c.MaxAge < 0 || c.Value == "") {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatalf("happy callback should clear %s: %v", oidcStateCookieName, resp.Cookies())
+	}
+
+	// Missing cookie: valid state/code, but rejected and no session.
+	_, cb, ck = oidcStartAndCallbackURL(t, ts.URL)
+	resp = getNoFollow(t, cb)
+	resp.Body.Close()
+	if urlUnescape(t, resp.Header.Get("Location")) != "invalid or expired sign-in request" {
+		t.Fatalf("missing cookie loc %s", resp.Header.Get("Location"))
+	}
+	if sessionCookieIssued(resp) {
+		t.Fatalf("missing cookie issued a session: %v", resp.Cookies())
+	}
+	// State is consumed, so retrying with the real cookie still fails.
+	retry := getNoFollow(t, cb, ck)
+	retry.Body.Close()
+	if urlUnescape(t, retry.Header.Get("Location")) != "invalid or expired sign-in request" {
+		t.Fatalf("consumed-state retry loc %s", retry.Header.Get("Location"))
+	}
+	if sessionCookieIssued(retry) {
+		t.Fatalf("consumed-state retry issued a session: %v", retry.Cookies())
+	}
+
+	// Wrong cookie value is rejected and does not issue a session.
+	_, cb, ck = oidcStartAndCallbackURL(t, ts.URL)
+	wrong := *ck
+	wrong.Value = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	resp = getNoFollow(t, cb, &wrong)
+	resp.Body.Close()
+	if urlUnescape(t, resp.Header.Get("Location")) != "invalid or expired sign-in request" {
+		t.Fatalf("wrong cookie loc %s", resp.Header.Get("Location"))
+	}
+	if sessionCookieIssued(resp) {
+		t.Fatalf("wrong cookie issued a session: %v", resp.Cookies())
+	}
+	retry = getNoFollow(t, cb, ck)
+	retry.Body.Close()
+	if sessionCookieIssued(retry) {
+		t.Fatalf("wrong-cookie state should be consumed; retry issued a session: %v", retry.Cookies())
+	}
 }
 
 func TestOIDCDoesNotLinkExistingAccountByUsernameAlone(t *testing.T) {

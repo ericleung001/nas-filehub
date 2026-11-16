@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -20,7 +21,50 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const oidcLoginTimeout = 12 * time.Second
+const (
+	oidcLoginTimeout      = 12 * time.Second
+	oidcStateCookieName   = "filehub_oidc_state"
+	oidcStateCookieMaxAge = 10 * 60
+	oidcStateCookieTTL    = 10 * time.Minute
+)
+
+func (s *Server) setOIDCStateCookie(w http.ResponseWriter, state string) {
+	expires := time.Now().Add(oidcStateCookieTTL)
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.Cfg.SecureCookies,
+		Expires:  expires,
+		MaxAge:   oidcStateCookieMaxAge,
+	})
+}
+
+func (s *Server) clearOIDCStateCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   s.Cfg.SecureCookies,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
+
+func oidcStateCookieMatches(r *http.Request, state string) bool {
+	got := ""
+	if c, err := r.Cookie(oidcStateCookieName); err == nil {
+		got = c.Value
+	}
+	if state == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(state)) == 1
+}
 
 func (s *Server) effectiveOIDC() (db.OIDCSettings, error) {
 	cfg, err := s.DB.GetOIDCSettings()
@@ -159,10 +203,11 @@ func (s *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rememberMe := parseBoolQuery(r.URL.Query().Get("rememberMe")) && s.sessionSettings().AllowRememberMe
-	if err := s.DB.CreateOIDCState(state, nonce, verifier, rememberMe, time.Now().Add(10*time.Minute)); err != nil {
+	if err := s.DB.CreateOIDCState(state, nonce, verifier, rememberMe, time.Now().Add(oidcStateCookieTTL)); err != nil {
 		writeErr(w, 500, "session error")
 		return
 	}
+	s.setOIDCStateCookie(w, state)
 	oauthCfg := oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
@@ -205,6 +250,12 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	st := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if st == "" || code == "" {
+		s.audit(r, 0, "", "login_failure", "oidc")
+		s.oidcRedirectError(w, r, "invalid or expired sign-in request")
+		return
+	}
+	if !oidcStateCookieMatches(r, st) {
+		_, _ = s.DB.ConsumeOIDCState(st)
 		s.audit(r, 0, "", "login_failure", "oidc")
 		s.oidcRedirectError(w, r, "invalid or expired sign-in request")
 		return
@@ -310,6 +361,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, u.ID, u.Username, "login_success", "oidc")
+	s.clearOIDCStateCookie(w)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -431,6 +483,7 @@ func (s *Server) oidcRedirectError(w http.ResponseWriter, r *http.Request, msg s
 	if msg == "" {
 		msg = "sign-in failed"
 	}
+	s.clearOIDCStateCookie(w)
 	target := "/?oidc_error=" + url.QueryEscape(msg)
 	http.Redirect(w, r, target, http.StatusFound)
 }
