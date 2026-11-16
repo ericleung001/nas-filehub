@@ -392,11 +392,16 @@ $('#btn-enroll-back').addEventListener('click', () => {
 });
 
 $('#btn-logout').addEventListener('click', async () => {
-  await api('/api/logout', { method: 'POST', body: '{}' });
+  try {
+    await api('/api/logout', { method: 'POST', body: '{}' });
+  } catch {}
   state.user = null;
   state.pendingToken = null;
   showLoginStep('password');
   show('login');
+  // Features (including the SSO button) are loaded on the first unauthenticated
+  // paint. After an SSO redirect or a session restore, logout must reload them.
+  await refreshAuthFeatures();
 });
 
 $('#btn-settings').addEventListener('click', async () => {

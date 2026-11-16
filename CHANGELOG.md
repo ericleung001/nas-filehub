@@ -16,6 +16,9 @@ where version tags are used.
 ### Changed
 - **Set an initial password** — accounts that signed in with SSO and have no Filehub password can set one under Settings → Set password without entering a current password (the password policy still applies). WebDAV still uses the Filehub username and password; those accounts cannot use WebDAV until a password is set. Forgot-password reset can also set a password when SMTP is configured.
 
+### Fixed
+- **SSO button after logout** — the login page only fetched `/api/auth/features` (which shows **Sign in with SSO**) on the first unauthenticated load. After signing in with SSO or restoring a session, Logout returned to a login page that still had the button hidden. Logout now reloads auth features. New installs still have OpenID Connect off by default; an administrator must enable it under Settings → Sign-in / SSO.
+
 ## [0.4.14] - 2026-11-14
 
 ### Fixed
