@@ -1,4 +1,4 @@
-# Filehub v0.4.15
+# Filehub v0.4.16
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
@@ -158,7 +158,7 @@ Sign in → **Settings** (single top-bar button):
 9. **Registration** (admins) — allow open registration; each sign-up email must be unique (including pending and disabled accounts). When admin approval is required, the sign-up page tells the user their account is waiting for approval
 10. **Security** (admins) — Force 2FA for all users; password policy (tightening bumps a version so existing users must change password on next login)
 11. **Sign-in / SSO** (admins) — optional OpenID Connect. Off by default. Requires `PUBLIC_BASE_URL`. Local username and password sign-in stays available. The client secret is write-only (leave blank to keep). Creating users on first SSO sign-in is off by default. Logout ends the Filehub session only; it does not sign the user out of the identity provider.
-12. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares
+12. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares. Admins can cap how many events to keep (**Keep at most**); 0 means no limit (the default), and the oldest events are deleted when the log exceeds the cap
 13. **Email** (admins) — SMTP for forgot-password, pending-registration notices, shared-folder access notices, and user-to-user file or folder share notices
 14. **Storage quota** (admins) — optional default quota for users without a custom limit
 15. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
@@ -314,9 +314,9 @@ Admin (requires admin session):
 - `GET|POST /api/admin/users` (email on create)
 - `PATCH|DELETE /api/admin/users/{id}` (email on patch)
 - `POST /api/admin/users/{id}/password`
-- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, `globalQuotaEnabled`, `globalQuotaBytes`, password policy, SMTP — password write-only, OIDC — client secret write-only, plus `oidcRedirectURL` and `oidcClientSecretSet`)
+- `GET|PUT /api/admin/settings` (`force2faAll`, `openRegistration`, `sessionTtlSeconds`, `rememberMeTtlSeconds`, `allowRememberMe`, `globalQuotaEnabled`, `globalQuotaBytes`, `auditLogMax` (0 = no limit), password policy, SMTP — password write-only, OIDC — client secret write-only, plus `oidcRedirectURL` and `oidcClientSecretSet`)
 - `GET /api/admin/system/status` (CPU, RAM, user quota totals, `DATA_ROOT` disk; admin only)
-- `GET /api/admin/audit` (`limit`, `offset`) — append-only audit log (admin only)
+- `GET /api/admin/audit` (`limit`, `offset`) — audit log (admin only; `auditLogMax` is the configured retention cap, 0 = no limit). Oldest events are deleted when a cap is set and the log exceeds it
 - `POST /api/admin/smtp/test`
 - `GET|POST /api/admin/shares`
 - `DELETE /api/admin/shares/{id}`
@@ -389,8 +389,8 @@ Uses standard TOTP (RFC 6238, 30s / SHA1 / 6 digits), compatible with Google Aut
 | GET | `/api/me/sessions` | session | current user’s sessions (no raw tokens) |
 | DELETE | `/api/me/sessions/{id}` | session | revoke one session |
 | POST | `/api/me/sessions/revoke-others` | session | revoke all other sessions |
-| GET | `/api/admin/audit` | admin | paginated audit log |
-| GET/PUT | `/api/admin/settings` | admin | `{force2faAll,openRegistration,sessionTtlSeconds,rememberMeTtlSeconds,allowRememberMe,globalQuotaEnabled,globalQuotaBytes,…}` |
+| GET | `/api/admin/audit` | admin | paginated audit log (`auditLogMax` is the retention cap, 0 = no limit) |
+| GET/PUT | `/api/admin/settings` | admin | `{force2faAll,openRegistration,sessionTtlSeconds,rememberMeTtlSeconds,allowRememberMe,globalQuotaEnabled,globalQuotaBytes,auditLogMax,…}` |
 | PATCH | `/api/admin/users/{id}` | admin | accepts `totpRequired` |
 
-SQLite: `users.totp_secret`, `users.totp_enabled`, `users.totp_required`; `settings.force_2fa_all`, `session_ttl_seconds`, `remember_me_ttl_seconds`, `allow_remember_me`; `pending_logins` (includes `remember_me`); `totp_backup_codes`.
+SQLite: `users.totp_secret`, `users.totp_enabled`, `users.totp_required`; `settings.force_2fa_all`, `session_ttl_seconds`, `remember_me_ttl_seconds`, `allow_remember_me`, `audit_log_max`; `pending_logins` (includes `remember_me`); `totp_backup_codes`.

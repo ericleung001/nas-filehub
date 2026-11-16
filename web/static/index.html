@@ -483,6 +483,14 @@
             <div class="settings-card admin-section">
               <h3>Audit log</h3>
               <p class="muted">Recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares. Passwords and tokens are never recorded.</p>
+              <form id="audit-log-max-form" class="admin-form policy-form">
+                <label>Keep at most
+                  <input name="auditLogMax" id="audit-log-max" type="number" min="0" max="1000000" step="1" value="0" />
+                </label>
+                <p class="muted admin-form-note">Oldest events are deleted when the log exceeds this limit. 0 means no limit.</p>
+                <button type="submit">Save</button>
+                <p id="audit-log-max-msg" class="muted" hidden></p>
+              </form>
               <div class="links-toolbar">
                 <button type="button" id="btn-audit-prev" class="ghost" disabled>Previous</button>
                 <button type="button" id="btn-audit-next" class="ghost" disabled>Next</button>

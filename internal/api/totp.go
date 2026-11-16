@@ -406,6 +406,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		oidcCfg, _ := s.effectiveOIDC()
 		sess := s.sessionSettings()
 		gq, _ := s.DB.GetGlobalQuotaSettings()
+		auditMax, _ := s.DB.GetAuditLogMax()
 		return map[string]any{
 			"force2faAll":                 s.force2FAAll(),
 			"force2faAllEnv":              s.Cfg.Force2FAAll,
@@ -416,6 +417,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			"allowRememberMe":             sess.AllowRememberMe,
 			"globalQuotaEnabled":          gq.Enabled,
 			"globalQuotaBytes":            gq.Bytes,
+			"auditLogMax":                 auditMax,
 			"passwordPolicy":              pol,
 			"passwordPolicyHint":          db.PasswordPolicySummary(pol),
 			"smtp":                        s.smtpPublic(smtpCfg),
@@ -454,6 +456,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			OIDCClientSecret            *string `json:"oidcClientSecret"`
 			OIDCAutoCreate              *bool   `json:"oidcAutoCreate"`
 			OIDCLabel                   *string `json:"oidcLabel"`
+			AuditLogMax                 *int    `json:"auditLogMax"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 			writeErr(w, 400, "bad json")
@@ -600,6 +603,13 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if _, err := s.DB.SetOIDCSettings(cur, secret); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			touched = true
+		}
+		if body.AuditLogMax != nil {
+			if err := s.DB.SetAuditLogMax(*body.AuditLogMax); err != nil {
 				writeErr(w, 400, err.Error())
 				return
 			}

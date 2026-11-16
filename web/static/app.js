@@ -2524,6 +2524,12 @@ async function loadSystemSettings() {
     oidcMsg.hidden = true;
     oidcMsg.classList.remove('error');
   }
+  applyAuditLogMaxForm(data.auditLogMax);
+  const auditMaxMsg = $('#audit-log-max-msg');
+  if (auditMaxMsg) {
+    auditMaxMsg.hidden = true;
+    auditMaxMsg.classList.remove('error');
+  }
   applyGlobalQuotaUI();
 }
 
@@ -4627,6 +4633,7 @@ async function refreshAudit(offset) {
   }
   auditState.total = data.total || 0;
   auditState.limit = data.limit || auditState.limit;
+  if (data.auditLogMax != null) applyAuditLogMaxForm(data.auditLogMax);
   const tbody = $('#audit-list');
   const events = data.events || [];
   if (tbody) {
@@ -4660,4 +4667,49 @@ $('#btn-audit-prev')?.addEventListener('click', async () => {
 $('#btn-audit-next')?.addEventListener('click', async () => {
   try { await refreshAudit(auditState.offset + auditState.limit); } catch (err) { console.error(err); }
 });
+
+function applyAuditLogMaxForm(value) {
+  const input = $('#audit-log-max');
+  if (!input) return;
+  const n = Number(value);
+  input.value = Number.isFinite(n) && n >= 0 ? String(n) : '0';
+}
+
+$('#audit-log-max-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#audit-log-max-msg');
+  if (msg) {
+    msg.hidden = true;
+    msg.classList.remove('error');
+  }
+  const raw = (e.target.auditLogMax.value || '').trim();
+  const n = raw === '' ? 0 : Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 1000000) {
+    if (msg) {
+      msg.textContent = 'Enter a whole number from 0 to 1000000. 0 means no limit.';
+      msg.classList.add('error');
+      msg.hidden = false;
+    }
+    return;
+  }
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ auditLogMax: n }),
+    });
+    applyAuditLogMaxForm(data.auditLogMax);
+    if (msg) {
+      msg.textContent = Number(data.auditLogMax) ? ('Saved — keeping at most ' + data.auditLogMax + ' events') : 'Saved — no limit';
+      msg.hidden = false;
+    }
+    try { await refreshAudit(0); } catch (err) { console.error(err); }
+  } catch (err) {
+    if (msg) {
+      msg.textContent = err.message;
+      msg.classList.add('error');
+      msg.hidden = false;
+    }
+  }
+});
+
 

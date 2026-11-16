@@ -8,6 +8,11 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-11-16
+
+### Added
+- **Audit log size cap** — administrators can set a maximum number of audit events to keep under Settings → Audit log (**Keep at most**). When the log exceeds the limit, the oldest events are deleted automatically (after each new event, and immediately when a lower cap is saved). The default is 0 (no limit), so existing installations keep their history. The limit can be at most 1,000,000.
+
 ## [0.4.15] - 2026-11-16
 
 ### Added
@@ -371,6 +376,7 @@ where version tags are used.
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
 [Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.15...HEAD
+[0.4.16]: https://github.com/ericleung001/nas-filehub/compare/v0.4.15...v0.4.16
 [0.4.15]: https://github.com/ericleung001/nas-filehub/compare/v0.4.14...v0.4.15
 [0.4.14]: https://github.com/ericleung001/nas-filehub/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/ericleung001/nas-filehub/compare/v0.4.12...v0.4.13

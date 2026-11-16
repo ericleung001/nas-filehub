@@ -17,14 +17,20 @@ func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "db error")
 		return
 	}
+	max, err := s.DB.GetAuditLogMax()
+	if err != nil {
+		writeErr(w, 500, "db error")
+		return
+	}
 	if events == nil {
 		events = nil
 	}
 	writeJSON(w, 200, map[string]any{
-		"events": events,
-		"total":  total,
-		"limit":  clampAuditLimit(limit),
-		"offset": offset,
+		"events":      events,
+		"total":       total,
+		"limit":       clampAuditLimit(limit),
+		"offset":      offset,
+		"auditLogMax": max,
 	})
 }
 
