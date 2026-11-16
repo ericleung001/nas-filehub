@@ -70,10 +70,16 @@ func TestItemShareWithUsersAndEmail(t *testing.T) {
 		"root":    "home",
 		"path":    "notes.txt",
 		"userIds": []int64{alice.ID, bob.ID},
-		"perm":    "write", // files are forced to read
+		"perm":    "write",
 	})
 	if st != 200 {
 		t.Fatalf("share file %d %v", st, data)
+	}
+	for _, sh := range data["shares"].([]any) {
+		m := sh.(map[string]any)
+		if m["perm"] != "write" {
+			t.Fatalf("file share should keep write perm, got %v", m)
+		}
 	}
 	msgs := trap.messages()
 	if len(msgs) != 2 {
@@ -162,15 +168,29 @@ func TestItemShareWithUsersAndEmail(t *testing.T) {
 		t.Fatalf("download %d %s", resp.StatusCode, body)
 	}
 
-	// File share is read-only even if write was requested.
+	// Write file share: list reports write with canDelete false; cannot mkdir under a file.
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path="+fileID, aliceCk, nil)
+	if st != 200 || data["perm"] != "write" || data["canDelete"] != false {
+		t.Fatalf("write file share list want write/canDelete=false, got %d %v", st, data)
+	}
 	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/mkdir", aliceCk, map[string]any{
 		"root": "incoming", "path": fileID + "/nope",
 	})
 	if st != 403 {
 		t.Fatalf("mkdir on file share should be 403, got %d %v", st, data)
 	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceCk, map[string]any{
+		"root": "incoming", "path": fileID,
+	})
+	if st != 403 {
+		t.Fatalf("delete write-shared file should be 403, got %d %v", st, data)
+	}
 
-	// Write grant on folder allows mkdir inside it.
+	// Write grant on folder allows mkdir inside it, but never delete.
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path="+folderID, aliceCk, nil)
+	if st != 200 || data["perm"] != "write" || data["canDelete"] != false {
+		t.Fatalf("write folder list want write/canDelete=false, got %d %v", st, data)
+	}
 	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/mkdir", aliceCk, map[string]any{
 		"root": "incoming", "path": folderID + "/src",
 	})
@@ -179,6 +199,22 @@ func TestItemShareWithUsersAndEmail(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "project", "src")); err != nil {
 		t.Fatalf("expected project/src in owner home: %v", err)
+	}
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path="+folderID, aliceCk, nil)
+	if st != 200 || data["canDelete"] != false {
+		t.Fatalf("nested list canDelete should stay false, got %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceCk, map[string]any{
+		"root": "incoming", "path": folderID + "/src",
+	})
+	if st != 403 {
+		t.Fatalf("delete child in write item-share should be 403, got %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceCk, map[string]any{
+		"root": "incoming", "path": folderID + "/readme.md",
+	})
+	if st != 403 {
+		t.Fatalf("delete existing child should be 403, got %d %v", st, data)
 	}
 
 	// Recipients cannot delete the shared item itself.
@@ -666,8 +702,14 @@ func TestItemShareNestedFolderListing(t *testing.T) {
 	}
 	bobID, _ := bobTemp["path"].(string)
 	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path="+bobID+"/chi", bobCk, nil)
-	if st != 200 || data["perm"] != "write" {
-		t.Fatalf("bob list chi %d perm=%v %v", st, data["perm"], data)
+	if st != 200 || data["perm"] != "write" || data["canDelete"] != false {
+		t.Fatalf("bob list chi %d perm=%v canDelete=%v %v", st, data["perm"], data["canDelete"], data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", bobCk, map[string]any{
+		"root": "incoming", "path": bobID + "/chi/next/notes.txt",
+	})
+	if st != 403 {
+		t.Fatalf("bob delete nested file should be 403, got %d %v", st, data)
 	}
 	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/mkdir", bobCk, map[string]any{
 		"root": "incoming", "path": bobID + "/chi/from-bob",
@@ -810,5 +852,102 @@ func TestAdminSharedFolderNestedListing(t *testing.T) {
 	created := entryByName(data["entries"].([]any))["from-bob"]
 	if created == nil || created["isDir"] != true || created["path"] != "chi/from-bob" {
 		t.Fatalf("bob should see from-bob under chi: %v", data)
+	}
+}
+
+func TestItemShareWriteNoDelete(t *testing.T) {
+	s, ts, database := testServer(t)
+	home := filepath.Join(s.Cfg.DataRoot, "homes/admin")
+	if err := os.MkdirAll(filepath.Join(home, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "solo.docx"), []byte("PK"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "docs", "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	alice, err := database.CreateUser("alice", "alice-pass-123", "homes/alice", false, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := loginAs(t, ts.URL, "admin", "admin-pass-123")
+
+	st, data := doJSON(t, http.MethodPost, ts.URL+"/api/item-shares", admin, map[string]any{
+		"root": "home", "path": "solo.docx", "userIds": []int64{alice.ID}, "perm": "write",
+	})
+	if st != 200 {
+		t.Fatalf("share file write %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/item-shares", admin, map[string]any{
+		"root": "home", "path": "docs", "userIds": []int64{alice.ID}, "perm": "write",
+	})
+	if st != 200 {
+		t.Fatalf("share folder write %d %v", st, data)
+	}
+
+	aliceCk := loginAs(t, ts.URL, "alice", "alice-pass-123")
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path=", aliceCk, nil)
+	if st != 200 {
+		t.Fatalf("incoming %d %v", st, data)
+	}
+	by := entryByName(data["entries"].([]any))
+	fileID, _ := by["solo.docx"]["path"].(string)
+	folderID, _ := by["docs"]["path"].(string)
+	if fileID == "" || folderID == "" {
+		t.Fatalf("missing shares: %v", data)
+	}
+	if by["solo.docx"]["perm"] != "write" || by["docs"]["perm"] != "write" {
+		t.Fatalf("incoming entries should show write: %v", data)
+	}
+
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path="+fileID, aliceCk, nil)
+	if st != 200 || data["perm"] != "write" || data["canDelete"] != false {
+		t.Fatalf("file list %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceCk, map[string]any{
+		"root": "incoming", "path": fileID,
+	})
+	if st != 403 {
+		t.Fatalf("delete write file share %d %v", st, data)
+	}
+
+	st, data = doJSON(t, http.MethodGet, ts.URL+"/api/list?root=incoming&path="+folderID, aliceCk, nil)
+	if st != 200 || data["perm"] != "write" || data["canDelete"] != false {
+		t.Fatalf("folder list %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/mkdir", aliceCk, map[string]any{
+		"root": "incoming", "path": folderID + "/sub",
+	})
+	if st != 200 {
+		t.Fatalf("mkdir under write folder %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceCk, map[string]any{
+		"root": "incoming", "path": folderID + "/a.txt",
+	})
+	if st != 403 {
+		t.Fatalf("delete file in write folder %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/delete", aliceCk, map[string]any{
+		"root": "incoming", "path": folderID + "/sub",
+	})
+	if st != 403 {
+		t.Fatalf("delete subdir in write folder %d %v", st, data)
+	}
+	st, data = doJSON(t, http.MethodPost, ts.URL+"/api/batch/delete", aliceCk, map[string]any{
+		"root": "incoming", "paths": []string{folderID + "/a.txt"},
+	})
+	if st != 403 {
+		t.Fatalf("batch delete on write item-share should be 403, got %d %v", st, data)
+	}
+	if _, err := os.Stat(filepath.Join(home, "docs", "a.txt")); err != nil {
+		t.Fatalf("a.txt should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "docs", "sub")); err != nil {
+		t.Fatalf("sub should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "solo.docx")); err != nil {
+		t.Fatalf("solo.docx should remain: %v", err)
 	}
 }

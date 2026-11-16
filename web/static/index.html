@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/style.css?v=0.4.24" />
 </head>
 <body>
   <div id="app">
@@ -26,7 +26,7 @@
         <label>Username<input name="username" autocomplete="username" required /></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
         <label class="check" id="remember-me-label" hidden><input name="rememberMe" type="checkbox" /> Stay signed in</label>
-        <button type="submit">登入 Login</button>
+        <button type="submit">Login</button>
         <p class="login-links">
           <a href="/register" id="link-signup" hidden>Sign up</a>
           <a href="/forgot" id="link-forgot" hidden>Forgot password?</a>
@@ -101,6 +101,15 @@
                 <button type="button" id="btn-view-icons" class="ghost view-btn" title="Icon view" aria-pressed="false">▦ Icons</button>
               </div>
               <button id="btn-mkdir" title="New folder">+ Folder</button>
+              <div id="oo-new-wrap" class="oo-new-wrap" hidden>
+                <button type="button" id="btn-new-office" class="ghost" title="Create a new Office file" aria-haspopup="menu" aria-expanded="false">+ New ▾</button>
+                <div id="oo-new-menu" class="oo-new-menu" role="menu" hidden>
+                  <button type="button" id="btn-new-doc" role="menuitem">Document</button>
+                  <button type="button" id="btn-new-sheet" role="menuitem">Spreadsheet</button>
+                  <button type="button" id="btn-new-slides" role="menuitem">Presentation</button>
+                </div>
+              </div>
+              <span id="oo-create-hint" class="muted oo-create-hint" hidden>Others with write access can edit the same file at the same time.</span>
               <label class="btn file-btn">Upload<input id="file-input" type="file" multiple hidden /></label>
               <label class="btn file-btn">Upload folder<input id="folder-input" type="file" webkitdirectory multiple hidden /></label>
               <button id="btn-refresh" class="ghost">Refresh</button>
@@ -165,6 +174,7 @@
           <button type="button" class="settings-nav-item admin-only" data-tab="sso" hidden>Sign-in / SSO</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="audit" hidden>Audit log</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="email" hidden>Email</button>
+          <button type="button" class="settings-nav-item admin-only" data-tab="onlyoffice" hidden>Office editor</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="storage-quota" hidden>Storage quota</button>
           <button type="button" class="settings-nav-item admin-only" data-tab="system" hidden>System</button>
           <button type="button" class="settings-nav-item" data-tab="about">About</button>
@@ -531,6 +541,22 @@
               </form>
             </div>
           </div>
+          <div id="tab-onlyoffice" class="settings-panel" role="tabpanel" hidden>
+            <section class="panel">
+              <h3>ONLYOFFICE</h3>
+              <p class="muted">Optional browser editing for Word, Excel, and PowerPoint files (and OpenDocument). Off by default. Requires a Document Server you host, plus <code>PUBLIC_BASE_URL</code> so the editor can download and save files through Filehub. The JWT secret must match the Document Server <code>JWT_SECRET</code>.</p>
+              <form id="onlyoffice-form" class="admin-form policy-form">
+                <label class="check"><input name="onlyofficeEnabled" type="checkbox" /> Enable ONLYOFFICE editor</label>
+                <label>Document Server URL<input name="onlyofficeUrl" placeholder="https://onlyoffice.example.com" /></label>
+                <label>JWT secret<input name="onlyofficeJwtSecret" type="password" autocomplete="new-password" placeholder="leave blank to keep" /></label>
+                <p id="onlyoffice-secret-set" class="meta" hidden></p>
+                <button type="submit">Save</button>
+                <p id="onlyoffice-msg" class="muted" hidden></p>
+                <p id="onlyoffice-ready" class="meta"></p>
+                <p id="onlyoffice-ds-health" class="meta" hidden></p>
+              </form>
+            </section>
+          </div>
           <div id="tab-storage-quota" class="settings-panel" role="tabpanel" hidden>
             <div class="admin-section settings-card">
               <h3>Storage quota</h3>
@@ -644,12 +670,13 @@
         <input id="share-user-filter" type="search" placeholder="Search by username or email" autocomplete="off" aria-label="Search users" />
         <div id="share-user-list" class="share-user-list" role="listbox" aria-multiselectable="true" aria-label="Users"></div>
         <p id="share-user-empty" class="muted" hidden>No other users are available.</p>
-        <label id="share-perm-wrap" hidden>Folder access
+        <label id="share-perm-wrap">Access
           <select id="share-perm">
-            <option value="read">Read</option>
-            <option value="write">Write</option>
+            <option value="read" selected>Read only</option>
+            <option value="write">Read/Write</option>
           </select>
         </label>
+        <p id="share-perm-hint" class="muted">Read/Write can upload and edit, but cannot delete.</p>
       </fieldset>
       <fieldset class="share-fieldset">
         <legend>Public link</legend>
@@ -791,6 +818,15 @@
     <p class="login-links"><a href="/">Back to login</a></p>
   </section>
 
-  <script src="/app.js"></script>
+  <div id="oo-editor-overlay" hidden>
+    <div id="oo-editor-bar">
+      <button type="button" id="oo-editor-back" class="ghost">← Back to Filehub</button>
+      <div id="oo-editor-title" class="title">Office editor</div>
+      <span id="oo-editor-coedit-hint" class="muted" hidden>Others with Read/Write can edit this file at the same time.</span>
+    </div>
+    <iframe id="oo-editor-frame" title="Office editor"></iframe>
+  </div>
+
+  <script src="/app.js?v=0.4.24"></script>
 </body>
 </html>

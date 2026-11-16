@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,13 +26,14 @@ import (
 )
 
 type Server struct {
-	Cfg          config.Config
-	DB           *db.DB
-	Thumbs       *thumb.Generator
-	Limiter      *auth.LoginLimiter
-	ResetLimiter *auth.LoginLimiter
-	Static       fs.FS
-	Uploads      *UploadManager
+	Cfg             config.Config
+	DB              *db.DB
+	Thumbs          *thumb.Generator
+	Limiter         *auth.LoginLimiter
+	ResetLimiter    *auth.LoginLimiter
+	OOConfigLimiter *auth.LoginLimiter
+	Static          fs.FS
+	Uploads         *UploadManager
 	// MailSend, if set, is used instead of mail.Send (tests).
 	MailSend func(cfg db.SMTPSettings, to, subject, body string) error
 	// NotifySync sends notification emails in-process instead of a goroutine (tests).
@@ -41,6 +44,12 @@ type Server struct {
 	notifyLast  map[string]time.Time
 	davOnce     sync.Once
 	davHandler  http.Handler
+
+	ooLimitOnce sync.Once
+	ooHealthMu  sync.Mutex
+	ooHealthOK  bool
+	ooHealthAt  time.Time
+	ooHealthMsg string
 }
 
 type scope struct {
@@ -118,6 +127,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/admin/smtp/test", s.requireAdmin(s.handleAdminSMTPTest))
 	mux.HandleFunc("/api/admin/system/status", s.requireAdmin(s.handleAdminSystemStatus))
 	mux.HandleFunc("/api/admin/audit", s.requireAdmin(s.handleAdminAudit))
+	mux.HandleFunc("/api/onlyoffice/status", s.requireAuth(s.handleOnlyOfficeStatus))
+	mux.HandleFunc("/api/onlyoffice/config", s.requireAuth(s.handleOnlyOfficeConfig))
+	mux.HandleFunc("/api/onlyoffice/create", s.requireAuth(s.handleOnlyOfficeCreate))
+	mux.HandleFunc("/api/onlyoffice/content", s.handleOnlyOfficeContent)
+	mux.HandleFunc("/api/onlyoffice/callback", s.handleOnlyOfficeCallback)
 
 	mux.Handle("/", s.spaHandler())
 	return s.securityHeaders(mux)
@@ -138,7 +152,11 @@ func (s *Server) spaHandler() http.Handler {
 		if path == "" || path == "index.html" {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
-			fileServer.ServeHTTP(w, r2)
+			s.serveVersionedHTML(w, r2, "index.html", fileServer)
+			return
+		}
+		if path == "oo-editor.html" {
+			s.serveVersionedHTML(w, r, "oo-editor.html", fileServer)
 			return
 		}
 		if f, err := s.Static.Open(path); err != nil {
@@ -151,6 +169,25 @@ func (s *Server) spaHandler() http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) serveVersionedHTML(w http.ResponseWriter, r *http.Request, name string, fallback http.Handler) {
+	b, err := fs.ReadFile(s.Static, name)
+	if err != nil {
+		if fallback != nil {
+			fallback.ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	v := url.QueryEscape(version.Version)
+	b = bytes.ReplaceAll(b, []byte(`href="/style.css"`), []byte(`href="/style.css?v=`+v+`"`))
+	b = bytes.ReplaceAll(b, []byte(`src="/app.js"`), []byte(`src="/app.js?v=`+v+`"`))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(200)
+	_, _ = w.Write(b)
 }
 
 func allowSameOriginFrame(path string) bool {
@@ -174,6 +211,9 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		if allowSameOriginFrame(r.URL.Path) {
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 			w.Header().Set("Content-Security-Policy", frameableCSP)
+		} else if strings.HasPrefix(r.URL.Path, "/oo-editor") {
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+			w.Header().Set("Content-Security-Policy", s.onlyOfficeEditorCSP())
 		} else {
 			w.Header().Set("X-Frame-Options", "DENY")
 			w.Header().Set("Content-Security-Policy", documentCSP)
@@ -527,6 +567,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	m := s.userPublicFor(r, u)
 	m["usedBytes"] = s.homeUsedBytes(u)
 	m["webdav"] = map[string]any{"enabled": s.webdavEnabled(), "path": "/dav/"}
+	m["onlyoffice"] = map[string]any{"ready": s.onlyOfficeReady()}
 	writeJSON(w, 200, map[string]any{"user": m})
 }
 
@@ -684,19 +725,12 @@ func (s *Server) resolveIncomingScope(u *db.User, rel string) (*scope, error) {
 		return nil, err
 	}
 	perm := sh.Perm
-	if perm != "write" || !sh.IsDir {
+	if perm != "write" {
 		perm = "read"
 	}
-	canDelete := perm == "write" && rest != ""
-	if rest == "" {
-		// The shared item itself cannot be renamed, deleted, or replaced by the recipient.
-		canDelete = false
-		if !sh.IsDir {
-			perm = "read"
-		}
-	}
+	// Item shares never grant delete — Read/Write allows upload/edit only.
 	sc.Perm = perm
-	sc.CanDelete = canDelete
+	sc.CanDelete = false
 	sc.OriginRootID = incomingRootID(sh)
 	sc.ItemShareID = sh.ID
 	if sc.Kind == "home" {

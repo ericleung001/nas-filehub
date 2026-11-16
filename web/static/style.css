@@ -117,13 +117,14 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 .files {
   width: 100%;
   table-layout: fixed;
-  border-collapse: collapse;
+  border-collapse: separate; /* collapse + overflow:hidden on tds breaks the row line */
+  border-spacing: 0;
 }
 .files col.col-icon { width: 2.25rem; }
 .files col.col-name { width: auto; }
 .files col.col-size { width: 5.25rem; }
-.files col.col-mod { width: 8.5rem; }
-.files col.col-actions { width: 8.25rem; }
+.files col.col-mod { width: 9.5rem; }
+.files col.col-actions { width: 10.75rem; }
 .files th, .files td {
   text-align: left;
   padding: .5rem .35rem;
@@ -133,10 +134,8 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 .files tr:hover td { background: #152033; }
 .files th.icon-h, .files td.icon,
-.files th.name-h, .files td.name-cell,
 .files th.size-h, .files td.size-cell,
-.files th.mod-h, .files td.mod-cell,
-.files th.actions-h, .files td.row-actions {
+.files th.mod-h, .files td.mod-cell {
   overflow: hidden;
 }
 .files td.icon, .files th.icon-h {
@@ -145,7 +144,9 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
   white-space: nowrap;
 }
 .files .name-wrap {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   overflow: hidden;
   min-width: 0;
   max-width: 100%;
@@ -178,11 +179,18 @@ main { padding: 1rem; min-width: 0; overflow-x: hidden; }
 }
 .files th.size-h, .files th.mod-h { color: var(--text); }
 .files td.row-actions, .files th.actions-h {
+  display: table-cell; /* do not use flex on the td — it breaks the bottom border */
   text-align: right;
   white-space: nowrap;
-  overflow: visible; /* never clip Del */
+  vertical-align: middle;
 }
-.row-actions {
+.files td.row-actions > * {
+  display: inline-flex;
+  vertical-align: middle;
+  margin: 0 0 0 .25rem;
+}
+.files td.row-actions > *:first-child { margin-left: 0; }
+div.row-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -1015,7 +1023,7 @@ tr.drop-folder-target td,
   text-align: center;
   vertical-align: middle;
 }
-.files col.col-actions { width: 8.25rem; }
+.files col.col-actions { width: 10.75rem; }
 .files tr.selected td { background: #1e3a5f; }
 .bulk-bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
@@ -1407,3 +1415,145 @@ button.conflict-choice:disabled {
   color: var(--muted);
   background: #0b1220;
 }
+
+#oo-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+body.oo-editor-open { overflow: hidden; }
+#oo-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+#oo-editor-bar .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+#oo-editor-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #0f1419;
+  min-height: 0;
+}
+
+.oo-create-hint {
+  font-size: .8rem;
+  max-width: 16rem;
+  line-height: 1.25;
+}
+#oo-new-wrap[hidden],
+#oo-create-hint[hidden] {
+  display: none !important;
+}
+.oo-new-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.oo-new-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 10rem;
+  padding: .25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #121a26;
+  box-shadow: 0 8px 24px #0008;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.oo-new-menu[hidden] { display: none !important; }
+.oo-new-menu button {
+  width: 100%;
+  text-align: left;
+  margin: 0;
+  padding: .4rem .65rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.oo-new-menu button:hover,
+.oo-new-menu button:focus-visible {
+  background: #1a2740;
+}
+#oo-editor-coedit-hint {
+  font-size: .8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(40vw, 22rem);
+}
+@media (max-width: 900px) {
+  #oo-editor-coedit-hint,
+  .oo-create-hint { display: none; }
+  .files col.col-actions { width: 9.5rem; }
+}
+
+.perm-badge {
+  display: inline-block;
+  margin-left: .4rem;
+  font-size: .75rem;
+  padding: .05rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.name-wrap .perm-badge { margin-top: .15rem; margin-left: .45rem; }
+
+.share-existing-user-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.share-existing-user-row .share-existing-user { flex: 1 1 auto; min-width: 6rem; }
+.share-existing-perm { max-width: 10rem; }
+
+.row-overflow { position: relative; display: inline-flex; flex-shrink: 0; }
+.row-overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 8rem;
+  padding: .25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #121a26;
+  box-shadow: 0 8px 24px #0008;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.row-overflow-menu[hidden] { display: none !important; }
+.row-overflow-menu button {
+  width: 100%;
+  text-align: left;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .files col.col-actions { width: 6.25rem; }
+  .files td.row-actions, .files th.actions-h { width: 6.25rem; max-width: 6.25rem; }
+}
+#onlyoffice-ds-health.error { color: #fca5a5; }

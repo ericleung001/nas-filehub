@@ -125,3 +125,18 @@ func setInlineFileHeaders(w http.ResponseWriter, name string) {
 	w.Header().Del("Content-Disposition")
 	setFileDisposition(w, name, true)
 }
+
+
+// onlyOfficeEditorCSP relaxes script/frame/connect sources so DocsAPI can load from the configured Document Server.
+// Used only for /oo-editor pages. When ONLYOFFICE is not ready, falls back to the normal document CSP.
+func (s *Server) onlyOfficeEditorCSP() string {
+	cfg, err := s.effectiveOnlyOffice()
+	if err != nil || !cfg.Ready() || s.Cfg.PublicBaseURL == "" {
+		return documentCSP
+	}
+	o := cfg.Origin()
+	if o == "" {
+		return documentCSP
+	}
+	return "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' " + o + "; style-src 'self' 'unsafe-inline' " + o + "; img-src 'self' data: blob: " + o + "; font-src 'self' data: " + o + "; connect-src 'self' " + o + "; media-src 'self' blob:; frame-src 'self' blob: " + o + "; worker-src 'self' blob: " + o + "; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+}

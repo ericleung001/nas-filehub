@@ -114,8 +114,9 @@ func (s *Server) handleItemShares(w http.ResponseWriter, r *http.Request) {
 		if perm == "" {
 			perm = "read"
 		}
-		if !st.IsDir() {
-			perm = "read"
+		if perm != "read" && perm != "write" {
+			writeErr(w, 400, "perm must be read or write")
+			return
 		}
 		label := filepath.Base(body.Path)
 		out := make([]db.ItemShare, 0, len(body.UserIDs))
@@ -178,7 +179,7 @@ func (s *Server) handleItemShareID(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "db error")
 		return
 	}
-	s.audit(r, u.ID, u.Username, "item_share_revoke", "id="+itoaLocal(id)+" user="+itoaLocal(sh.UserID)+" path="+sh.Path)
+	s.audit(r, u.ID, u.Username, "item_share_revoke", "id="+itoaLocal(id)+" user="+itoaLocal(sh.UserID)+" path="+sh.Path+" perm="+sh.Perm)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -246,6 +247,10 @@ func (s *Server) listIncomingEntries(u *db.User) ([]map[string]any, error) {
 			name = name + " (" + sh.OwnerName + ")"
 		}
 		used[key]++
+		perm := sh.Perm
+		if perm != "write" {
+			perm = "read"
+		}
 		out = append(out, map[string]any{
 			"name":     name,
 			"path":     itoaLocal(sh.ID),
@@ -255,7 +260,7 @@ func (s *Server) listIncomingEntries(u *db.User) ([]map[string]any, error) {
 			"ext":      strings.ToLower(filepath.Ext(name)),
 			"kind":     files.KindOf(name, st.IsDir()),
 			"sharedBy": sh.OwnerName,
-			"perm":     sh.Perm,
+			"perm":     perm,
 		})
 	}
 	return out, nil

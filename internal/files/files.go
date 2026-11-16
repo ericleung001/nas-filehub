@@ -17,7 +17,7 @@ type Entry struct {
 	Size    int64     `json:"size"`
 	ModTime time.Time `json:"modTime"`
 	Ext     string    `json:"ext"`
-	Kind    string    `json:"kind"` // dir|image|video|pdf|other
+	Kind    string    `json:"kind"` // dir|image|video|pdf|office|other
 }
 
 func SafeJoin(root, rel string) (string, error) {
@@ -62,6 +62,8 @@ func KindOf(name string, isDir bool) string {
 		return "video"
 	case ".pdf":
 		return "pdf"
+	case ".doc", ".docx", ".odt", ".rtf", ".txt", ".xls", ".xlsx", ".ods", ".csv", ".ppt", ".pptx", ".odp":
+		return "office"
 	default:
 		return "other"
 	}

@@ -103,6 +103,8 @@ func main() {
 		log.Printf("WebDAV enabled at /dav/")
 	}
 
+	go srv.WatchOnlyOfficeHealth()
+
 	log.Printf("nas-filehub %s listening on %s (data=%s)", version.Version, cfg.ListenAddr, cfg.DataRoot)
 	if err := http.ListenAndServe(cfg.ListenAddr, srv.Handler()); err != nil {
 		log.Fatal(err)

@@ -8,6 +8,29 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.24] - 2026-11-16
+
+This release adds an optional ONLYOFFICE Docs editor and Read only / Read/Write item-share permissions. It was developed on the test site as 0.4.17–0.4.24 and is published here as v0.4.24.
+
+### Added
+- **Optional ONLYOFFICE Docs** — administrators can enable browser editing for Word, Excel, PowerPoint, and OpenDocument files under Settings → Office editor. Off by default. Set the Document Server URL and JWT secret (the same secret as the Document Server `JWT_SECRET`); `PUBLIC_BASE_URL` is required so the editor can download and save through Filehub. The JWT secret is write-only, like the SMTP password. Read-only grants open view mode; Read/Write grants open edit mode. Recycle bin files cannot be opened in the editor. Settings shows a health hint if the Document Server does not respond, and Filehub logs a warning in that case.
+- **Same-tab editor** — opening a document with Edit (or by clicking the file) shows the ONLYOFFICE editor as a full-page overlay on the current Filehub page. **Back to Filehub** closes the editor and returns to the file list in that tab; it does not open a new tab.
+- **+ New Office files** — when ONLYOFFICE is ready and the current folder allows write, a **+ New** menu creates a blank Document (`.docx`), Spreadsheet (`.xlsx`), or Presentation (`.pptx`) (with conflict rename) and opens it in the same-tab editor. The control is hidden in the Recycle bin and for read-only shares.
+- **Co-editing** — the editor uses ONLYOFFICE fast co-editing. The Collaboration panel shows the Filehub username, and a muted hint notes that others with Read/Write can edit the same file at the same time. The document key is derived from the resolved on-disk path plus mtime and size, so the owner (My Files) and a recipient (Shared with me) open the same session. If the file is saved and the document key changes, the editor shows a message with a Reload button so sessions do not silently diverge.
+- **Share Read only / Read/Write** — the Share dialog always offers **Read only** (default) and **Read/Write** for files and folders. Read/Write recipients can upload, create, rename, and edit (including ONLYOFFICE when enabled), but **cannot delete** any item. Nested paths under a write-shared folder also have delete disabled. Admin shared-folder grants with a separate Allow delete flag are unchanged. Current access lets you switch a user between Read only and Read/Write without revoking and re-sharing.
+- **Asset cache-busting** — `app.js` and `style.css` are loaded with a version query string so browsers pick up UI changes after a deploy.
+
+### Changed
+- **Shared with me** — the sidebar no longer labels the whole root as (ro). Each shared item shows a **Read only** or **Read/Write** badge. Incoming share roots hide rename for the shared item itself; children of a write-shared folder can still be renamed (delete remains blocked).
+- **Login button** — the sign-in form submit label is English **Login** only.
+- **Office row actions** — the Edit control is a compact icon so the Modified column stays readable; on small screens, Share / Rename / Delete move into a ⋯ overflow menu.
+- **Docs** — the README covers the optional Office editor, co-editing (refresh the page after a deploy), and that Read/Write does not allow delete. The Document Server URL must be reachable from both browsers and Filehub.
+
+### Fixed
+- **Shared with me + ONLYOFFICE** — Edit follows each item share’s permission: Read/Write shows Edit and opens the editor; Read only shows Download only. Editor config resolves the share path before detecting the Office file type, so opening a write-shared `.docx` via its share id no longer returns “unsupported office file type”. The document title uses the real filename.
+- **Co-editing across Shared with me** — document keys hash the resolved on-disk file (plus mtime/size), not the client `root`/`path`, so owner and recipient stay in one session.
+- **Shared with me row border** — the list row bottom line stays one continuous, aligned border across Name (including the permission badge), Size, Modified, and actions.
+
 ## [0.4.16] - 2026-11-16
 
 ### Added
@@ -375,7 +398,8 @@ where version tags are used.
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.16...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.24...HEAD
+[0.4.24]: https://github.com/ericleung001/nas-filehub/compare/v0.4.16...v0.4.24
 [0.4.16]: https://github.com/ericleung001/nas-filehub/compare/v0.4.15...v0.4.16
 [0.4.15]: https://github.com/ericleung001/nas-filehub/compare/v0.4.14...v0.4.15
 [0.4.14]: https://github.com/ericleung001/nas-filehub/compare/v0.4.13...v0.4.14

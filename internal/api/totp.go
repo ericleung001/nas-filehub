@@ -404,6 +404,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		pol := s.passwordPolicy()
 		smtpCfg, _ := s.effectiveSMTP()
 		oidcCfg, _ := s.effectiveOIDC()
+		ooCfg, _ := s.effectiveOnlyOffice()
 		sess := s.sessionSettings()
 		gq, _ := s.DB.GetGlobalQuotaSettings()
 		auditMax, _ := s.DB.GetAuditLogMax()
@@ -425,6 +426,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			"oidc":                        s.oidcPublic(oidcCfg),
 			"oidcRedirectURL":             s.oidcRedirectURL(),
 			"oidcClientSecretSet":         oidcCfg.ClientSecretSet,
+			"onlyoffice":                  s.onlyOfficePublic(ooCfg),
 		}
 	}
 	switch r.Method {
@@ -456,6 +458,9 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 			OIDCClientSecret            *string `json:"oidcClientSecret"`
 			OIDCAutoCreate              *bool   `json:"oidcAutoCreate"`
 			OIDCLabel                   *string `json:"oidcLabel"`
+			OnlyOfficeEnabled           *bool   `json:"onlyofficeEnabled"`
+			OnlyOfficeURL               *string `json:"onlyofficeUrl"`
+			OnlyOfficeJWTSecret         *string `json:"onlyofficeJwtSecret"`
 			AuditLogMax                 *int    `json:"auditLogMax"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
@@ -603,6 +608,34 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if _, err := s.DB.SetOIDCSettings(cur, secret); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			touched = true
+		}
+		ooTouch := body.OnlyOfficeEnabled != nil || body.OnlyOfficeURL != nil || body.OnlyOfficeJWTSecret != nil
+		if ooTouch {
+			cur, err := s.DB.GetOnlyOfficeSettings()
+			if err != nil {
+				writeErr(w, 500, "db error")
+				return
+			}
+			if body.OnlyOfficeEnabled != nil {
+				cur.Enabled = *body.OnlyOfficeEnabled
+			}
+			if body.OnlyOfficeURL != nil {
+				cur.URL = *body.OnlyOfficeURL
+			}
+			var secret *string
+			if body.OnlyOfficeJWTSecret != nil {
+				secret = body.OnlyOfficeJWTSecret
+				cur.JWTSecret = *body.OnlyOfficeJWTSecret
+			}
+			if err := s.validateOnlyOfficeSettings(cur); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			if _, err := s.DB.SetOnlyOfficeSettings(cur, secret); err != nil {
 				writeErr(w, 400, err.Error())
 				return
 			}

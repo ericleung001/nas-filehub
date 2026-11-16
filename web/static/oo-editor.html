@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Office editor — Filehub</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #1a1d23; color: #e8eaed; font-family: system-ui, sans-serif; }
+    #bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #11141a; border-bottom: 1px solid #2a2f3a; }
+    #bar a, #bar button { color: #8ab4f8; text-decoration: none; background: none; border: 0; font: inherit; cursor: pointer; padding: 0; }
+    #bar .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #msg { padding: 24px; }
+    #placeholder { position: absolute; inset: 48px 0 0 0; }
+    body.embedded #bar { display: none; }
+    body.embedded #placeholder { inset: 0; }
+    body.embedded.has-outdated #placeholder { top: 44px; }
+    .error { color: #f28b82; }
+    #outdated { display: none; align-items: center; gap: 12px; padding: 8px 12px; background: #3d2a00; color: #fde68a; font-size: 13px; border-bottom: 1px solid #7c5a00; }
+    #outdated.show { display: flex; }
+    body.embedded #outdated.show { position: absolute; top: 0; left: 0; right: 0; z-index: 2; }
+    #outdated button { background: #fde68a; color: #1a1d23; border: 0; border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <a id="back" href="/">← Back to Filehub</a>
+    <div class="title" id="title">Office editor</div>
+  </div>
+  <div id="outdated" role="status">
+    <span>This file was updated. Reload the editor to continue with the latest version.</span>
+    <button type="button" id="reload-editor">Reload</button>
+  </div>
+  <div id="msg">Loading editor…</div>
+  <div id="placeholder" hidden></div>
+  <script>
+(async function () {
+  const params = new URLSearchParams(location.search);
+  const embedded = params.get('embedded') === '1' || window.self !== window.top;
+  if (embedded) document.body.classList.add('embedded');
+  const root = params.get('root') || 'home';
+  const path = params.get('path') || '';
+  const msg = document.getElementById('msg');
+  const title = document.getElementById('title');
+  const placeholder = document.getElementById('placeholder');
+  if (!path) {
+    msg.textContent = 'Missing file path.';
+    msg.classList.add('error');
+    return;
+  }
+  title.textContent = path.split('/').pop() || path;
+  try {
+    const res = await fetch('/api/onlyoffice/config?root=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path), {
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    const docTitle = data.config && data.config.document && data.config.document.title;
+    if (docTitle) {
+      title.textContent = docTitle;
+      document.title = docTitle + ' — Filehub';
+    }
+    let openedKey = data.documentKey || (data.config && data.config.document && data.config.document.key) || '';
+    const outdated = document.getElementById('outdated');
+    const reloadBtn = document.getElementById('reload-editor');
+    function showOutdated() {
+      if (outdated) outdated.classList.add('show');
+      document.body.classList.add('has-outdated');
+    }
+    if (reloadBtn) reloadBtn.addEventListener('click', () => location.reload());
+    async function checkKey() {
+      try {
+        const r2 = await fetch('/api/onlyoffice/config?root=' + encodeURIComponent(root) + '&path=' + encodeURIComponent(path), { credentials: 'same-origin' });
+        if (!r2.ok) return;
+        const d2 = await r2.json();
+        const k2 = d2.documentKey || (d2.config && d2.config.document && d2.config.document.key) || '';
+        if (openedKey && k2 && k2 !== openedKey) showOutdated();
+      } catch (e) { /* ignore */ }
+    }
+    setInterval(checkKey, 20000);
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = data.documentServerApiScript;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Could not load DocsAPI from Document Server'));
+      document.head.appendChild(s);
+    });
+    if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
+      throw new Error('DocsAPI is not available');
+    }
+    msg.hidden = true;
+    placeholder.hidden = false;
+    const cfg = data.config || {};
+    cfg.events = Object.assign({}, cfg.events, {
+      onOutdatedVersion: function () { showOutdated(); }
+    });
+    window.docEditor = new window.DocsAPI.DocEditor('placeholder', cfg);
+  } catch (err) {
+    msg.textContent = err.message || String(err);
+    msg.classList.add('error');
+  }
+})();
+  </script>
+</body>
+</html>

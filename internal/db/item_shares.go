@@ -108,9 +108,6 @@ func (d *DB) UpsertItemShare(ownerID, userID int64, rootID, path string, isDir b
 	if perm != "read" && perm != "write" {
 		return nil, fmt.Errorf("perm must be read or write")
 	}
-	if !isDir {
-		perm = "read"
-	}
 	if label == "" {
 		parts := strings.Split(path, "/")
 		label = parts[len(parts)-1]

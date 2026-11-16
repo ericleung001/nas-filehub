@@ -61,6 +61,8 @@ const state = {
   publicMeta: null,
   /** password reset token */
   resetToken: null,
+  onlyofficeReady: false,
+  ooEditorOpen: false,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -76,6 +78,7 @@ async function api(path, opts = {}) {
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  // res.ok is true for any 2xx, including 201 Created (e.g. public links).
   if (!res.ok) throw new Error((data && data.error) || res.statusText);
   return data;
 }
@@ -137,6 +140,7 @@ async function bootstrap() {
   try {
     const me = await api('/api/me');
     state.user = me.user;
+    state.onlyofficeReady = !!(me.user && me.user.onlyoffice && me.user.onlyoffice.ready);
     await enterApp();
   } catch {
     show('login');
@@ -198,6 +202,7 @@ function renderSidebarQuota() {
 async function refreshMe() {
   const me = await api('/api/me');
   state.user = me.user;
+  state.onlyofficeReady = !!(me.user && me.user.onlyoffice && me.user.onlyoffice.ready);
   $('#whoami').textContent = state.user.username + (state.user.isAdmin ? ' (admin)' : '');
   renderSidebarQuota();
 }
@@ -332,6 +337,7 @@ $('#login-form').addEventListener('submit', async (e) => {
       return;
     }
     state.user = data.user;
+    state.onlyofficeReady = !!(data.user && data.user.onlyoffice && data.user.onlyoffice.ready);
     state.pendingToken = null;
     await enterApp();
   } catch (err) {
@@ -350,6 +356,7 @@ $('#totp-form').addEventListener('submit', async (e) => {
       body: JSON.stringify({ pendingToken: state.pendingToken, code: fd.get('code') }),
     });
     state.user = data.user;
+    state.onlyofficeReady = !!(data.user && data.user.onlyoffice && data.user.onlyoffice.ready);
     state.pendingToken = null;
     showLoginStep('password');
     await enterApp();
@@ -374,6 +381,7 @@ $('#totp-enroll-form').addEventListener('submit', async (e) => {
       body: JSON.stringify({ pendingToken: state.pendingToken, code: fd.get('code') }),
     });
     state.user = data.user;
+    state.onlyofficeReady = !!(data.user && data.user.onlyoffice && data.user.onlyoffice.ready);
     state.pendingToken = null;
     if (data.backupCodes && data.backupCodes.length) {
       alert('2FA enabled. Save these backup codes:\n\n' + data.backupCodes.join('\n'));
@@ -791,7 +799,8 @@ async function loadRoots() {
   const ul = $('#root-list');
   ul.innerHTML = '';
   for (const r of data.roots) {
-    const li = await renderTreeNode(r, '', r.name + (r.perm === 'read' ? ' (ro)' : ''), 0);
+    const suffix = (r.id === 'incoming') ? '' : (r.perm === 'read' ? ' (ro)' : '');
+    const li = await renderTreeNode(r, '', r.name + suffix, 0);
     ul.appendChild(li);
   }
 }
@@ -987,6 +996,25 @@ function setCreateActionsVisible(visible) {
   const folderLabel = folderInput && folderInput.closest('label');
   if (folderInput) folderInput.disabled = !visible;
   if (folderLabel) folderLabel.hidden = !visible;
+  updateOfficeCreateButtons(visible);
+}
+
+function setOfficeNewMenuOpen(open) {
+  const menu = $('#oo-new-menu');
+  const btn = $('#btn-new-office');
+  if (menu) menu.hidden = !open;
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function updateOfficeCreateButtons(writeVisible) {
+  const show = !!writeVisible && !!state.onlyofficeReady && state.root !== 'trash' && state.perm === 'write';
+  const wrap = $('#oo-new-wrap');
+  if (wrap) wrap.hidden = !show;
+  const btn = $('#btn-new-office');
+  if (btn) btn.disabled = !show;
+  if (!show) setOfficeNewMenuOpen(false);
+  const hint = $('#oo-create-hint');
+  if (hint) hint.hidden = !show;
 }
 
 async function loadList() {
@@ -1090,12 +1118,151 @@ function entryIcon(e) {
   if (e.kind === 'image') return '🖼️';
   if (e.kind === 'video') return '🎬';
   if (e.kind === 'pdf') return '📕';
+  if (e.kind === 'office') return '📝';
   return '📄';
 }
 
 function isPreviewable(e) {
   return !e.isDir && (e.kind === 'image' || e.kind === 'video' || e.kind === 'pdf');
 }
+
+function isOfficeFile(e) {
+  return !e.isDir && e.kind === 'office';
+}
+
+/** Effective write access for one row. Incoming root items carry their own grant perm. */
+function entryCanWrite(e, listCanWrite) {
+  if (e && (e.perm === 'write' || e.perm === 'read')) {
+    return e.perm === 'write';
+  }
+  return !!listCanWrite;
+}
+
+function isIncomingShareRoot(e) {
+  const root = (e && e.searchRoot) || state.root;
+  if (root !== 'incoming') return false;
+  const p = String((e && e.path) || '');
+  return p !== '' && p.indexOf('/') === -1;
+}
+
+function entryPermLabel(e) {
+  const p = (e && (e.perm === 'write' || e.perm === 'read')) ? e.perm : state.perm;
+  return p === 'write' ? 'Read/Write' : 'Read only';
+}
+
+function useCompactRowActions() {
+  return window.matchMedia && window.matchMedia('(max-width: 720px)').matches;
+}
+
+function closeOfficeEditor(opts) {
+  const overlay = $('#oo-editor-overlay');
+  const frame = $('#oo-editor-frame');
+  if (frame) frame.src = 'about:blank';
+  if (overlay) overlay.hidden = true;
+  document.body.classList.remove('oo-editor-open');
+  const opened = state.ooEditorOpen;
+  state.ooEditorOpen = false;
+  if (opened && !(opts && opts.fromPopstate) && history.state && history.state.filehubOoEditor) {
+    history.back();
+  }
+}
+
+function openOfficeEditor(e) {
+  const itemRoot = e.searchRoot || state.root;
+  if (itemRoot === 'trash' || !state.onlyofficeReady) return;
+  const overlay = $('#oo-editor-overlay');
+  const frame = $('#oo-editor-frame');
+  const title = $('#oo-editor-title');
+  if (!overlay || !frame) return;
+  if (title) title.textContent = e.name || (e.path || '').split('/').pop() || 'Office editor';
+  const hint = $('#oo-editor-coedit-hint');
+  if (hint) {
+    const canEdit = entryCanWrite(e, state.perm === 'write');
+    hint.hidden = !canEdit;
+    if (canEdit) hint.textContent = 'Others with Read/Write can edit this file at the same time.';
+  }
+  const url = '/oo-editor.html?v=0.4.24&embedded=1&root=' + encodeURIComponent(itemRoot) + '&path=' + encodeURIComponent(e.path);
+  frame.src = url;
+  overlay.hidden = false;
+  document.body.classList.add('oo-editor-open');
+  if (!state.ooEditorOpen) {
+    history.pushState({ filehubOoEditor: true }, '', location.pathname + location.search + location.hash);
+  }
+  state.ooEditorOpen = true;
+}
+
+$('#oo-editor-back')?.addEventListener('click', () => closeOfficeEditor());
+window.addEventListener('popstate', () => {
+  if (state.ooEditorOpen) closeOfficeEditor({ fromPopstate: true });
+});
+
+function ensureOfficeExt(name, ext) {
+  name = (name || '').trim();
+  if (!name) return '';
+  const lower = name.toLowerCase();
+  if (!lower.endsWith(ext)) name += ext;
+  return name.replace(/[\\/]/g, '-');
+}
+
+async function createOfficeFile(kind) {
+  if (!state.onlyofficeReady || state.perm !== 'write' || state.root === 'trash') return;
+  const kinds = {
+    spreadsheet: { ext: '.xlsx', def: 'Spreadsheet.xlsx', prompt: 'Spreadsheet name', kind: 'spreadsheet' },
+    presentation: { ext: '.pptx', def: 'Presentation.pptx', prompt: 'Presentation name', kind: 'presentation' },
+    document: { ext: '.docx', def: 'Document.docx', prompt: 'Document name', kind: 'document' },
+  };
+  const meta = kinds[kind] || kinds.document;
+  let name = prompt(meta.prompt, meta.def);
+  if (name == null) return;
+  name = ensureOfficeExt(name, meta.ext);
+  if (!name) return;
+  try {
+    const data = await api('/api/onlyoffice/create', {
+      method: 'POST',
+      body: JSON.stringify({ root: state.root, path: state.path || '', name, kind: meta.kind }),
+    });
+    invalidateTreeCache(state.root);
+    await loadRoots();
+    await loadList();
+    try { await refreshMe(); } catch { /* ignore */ }
+    openOfficeEditor({ name: data.name || name, path: data.path || (state.path ? state.path + '/' + name : name), kind: 'office', isDir: false });
+  } catch (err) {
+    alert(err.message || String(err));
+  }
+}
+
+$('#btn-new-office')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = $('#oo-new-menu');
+  if (!menu) return;
+  setOfficeNewMenuOpen(!!menu.hidden);
+});
+$('#btn-new-doc')?.addEventListener('click', () => {
+  setOfficeNewMenuOpen(false);
+  createOfficeFile('document');
+});
+$('#btn-new-sheet')?.addEventListener('click', () => {
+  setOfficeNewMenuOpen(false);
+  createOfficeFile('spreadsheet');
+});
+$('#btn-new-slides')?.addEventListener('click', () => {
+  setOfficeNewMenuOpen(false);
+  createOfficeFile('presentation');
+});
+document.addEventListener('click', (e) => {
+  const wrap = $('#oo-new-wrap');
+  if (!wrap || wrap.hidden) return;
+  if (wrap.contains(e.target)) return;
+  setOfficeNewMenuOpen(false);
+});
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('.row-overflow-menu').forEach((m) => {
+    if (!m.hidden && !(m.parentElement && m.parentElement.contains(e.target))) m.hidden = true;
+  });
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') setOfficeNewMenuOpen(false);
+});
 
 function revokePdfObjectUrls(root) {
   if (!root) return;
@@ -1178,6 +1345,13 @@ async function openEntry(e) {
     await loadList();
   } else if (isPreviewable(e)) {
     openPreview(e);
+  } else if (
+    isOfficeFile(e) &&
+    state.onlyofficeReady &&
+    state.root !== 'trash' &&
+    entryCanWrite(e, state.perm === 'write')
+  ) {
+    openOfficeEditor(e);
   } else {
     window.open(`/api/download?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`, '_blank');
   }
@@ -1200,6 +1374,20 @@ function appendEntryActions(container, e, canWrite, compact) {
     };
     container.appendChild(rst);
   } else {
+    const rowWrite = entryCanWrite(e, canWrite);
+    if (isOfficeFile(e) && state.onlyofficeReady && itemRoot !== 'trash' && rowWrite) {
+      const ed = document.createElement('button');
+      ed.type = 'button';
+      ed.textContent = '📝';
+      ed.className = 'ghost';
+      ed.title = 'Edit in ONLYOFFICE (others with Read/Write can edit at the same time)';
+      ed.setAttribute('aria-label', 'Edit in ONLYOFFICE');
+      ed.onclick = (ev) => {
+        ev.stopPropagation();
+        openOfficeEditor(e);
+      };
+      container.appendChild(ed);
+    }
     const dl = document.createElement('button');
     dl.type = 'button';
     dl.textContent = '↓';
@@ -1213,21 +1401,22 @@ function appendEntryActions(container, e, canWrite, compact) {
     };
     container.appendChild(dl);
   }
-  if (state.root === 'trash' || state.root === 'incoming' || e.searchRoot) {
-    // Recycle bin, Shared with me, and search results: no share button.
-  } else {
-  const share = document.createElement('button');
-  share.type = 'button';
-  share.textContent = '🔗';
-  share.className = 'ghost';
-  share.title = 'Share';
-  share.setAttribute('aria-label', 'Share');
-  share.onclick = (ev) => {
-    ev.stopPropagation();
-    openShareDialog({ path: e.path, isDir: e.isDir, name: e.name });
-  };
-  container.appendChild(share);
-  if (canWrite) {
+  const extras = [];
+  if (!(state.root === 'trash' || state.root === 'incoming' || e.searchRoot)) {
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.textContent = '🔗';
+    share.className = 'ghost';
+    share.title = 'Share';
+    share.setAttribute('aria-label', 'Share');
+    share.onclick = (ev) => {
+      ev.stopPropagation();
+      openShareDialog({ path: e.path, isDir: e.isDir, name: e.name });
+    };
+    extras.push(share);
+  }
+  const allowRename = entryCanWrite(e, canWrite) && state.root !== 'trash' && !e.searchRoot && !isIncomingShareRoot(e);
+  if (allowRename) {
     const ren = document.createElement('button');
     ren.type = 'button';
     ren.textContent = '✎';
@@ -1243,9 +1432,8 @@ function appendEntryActions(container, e, canWrite, compact) {
       await loadRoots();
       await loadList();
     };
-    container.appendChild(ren);
+    extras.push(ren);
   }
-  } // end share/rename (not trash, not search)
   if (state.canDelete) {
     const del = document.createElement('button');
     del.type = 'button';
@@ -1262,7 +1450,35 @@ function appendEntryActions(container, e, canWrite, compact) {
       await loadList();
       try { await refreshMe(); } catch { /* ignore */ }
     };
-    container.appendChild(del);
+    extras.push(del);
+  }
+  const overflow = useCompactRowActions() && extras.length > 0;
+  if (overflow) {
+    const wrap = document.createElement('div');
+    wrap.className = 'row-overflow';
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.textContent = '⋯';
+    more.className = 'ghost';
+    more.title = 'More actions';
+    more.setAttribute('aria-label', 'More actions');
+    more.setAttribute('aria-haspopup', 'menu');
+    const menu = document.createElement('div');
+    menu.className = 'row-overflow-menu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'menu');
+    extras.forEach((btn) => menu.appendChild(btn));
+    more.onclick = (ev) => {
+      ev.stopPropagation();
+      const open = menu.hidden;
+      document.querySelectorAll('.row-overflow-menu').forEach((m) => { m.hidden = true; });
+      menu.hidden = !open;
+    };
+    wrap.appendChild(more);
+    wrap.appendChild(menu);
+    container.appendChild(wrap);
+  } else {
+    extras.forEach((btn) => container.appendChild(btn));
   }
 }
 
@@ -1389,6 +1605,13 @@ function renderEntries(entries, canWrite) {
       const name = document.createElement('div');
       name.className = 'card-name';
       name.textContent = e.sharedBy ? (e.name + '  ·  ' + e.sharedBy) : e.name;
+      if (state.root === 'incoming') {
+        const badge = document.createElement('div');
+        badge.className = 'perm-badge muted';
+        badge.textContent = entryPermLabel(e);
+        name.appendChild(document.createElement('br'));
+        name.appendChild(badge);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'card-actions';
@@ -1418,6 +1641,12 @@ function renderEntries(entries, canWrite) {
     nameBtn.textContent = e.sharedBy ? (e.name + '  ·  ' + e.sharedBy) : e.name;
     nameBtn.title = e.sharedBy ? (e.name + ' (from ' + e.sharedBy + ')') : e.name;
     nameBtn.onclick = () => openEntry(e);
+    if (state.root === 'incoming') {
+      const badge = document.createElement('span');
+      badge.className = 'perm-badge muted';
+      badge.textContent = entryPermLabel(e);
+      tr.querySelector('.name-wrap').appendChild(badge);
+    }
     nameWrap.appendChild(nameBtn);
     appendEntryActions(tr.querySelector('.row-actions'), e, canWrite, false);
     body.appendChild(tr);
@@ -2306,6 +2535,7 @@ $('#totp-confirm-form').addEventListener('submit', async (e) => {
       body: JSON.stringify({ code: fd.get('code') }),
     });
     state.user = data.user;
+    state.onlyofficeReady = !!(data.user && data.user.onlyoffice && data.user.onlyoffice.ready);
     if (data.backupCodes && data.backupCodes.length) {
       const ul = $('#totp-backup-list');
       ul.innerHTML = data.backupCodes.map((c) => `<li><code>${c}</code></li>`).join('');
@@ -2351,6 +2581,7 @@ $('#totp-disable-form').addEventListener('submit', async (e) => {
       body: JSON.stringify(body),
     });
     state.user = data.user;
+    state.onlyofficeReady = !!(data.user && data.user.onlyoffice && data.user.onlyoffice.ready);
     renderTotpSettings();
     msg.textContent = '2FA disabled';
     msg.hidden = false;
@@ -2524,6 +2755,57 @@ async function loadSystemSettings() {
     oidcMsg.hidden = true;
     oidcMsg.classList.remove('error');
   }
+  const oo = data.onlyoffice || {};
+  const oof = $('#onlyoffice-form');
+  if (oof) {
+    oof.onlyofficeEnabled.checked = !!oo.enabled;
+    oof.onlyofficeUrl.value = oo.url || '';
+    oof.onlyofficeJwtSecret.value = '';
+    const setNote = $('#onlyoffice-secret-set');
+    if (setNote) {
+      setNote.textContent = oo.jwtSecretSet ? 'A JWT secret is saved (leave field blank to keep it).' : 'No JWT secret saved yet.';
+      setNote.hidden = false;
+    }
+    const ready = $('#onlyoffice-ready');
+    if (ready) {
+      let t = '';
+      if (!oo.publicBaseURLSet && !data.publicBaseURL) {
+        t = 'Set PUBLIC_BASE_URL before enabling ONLYOFFICE (the Document Server must reach Filehub at that URL).';
+      } else if (oo.ready) {
+        t = 'ONLYOFFICE is ready. Users can open supported Office files with Edit.';
+      } else if (oo.enabled) {
+        t = 'ONLYOFFICE is enabled but not ready (need Document Server URL + JWT secret + PUBLIC_BASE_URL).';
+      } else {
+        t = 'ONLYOFFICE is off. Existing download and preview are unchanged.';
+      }
+      if (data.publicBaseURL) t += ' PUBLIC_BASE_URL=' + data.publicBaseURL;
+      ready.textContent = t;
+    }
+    const dsHealth = $('#onlyoffice-ds-health');
+    if (dsHealth) {
+      if (oo.enabled && oo.url) {
+        dsHealth.hidden = false;
+        if (oo.documentServerReachable === true) {
+          dsHealth.textContent = 'Document Server at ' + oo.url + ' is reachable.';
+          dsHealth.classList.remove('error');
+        } else if (oo.documentServerReachable === false) {
+          dsHealth.textContent = 'Warning: Document Server did not respond at ' + oo.url + (oo.documentServerHealth ? ' (' + oo.documentServerHealth + ')' : '') + '.';
+          dsHealth.classList.add('error');
+        } else {
+          dsHealth.textContent = 'Document Server URL: ' + oo.url;
+          dsHealth.classList.remove('error');
+        }
+      } else {
+        dsHealth.hidden = true;
+        dsHealth.textContent = '';
+      }
+    }
+  }
+  const ooMsg = $('#onlyoffice-msg');
+  if (ooMsg) {
+    ooMsg.hidden = true;
+    ooMsg.classList.remove('error');
+  }
   applyAuditLogMaxForm(data.auditLogMax);
   const auditMaxMsg = $('#audit-log-max-msg');
   if (auditMaxMsg) {
@@ -2554,6 +2836,33 @@ $('#oidc-form')?.addEventListener('submit', async (e) => {
     });
     await loadSystemSettingsFrom(data);
     msg.textContent = 'SSO settings saved';
+    msg.hidden = false;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.classList.add('error');
+    msg.hidden = false;
+  }
+});
+
+$('#onlyoffice-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = $('#onlyoffice-msg');
+  msg.hidden = true;
+  msg.classList.remove('error');
+  const body = {
+    onlyofficeEnabled: !!e.target.onlyofficeEnabled.checked,
+    onlyofficeUrl: e.target.onlyofficeUrl.value,
+  };
+  const secret = e.target.onlyofficeJwtSecret.value;
+  if (secret !== '') body.onlyofficeJwtSecret = secret;
+  try {
+    await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    await loadSystemSettingsFrom();
+    try { await refreshMe(); } catch { /* ignore */ }
+    msg.textContent = 'ONLYOFFICE settings saved';
     msg.hidden = false;
   } catch (err) {
     msg.textContent = err.message;
@@ -3679,8 +3988,34 @@ async function loadExistingShares(target) {
     for (const sh of shares) {
       any = true;
       const li = document.createElement('li');
-      const perm = sh.perm === 'write' ? 'write' : 'read';
-      li.innerHTML = '<span class="meta">' + escapeHtml(sh.username || ('user #' + sh.userId)) + ' · ' + perm + '</span>';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'meta share-existing-user';
+      nameSpan.textContent = sh.username || ('user #' + sh.userId);
+      const sel = document.createElement('select');
+      sel.className = 'share-existing-perm';
+      sel.setAttribute('aria-label', 'Access for ' + (sh.username || 'this user'));
+      sel.innerHTML = '<option value="read">Read only</option><option value="write">Read/Write</option>';
+      sel.value = sh.perm === 'write' ? 'write' : 'read';
+      sel.addEventListener('change', async () => {
+        const perm = sel.value === 'write' ? 'write' : 'read';
+        sel.disabled = true;
+        try {
+          await api('/api/item-shares', {
+            method: 'POST',
+            body: JSON.stringify({
+              root: shareRootId(),
+              path: target.path,
+              userIds: [sh.userId],
+              perm,
+            }),
+          });
+          await loadExistingShares(target);
+        } catch (err) {
+          alert(err.message || String(err));
+          sel.value = sh.perm === 'write' ? 'write' : 'read';
+          sel.disabled = false;
+        }
+      });
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ghost danger';
@@ -3690,6 +4025,9 @@ async function loadExistingShares(target) {
         await api('/api/item-shares/' + sh.id, { method: 'DELETE' });
         await loadExistingShares(target);
       });
+      li.className = 'share-existing-user-row';
+      li.appendChild(nameSpan);
+      li.appendChild(sel);
       li.appendChild(btn);
       usersEl.appendChild(li);
     }
@@ -3751,7 +4089,7 @@ function openShareDialog(target) {
   if (pub) pub.checked = false;
   setShareLinkOptionsVisible();
   const permWrap = $('#share-perm-wrap');
-  if (permWrap) permWrap.hidden = !target.isDir;
+  if (permWrap) permWrap.hidden = false;
   const perm = $('#share-perm');
   if (perm) perm.value = 'read';
   state.shareSelectedIds = new Set();
@@ -3851,7 +4189,7 @@ $('#share-form')?.addEventListener('submit', async (e) => {
           root: shareRootId(),
           path: t.path,
           userIds,
-          perm: t.isDir ? (($('#share-perm') && $('#share-perm').value) || 'read') : 'read',
+          perm: (($('#share-perm') && $('#share-perm').value) === 'write') ? 'write' : 'read',
         }),
       });
       const n = (res.shares || []).length;

@@ -1,8 +1,8 @@
-# Filehub v0.4.16
+# Filehub v0.4.24
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
-Optional **OpenID Connect (SSO)** sign-in is supported (Authentik, Authelia, Pocket ID, and other standard providers). It is off by default; local username and password login stays available.
+Optional **OpenID Connect (SSO)** sign-in is supported (Authentik, Authelia, Pocket ID, and other standard providers). It is off by default; local username and password login stays available. Optional **ONLYOFFICE Docs** editing can be enabled in Settings when you run a Document Server.
 
 **License:** Apache-2.0
 
@@ -27,8 +27,9 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
 
 - **Multi-user homes** — each user gets `DATA_ROOT/homes/<username>`; users cannot see each other’s homes
 - **Optional OpenID Connect (SSO)** — off by default. After install, an admin signs in with a local password and can enable SSO under Settings → Sign-in / SSO (Authentik, Authelia, Pocket ID, Dex, Keycloak, and other providers that support OpenID discovery). Local username and password sign-in stays available even when SSO is on. The login page then shows **Sign in with SSO** next to the existing form. `PUBLIC_BASE_URL` is required; the redirect URI is `{PUBLIC_BASE_URL}/api/oidc/callback`. New accounts can optionally be created on first SSO sign-in (off by default). Existing accounts are matched by a previously linked identity, then by email — not by username alone. OIDC sessions skip Filehub TOTP. Logout ends the Filehub session only.
+- **Optional ONLYOFFICE Docs** — off by default. An admin can enable browser editing for Word, Excel, PowerPoint, and OpenDocument files under Settings → Office editor (Document Server URL + JWT secret). `PUBLIC_BASE_URL` is required, and the Document Server URL must be reachable from both browsers and Filehub (the test site uses `https://<host>:8443`). **Read only** item shares have no Edit button (download only). **Read/Write** allows edit and live co-editing (same document key for owner and recipient); it does **not** allow delete. After a deploy, refresh the Filehub page so clients pick up the new editor assets. Settings shows a health hint if the Document Server does not respond.
 - **Shared folders** — admin-created shares under `DATA_ROOT` with per-user `read` / `write` access and an independent **Allow delete** flag (admin picks a user from a dropdown; existing grants can be changed or revoked)
-- **Share with users or a public link** — from a file or folder in the file manager, grant access to one or more Filehub users, create a secret public URL (`/s/<token>`, optional expiry and password), or both. The Share dialog always has a keyword field (username or email). When there are more than five users, the list opens with your five most frequent recipients; type to find anyone else. Recipients with an account see the item under **Shared with me** (read by default; folders can be granted write). Public-link recipients browse/download without an account and can **preview images / PDFs / play videos** inline. In Current access, a long public URL is shown on its own line and truncated; Copy still copies the full address. Revoke a user grant from the Share dialog; revoke public links anytime from Settings → Link shares, or select several and **Delete selected**. Users with an email are notified when SMTP is configured
+- **Share with users or a public link** — from a file or folder in the file manager, grant access to one or more Filehub users, create a secret public URL (`/s/<token>`, optional expiry and password), or both. The Share dialog always has a keyword field (username or email). When there are more than five users, the list opens with your five most frequent recipients; type to find anyone else. Recipients with an account see the item under **Shared with me**, with a per-item **Read only** or **Read/Write** label (Read/Write can upload and edit but cannot delete). You can change that access later from Current access in the Share dialog. Public-link recipients browse/download without an account and can **preview images / PDFs / play videos** inline. In Current access, a long public URL is shown on its own line and truncated; Copy still copies the full address. Revoke a user grant from the Share dialog; revoke public links anytime from Settings → Link shares, or select several and **Delete selected**. Users with an email are notified when SMTP is configured
 - **File ops** — browse, **search file and folder names** across My Files and shares you can read, upload files or folders (file picker, **Upload folder**, or drag-and-drop of files and directories, including empty folders; relative structure is preserved; per-file progress in a **bottom-right floating** Uploads panel showing `(done/total)`, hidden until uploads start; large uploads can resume after a dropped connection; if a file with the same name already exists, choose **Skip**, **Overwrite**, or **Rename** — Rename appends `_1`, `_2`, … before the extension, a batch can use **Apply to all**, and Overwrite moves the existing file to the Recycle bin before saving the new one), drag-and-drop into current folder or onto a folder, download, **download a folder as a zip**, mkdir, rename, delete (moves items to a **Recycle bin** instead of immediate permanent delete; while the Recycle bin is open, Folder, Upload, and Upload folder are hidden, and restore / empty actions stay); **multi-select** with bulk Delete / Move / Copy (Move and Copy use a folder picker; writable shared folders are valid destinations); restore or permanently purge from the Recycle bin; list or icons view; **sort** by name / date / type / size (asc or desc, saved in `localStorage`); fixed-column list keeps columns aligned; long names ellipsize; compact action icons
 - **Preview** — image, **PDF** (blob-backed iframe; raw endpoints allow same-origin framing), and HTML5 video playback; icon view uses `/api/thumb` for image/video thumbnails; closing the dialog stops video/audio cleanly
 - **Thumbnails** — optional ffmpeg thumbs (software by default; hardware acceleration is selected from detected Intel VAAPI, AMD VAAPI, or NVIDIA NVDEC/CUDA devices, with software fallback)
@@ -38,7 +39,7 @@ Use **Docker Compose** (recommended) or the single binary from Quick start below
   - **Change password** / **Set password** — `POST /api/me/password` (enforces admin password policy). Accounts with no Filehub password (SSO-only) can set an initial password here without a current password
   - **2FA** — enable/disable TOTP
   - **Link shares** — list, copy, or revoke (permanently delete) public links you created (admins see all); select multiple to delete together
-  - **Users / Shares / Session duration / Registration / Security / Sign-in / SSO / Email / Storage quota / System** (admins only) — user/share tables; **Session duration** (login lifetime + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Sign-in / SSO** (optional OpenID Connect; local login stays available); **Email** (SMTP for password reset, pending-registration, shared-folder grants, and user-to-user file/folder shares); **Storage quota** (optional default quota for all users, with per-user overrides under Users → Edit); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
+  - **Users / Shares / Session duration / Registration / Security / Sign-in / SSO / Email / Office editor / Storage quota / System** (admins only) — user/share tables; **Session duration** (login lifetime + Stay signed in); **Registration**; **Security** (Force 2FA + password policy); **Sign-in / SSO** (optional OpenID Connect; local login stays available); **Email** (SMTP for password reset, pending-registration, shared-folder grants, and user-to-user file/folder shares); **Office editor** (optional ONLYOFFICE Document Server URL + JWT secret); **Storage quota** (optional default quota for all users, with per-user overrides under Users → Edit); **System** (DATA_ROOT notes, live CPU / RAM / storage status, and auto-detected GPU / hardware-decode type)
   - **About** (everyone) — project description, GitHub, and Buy Me a Coffee
 - **Sidebar** — expandable folder tree under My Files / Shared with me / shares / Recycle bin; a count badge appears to the right of Recycle bin when it has items (`99+` after 99); storage used/limit bar
 - **Two-factor authentication (TOTP)** — voluntary per user; admin can require per user or force all (`FORCE_2FA_ALL` / System settings); login second step + forced enrollment; backup codes on enable
@@ -93,15 +94,15 @@ To enable SSO, set `PUBLIC_BASE_URL` to your public HTTPS origin in compose or `
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.15`, not `v0.4.15`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.24`, not `v0.4.24`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.15
+docker pull ericleung001/nas-filehub:0.4.24
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.15
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.24
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.15`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.15` or `image: ghcr.io/ericleung001/nas-filehub:0.4.15` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.24`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.24` or `image: ghcr.io/ericleung001/nas-filehub:0.4.24` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 
@@ -164,9 +165,10 @@ Sign in → **Settings** (single top-bar button):
 11. **Sign-in / SSO** (admins) — optional OpenID Connect. Off by default. Requires `PUBLIC_BASE_URL`. Local username and password sign-in stays available. The client secret is write-only (leave blank to keep). Creating users on first SSO sign-in is off by default. Logout ends the Filehub session only; it does not sign the user out of the identity provider.
 12. **Audit log** (admins) — recent sign-in attempts, public link create/revoke, shared-folder permission changes, and user-to-user file or folder shares. Admins can cap how many events to keep (**Keep at most**); 0 means no limit (the default), and the oldest events are deleted when the log exceeds the cap
 13. **Email** (admins) — SMTP for forgot-password, pending-registration notices, shared-folder access notices, and user-to-user file or folder share notices
-14. **Storage quota** (admins) — optional default quota for users without a custom limit
-15. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
-16. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
+14. **Office editor** (admins) — optional ONLYOFFICE Docs (Document Server URL + JWT secret; requires `PUBLIC_BASE_URL`; off by default)
+15. **Storage quota** (admins) — optional default quota for users without a custom limit
+16. **System** (admins) — live server CPU, RAM, home-quota totals, `DATA_ROOT` disk usage, and auto-detected GPU / hardware-decode type (Intel VAAPI/QSV, AMD VAAPI, NVIDIA NVDEC, or none), plus `DATA_ROOT` / homes / shares notes
+17. **About** (everyone) — what Filehub is, Apache-2.0, [GitHub](https://github.com/ericleung001/nas-filehub), and [Buy Me a Coffee](https://buymeacoffee.com/filehub)
 
 The left sidebar shows the same storage used/limit under Roots, plus an expandable folder tree for My Files and shared roots.
 
@@ -222,7 +224,7 @@ In TrueNAS, open **Apps**, search for **Filehub**, and install it. The install w
 - An initial admin username and password (required; these seed the first admin on first boot)
 - WebUI port (default **30568**)
 - Run-as user and group (default **568**, the TrueNAS `apps` user)
-- **Public Base URL** (`PUBLIC_BASE_URL`) — set this to your public HTTPS origin (for example `https://filehub.example.com`) when you will use password-reset emails or OpenID Connect / SSO
+- **Public Base URL** (`PUBLIC_BASE_URL`) — set this to your public HTTPS origin (for example `https://filehub.example.com`) when you will use password-reset emails, OpenID Connect / SSO, or ONLYOFFICE
 - **Secure Cookies** — set this when Filehub is served over HTTPS
 
 After install, sign in with the admin username and password you set, then change the password under **Settings → Change password**. To enable SSO, set `PUBLIC_BASE_URL` and Secure Cookies (when behind HTTPS), then configure your identity provider under **Settings → Sign-in / SSO**. OpenID Connect stays off by default; local username and password login remains available.
