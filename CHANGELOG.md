@@ -8,6 +8,18 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.25] - 2026-11-20
+
+### Security
+- **go-jose** — bump `github.com/go-jose/go-jose/v4` from v4.1.3 to v4.1.9, fixing a JWE decryption panic (denial of service) tracked as GO-2026-4945 / CVE-2026-34986. This library is used when verifying SSO (OIDC) tokens.
+- **Go toolchain** — pin the Docker build image to `golang:1.27.4-bookworm` (replacing the floating `golang:bookworm` tag) and set `toolchain go1.27.4`, fixing a `net/http` `MaxBytesReader` header race that could panic (GO-2026-6859 / CVE-2026-97054). That issue affected Go 1.27.0–1.27.3 and releases before 1.26.11.
+
+### Added
+- **Settings → About** — the page now shows the running Filehub version (for example `Version 0.4.25`), taken from the server binary so it cannot drift from the installed release.
+
+### Fixed
+- **Asset cache-busting** — `style.css` and `app.js` were shipped with a hardcoded `?v=0.4.24` query, so the HTML rewriter never applied the current version and browsers could keep stale 0.4.24 assets. Those references are unversioned in the source again and the server appends the running version. The ONLYOFFICE editor page URL is cache-busted the same way.
+
 ## [0.4.24] - 2026-11-16
 
 This release adds an optional ONLYOFFICE Docs editor and Read only / Read/Write item-share permissions. It was developed on the test site as 0.4.17–0.4.24 and is published here as v0.4.24.
@@ -398,7 +410,8 @@ This release adds an optional ONLYOFFICE Docs editor and Read only / Read/Write 
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.24...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.25...HEAD
+[0.4.25]: https://github.com/ericleung001/nas-filehub/compare/v0.4.24...v0.4.25
 [0.4.24]: https://github.com/ericleung001/nas-filehub/compare/v0.4.16...v0.4.24
 [0.4.16]: https://github.com/ericleung001/nas-filehub/compare/v0.4.15...v0.4.16
 [0.4.15]: https://github.com/ericleung001/nas-filehub/compare/v0.4.14...v0.4.15

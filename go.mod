@@ -2,6 +2,8 @@ module github.com/eric/nas-filehub
 
 go 1.26.0
 
+toolchain go1.27.4
+
 require (
 	github.com/coreos/go-oidc/v3 v3.16.0
 	github.com/pquerna/otp v1.5.0
@@ -16,7 +18,7 @@ require (
 require (
 	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect

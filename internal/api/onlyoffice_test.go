@@ -15,6 +15,7 @@ import (
 
 	"github.com/eric/nas-filehub/internal/auth"
 	"github.com/eric/nas-filehub/internal/db"
+	"github.com/eric/nas-filehub/internal/version"
 )
 
 func TestOnlyOfficeSettingsDefaultOff(t *testing.T) {
@@ -647,7 +648,20 @@ func TestOnlyOfficeConfigRateLimit(t *testing.T) {
 
 func TestIndexHTMLCacheBust(t *testing.T) {
 	dir := t.TempDir()
-	html := []byte("<link rel=\"stylesheet\" href=\"/style.css\" />\n<script src=\"/app.js\"></script>\n")
+	html := []byte(`<!DOCTYPE html>
+<html data-filehub-version="__FILEHUB_VERSION__">
+<head>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="about-card">
+    <h3>About</h3>
+    <p class="muted">Version __FILEHUB_VERSION__</p>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
+`)
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), html, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -660,7 +674,57 @@ func TestIndexHTMLCacheBust(t *testing.T) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	text := string(body)
-	if !strings.Contains(text, "/style.css?v=") || !strings.Contains(text, "/app.js?v=") {
-		t.Fatalf("expected versioned assets, got %s", text)
+	wantVer := version.Version
+	if strings.Contains(text, "__FILEHUB_VERSION__") {
+		t.Fatalf("placeholder was not replaced, got %s", text)
+	}
+	if !strings.Contains(text, "Version "+wantVer) {
+		t.Fatalf("expected About to show Version %s, got %s", wantVer, text)
+	}
+	if !strings.Contains(text, `data-filehub-version="`+wantVer+`"`) {
+		t.Fatalf("expected data-filehub-version=%s, got %s", wantVer, text)
+	}
+	if !strings.Contains(text, `/style.css?v=`+wantVer) || !strings.Contains(text, `/app.js?v=`+wantVer) {
+		t.Fatalf("expected css/js cache-bust ?v=%s, got %s", wantVer, text)
+	}
+}
+
+func TestServeVersionedHTMLFromStaticSource(t *testing.T) {
+	src := filepath.Join("..", "..", "web", "static")
+	if _, err := os.Stat(filepath.Join(src, "index.html")); err != nil {
+		t.Fatalf("static index.html not found at %s: %v", src, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(src, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	if strings.Contains(source, "/style.css?v=") || strings.Contains(source, "/app.js?v=") {
+		t.Fatalf("index.html source must use unversioned /style.css and /app.js so serveVersionedHTML can inject the current version, got versioned refs")
+	}
+	if !strings.Contains(source, "Version __FILEHUB_VERSION__") {
+		t.Fatal("index.html About must use Version __FILEHUB_VERSION__ placeholder")
+	}
+	s, ts, _ := testServer(t)
+	s.Static = os.DirFS(src)
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+	wantVer := version.Version
+	if strings.Contains(text, "__FILEHUB_VERSION__") {
+		t.Fatal("served index.html still contains the version placeholder")
+	}
+	if !strings.Contains(text, "Version "+wantVer) {
+		t.Fatalf("expected served About to show Version %s", wantVer)
+	}
+	if !strings.Contains(text, `/style.css?v=`+wantVer) || !strings.Contains(text, `/app.js?v=`+wantVer) {
+		t.Fatalf("expected served css/js ?v=%s, got snippet around assets missing", wantVer)
+	}
+	if strings.Contains(text, "?v=0.4.24") {
+		t.Fatal("served HTML still cache-busts with stale ?v=0.4.24")
 	}
 }

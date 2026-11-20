@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"html"
 	"io"
 	"io/fs"
 	"math"
@@ -181,6 +182,7 @@ func (s *Server) serveVersionedHTML(w http.ResponseWriter, r *http.Request, name
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	b = bytes.ReplaceAll(b, []byte("__FILEHUB_VERSION__"), []byte(html.EscapeString(version.Version)))
 	v := url.QueryEscape(version.Version)
 	b = bytes.ReplaceAll(b, []byte(`href="/style.css"`), []byte(`href="/style.css?v=`+v+`"`))
 	b = bytes.ReplaceAll(b, []byte(`src="/app.js"`), []byte(`src="/app.js?v=`+v+`"`))

@@ -1,5 +1,5 @@
 # Build stage — cross-compile from the build platform (amd64/arm64).
-FROM --platform=$BUILDPLATFORM golang:bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm AS build
 WORKDIR /src
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64

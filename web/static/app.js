@@ -1167,6 +1167,12 @@ function closeOfficeEditor(opts) {
   }
 }
 
+function filehubAssetVersion() {
+  const v = document.documentElement.getAttribute('data-filehub-version') || '';
+  if (!v || v === '__FILEHUB_VERSION__') return '';
+  return v;
+}
+
 function openOfficeEditor(e) {
   const itemRoot = e.searchRoot || state.root;
   if (itemRoot === 'trash' || !state.onlyofficeReady) return;
@@ -1181,7 +1187,8 @@ function openOfficeEditor(e) {
     hint.hidden = !canEdit;
     if (canEdit) hint.textContent = 'Others with Read/Write can edit this file at the same time.';
   }
-  const url = '/oo-editor.html?v=0.4.24&embedded=1&root=' + encodeURIComponent(itemRoot) + '&path=' + encodeURIComponent(e.path);
+  const assetVersion = filehubAssetVersion();
+  const url = '/oo-editor.html?' + (assetVersion ? 'v=' + encodeURIComponent(assetVersion) + '&' : '') + 'embedded=1&root=' + encodeURIComponent(itemRoot) + '&path=' + encodeURIComponent(e.path);
   frame.src = url;
   overlay.hidden = false;
   document.body.classList.add('oo-editor-open');
