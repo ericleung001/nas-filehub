@@ -270,7 +270,11 @@ func (s *Server) listIncomingEntries(u *db.User) ([]map[string]any, error) {
 			if yes, err := s.DB.IsAlbum(ownerID, incomingRootID(&sh), sh.Path); err == nil && yes {
 				item["album"] = true
 			}
-			cover := files.AlbumCoverRel(sc.Root, sc.Rel)
+			pref := ""
+			if a, err := s.DB.GetAlbum(ownerID, incomingRootID(&sh), sh.Path); err == nil && a != nil {
+				pref = a.CoverPath
+			}
+			cover := files.AlbumCoverRel(sc.Root, sc.Rel, pref)
 			if cover != "" {
 				item["coverPath"] = itoaLocal(sh.ID) + "/" + cover
 			}

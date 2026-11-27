@@ -791,6 +791,11 @@
           <label>Brightness <input type="range" id="photo-editor-brightness" min="0" max="200" value="100" /><span id="photo-editor-brightness-val">100%</span></label>
           <label>Contrast <input type="range" id="photo-editor-contrast" min="0" max="200" value="100" /><span id="photo-editor-contrast-val">100%</span></label>
         </div>
+        <label id="photo-editor-exif-label" class="photo-editor-exif">
+          <input type="checkbox" id="photo-editor-keep-exif" checked />
+          Keep EXIF
+        </label>
+        <p id="photo-editor-exif-hint" class="muted" hidden></p>
       </div>
       <p id="photo-editor-error" class="error" hidden></p>
       <p id="photo-editor-status" class="muted" hidden></p>
@@ -893,6 +898,7 @@
   </div>
 
   <script src="/photo-adjust.js"></script>
+  <script src="/photo-exif.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

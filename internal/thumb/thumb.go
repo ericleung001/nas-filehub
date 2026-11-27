@@ -63,7 +63,7 @@ func (g *Generator) Get(src string) (string, error) {
 	}
 	ext := strings.ToLower(filepath.Ext(src))
 	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".mp4", ".webm", ".mkv", ".mov", ".m4v", ".ogg":
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".mp4", ".webm", ".mkv", ".mov", ".m4v", ".ogg":
 		// ok
 	default:
 		return "", fmt.Errorf("unsupported type")

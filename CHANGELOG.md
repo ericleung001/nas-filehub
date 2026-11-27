@@ -8,6 +8,25 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.31] - 2026-11-27
+
+This release adds five follow-ups to albums and the photo editor. Those features first shipped in v0.4.30 and are recapped below.
+
+### Added
+- **HEIC/HEIF in the photo editor** — iPhone HEIC photos can be opened and edited (rotate, flip, crop, brightness, contrast) from album view and the regular preview. Decoding uses a vendored heic-to 1.6.7 CSP/wasm2js decoder (no CGO / libheif). Safari can also use its native decoder. Save as copy and Overwrite write **JPEG** and say so in the editor (“This HEIC photo will be saved as JPEG”). If decode fails, the original file is left unchanged and a clear English error is shown. The existing 80 MiB / 40-megapixel editor caps still apply.
+- **Keep EXIF** — the editor has a Keep EXIF checkbox, on by default when the output can store EXIF (JPEG, WebP, and HEIC saved as JPEG). Metadata from the original (including date and GPS when present) is copied into the saved file; after rotate, flip, or crop, Orientation is set to 1 (normal) and dimension tags are updated. Turning the option off keeps the previous strip-on-save behavior; GPS and dates are not written back. For PNG (and other formats that cannot hold EXIF) the checkbox is disabled with a short explanation.
+- **Manual album cover** — in album view, Set as cover (or Clear cover) on a photo or video already in that album. The choice is stored on the album row (`cover_path`). Only users who can write the folder can set or clear it; anyone who can see the album sees the chosen cover in the sidebar and on folder tiles. Clear cover restores the automatic newest-media rule. Renames, moves, and deletes inside Filehub relocate or clear the cover the same way album flags already follow those paths. If the cover file disappears outside Filehub, the UI falls back to the automatic cover instead of a broken image.
+- **Bulk select in album view** — folder tiles and photos/videos in album view have checkboxes that reuse the existing selection toolbar (download, delete, move, copy, share). Touch targets work on a phone as well as desktop. Destructive actions still need write (and delete) permission. Non-media files stay hidden in the album grid; switch to List to select those.
+
+### Changed
+- **Stale album rows** — when albums are listed, a leftover row whose folder is confirmed missing on a still-accessible root is deleted (including its manual cover). If the root or share is inaccessible or unmounted, the rows are left alone so a temporarily down volume is not wiped.
+
+### Recap (first shipped in v0.4.30)
+- **Albums** — a folder can be marked as an album (Set as album / Remove album). Opening it uses an album view: nested folders appear as cover tiles, and photos and videos in that folder are shown in a thumbnail grid. The sidebar lists albums you can already access. List and Icons views remain available for other files. Only users who can write the folder can mark or unmark it.
+- **Photo editor** — from the photo preview (album view or the regular preview), you can rotate 90°, flip, crop, and adjust brightness and contrast. Save as copy writes a new file in the same folder; Overwrite moves the original to the Recycle bin first.
+- **Mobile Roots drawer** — on a phone-sized screen, the left Roots pane is hidden until you open it with the Roots button in the top bar.
+- **Photo editor on iOS Safari** — Save as copy, Overwrite, and Cancel stay above Safari’s bottom toolbar and the home indicator.
+
 ## [0.4.30] - 2026-11-27
 
 This release adds albums and an in-browser photo editor.
@@ -426,7 +445,8 @@ This release adds an optional ONLYOFFICE Docs editor and Read only / Read/Write 
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.30...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.31...HEAD
+[0.4.31]: https://github.com/ericleung001/nas-filehub/compare/v0.4.30...v0.4.31
 [0.4.30]: https://github.com/ericleung001/nas-filehub/compare/v0.4.26...v0.4.30
 [0.4.26]: https://github.com/ericleung001/nas-filehub/compare/v0.4.25...v0.4.26
 [0.4.25]: https://github.com/ericleung001/nas-filehub/compare/v0.4.24...v0.4.25

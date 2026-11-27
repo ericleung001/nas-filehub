@@ -1,0 +1,2 @@
+Sample HEIC (ftyp mif1/heic, 41389 bytes) used to test image-kind detection and the browser editor decoder.
+Source: https://cdn.jsdelivr.net/gh/alexcorvi/heic2any@master/demo/1.heic (heic2any MIT-licensed demo).

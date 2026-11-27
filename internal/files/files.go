@@ -58,7 +58,7 @@ func KindOf(name string, isDir bool) string {
 	}
 	ext := strings.ToLower(filepath.Ext(name))
 	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".heic", ".heif":
 		return "image"
 	case ".mp4", ".webm", ".ogg", ".mov", ".mkv", ".m4v":
 		return "video"
@@ -541,11 +541,19 @@ func EntrySize(root, rel string) (int64, error) {
 }
 
 // AlbumCoverRel returns the path, relative to rel, of the cover media for a folder.
-// Cover selection: the most recently modified image or video among direct
-// children of the folder (non-recursive). If none are found, the most recently
-// modified image or video one level down in an immediate subfolder is used
-// (returned as "subdir/file"). Empty string if no media is found.
-func AlbumCoverRel(root, rel string) string {
+// If preferred is a photo or video that still exists under the folder (including
+// in a subfolder), that path is used. Otherwise the automatic rule applies:
+// the most recently modified image or video among direct children of the folder
+// (non-recursive). If none are found, the most recently modified image or video
+// one level down in an immediate subfolder is used (returned as "subdir/file").
+// Empty string if no media is found. A missing preferred file falls back to the
+// automatic cover rather than returning a broken path.
+func AlbumCoverRel(root, rel, preferred string) string {
+	if p := normalizePreferredCover(preferred); p != "" {
+		if mediaExistsUnder(root, rel, p) {
+			return p
+		}
+	}
 	full, err := SafeJoin(root, rel)
 	if err != nil {
 		return ""
@@ -578,6 +586,37 @@ func AlbumCoverRel(root, rel string) string {
 		return ""
 	}
 	return bestRel
+}
+
+func normalizePreferredCover(preferred string) string {
+	preferred = strings.TrimSpace(strings.ReplaceAll(preferred, "\\", "/"))
+	preferred = strings.Trim(preferred, "/")
+	if preferred == "" || preferred == "." {
+		return ""
+	}
+	for _, p := range strings.Split(preferred, "/") {
+		if p == "" || p == "." || p == ".." {
+			return ""
+		}
+	}
+	return preferred
+}
+
+func mediaExistsUnder(root, rel, cover string) bool {
+	joined := cover
+	if rel != "" && rel != "." {
+		joined = filepath.ToSlash(filepath.Join(rel, cover))
+	}
+	full, err := SafeJoin(root, joined)
+	if err != nil {
+		return false
+	}
+	st, err := os.Lstat(full)
+	if err != nil || st.IsDir() || IsInternalDirName(filepath.Base(full)) {
+		return false
+	}
+	k := KindOf(filepath.Base(full), false)
+	return k == "image" || k == "video"
 }
 
 func newestMediaInDir(dir string) (name string, mod time.Time, ok bool) {

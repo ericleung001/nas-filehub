@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"github.com/eric/nas-filehub/internal/db"
 	"github.com/eric/nas-filehub/internal/files"
 )
+
+var errAlbumCover = errors.New("cover must be a photo or video in this album")
 
 type albumView struct {
 	Root      string `json:"root"`
@@ -43,12 +46,17 @@ func (sc *scope) albumKey() (ownerID int64, rootID, path string, ok bool) {
 }
 
 func (s *Server) folderAlbumFlags(sc *scope) (isAlbum, inAlbum bool) {
+	isAlbum, inAlbum, _, _ = s.folderAlbumInfo(sc)
+	return isAlbum, inAlbum
+}
+
+func (s *Server) folderAlbumInfo(sc *scope) (isAlbum, inAlbum bool, albumPath, preferredCover string) {
 	ownerID, rootID, path, ok := sc.albumKey()
 	if !ok {
-		return false, false
+		return false, false, "", ""
 	}
-	if yes, err := s.DB.IsAlbum(ownerID, rootID, path); err == nil && yes {
-		return true, true
+	if a, err := s.DB.GetAlbum(ownerID, rootID, path); err == nil && a != nil {
+		return true, true, path, a.CoverPath
 	}
 	p := path
 	for p != "" {
@@ -57,11 +65,11 @@ func (s *Server) folderAlbumFlags(sc *scope) (isAlbum, inAlbum bool) {
 		} else {
 			p = ""
 		}
-		if yes, err := s.DB.IsAlbum(ownerID, rootID, p); err == nil && yes {
-			return false, true
+		if a, err := s.DB.GetAlbum(ownerID, rootID, p); err == nil && a != nil {
+			return false, true, p, a.CoverPath
 		}
 	}
-	return false, false
+	return false, false, "", ""
 }
 
 func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
@@ -88,16 +96,17 @@ func (s *Server) handleAlbumsList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAlbumSet(w http.ResponseWriter, r *http.Request) {
 	u := s.currentUser(r)
 	var body struct {
-		Root  string `json:"root"`
-		Path  string `json:"path"`
-		Album *bool  `json:"album"`
+		Root  string  `json:"root"`
+		Path  string  `json:"path"`
+		Album *bool   `json:"album"`
+		Cover *string `json:"cover"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, 400, "bad json")
 		return
 	}
-	if body.Album == nil {
-		writeErr(w, 400, "album flag required")
+	if body.Album == nil && body.Cover == nil {
+		writeErr(w, 400, "album flag or cover required")
 		return
 	}
 	if body.Root == "trash" || strings.HasPrefix(body.Root, "trash") {
@@ -140,18 +149,90 @@ func (s *Server) handleAlbumSet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "not a folder")
 		return
 	}
-	if *body.Album {
-		if err := s.DB.SetAlbum(ownerID, rootID, path); err != nil {
-			writeErr(w, 400, err.Error())
-			return
-		}
-	} else {
-		if err := s.DB.DeleteAlbum(ownerID, rootID, path); err != nil {
-			writeErr(w, 400, err.Error())
-			return
+	albumOn := false
+	if a, err := s.DB.GetAlbum(ownerID, rootID, path); err == nil && a != nil {
+		albumOn = true
+	}
+	if body.Album != nil {
+		if *body.Album {
+			if err := s.DB.SetAlbum(ownerID, rootID, path); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			albumOn = true
+		} else {
+			if err := s.DB.DeleteAlbum(ownerID, rootID, path); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+			albumOn = false
 		}
 	}
-	writeJSON(w, 200, map[string]any{"ok": "1", "album": *body.Album, "root": body.Root, "path": db.NormalizeAlbumPath(body.Path)})
+	coverPath := ""
+	manual := false
+	if body.Cover != nil {
+		if !albumOn {
+			writeErr(w, 400, "folder is not an album")
+			return
+		}
+		cover, err := db.NormalizeAlbumCover(*body.Cover)
+		if err != nil {
+			writeErr(w, 400, "invalid cover path")
+			return
+		}
+		if cover != "" {
+			if err := s.validateAlbumCoverFile(sc, cover); err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+		}
+		if err := s.DB.SetAlbumCover(ownerID, rootID, path, cover); err != nil {
+			if err == db.ErrAlbumNotFound {
+				writeErr(w, 400, "folder is not an album")
+				return
+			}
+			writeErr(w, 400, err.Error())
+			return
+		}
+		coverPath = files.AlbumCoverRel(sc.Root, sc.Rel, cover)
+		manual = cover != "" && coverPath == cover
+	} else if albumOn {
+		a, _ := s.DB.GetAlbum(ownerID, rootID, path)
+		pref := ""
+		if a != nil {
+			pref = a.CoverPath
+		}
+		coverPath = files.AlbumCoverRel(sc.Root, sc.Rel, pref)
+		manual = pref != "" && coverPath == pref
+	}
+	out := map[string]any{"ok": "1", "album": albumOn, "root": body.Root, "path": db.NormalizeAlbumPath(body.Path)}
+	if coverPath != "" {
+		out["coverPath"] = clientJoin(db.NormalizeAlbumPath(body.Path), coverPath)
+	}
+	if manual {
+		out["manualCover"] = true
+	}
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) validateAlbumCoverFile(sc *scope, cover string) error {
+	joined := cover
+	if sc.Rel != "" && sc.Rel != "." {
+		joined = filepath.ToSlash(filepath.Join(sc.Rel, cover))
+	}
+	full, err := files.SafeJoin(sc.Root, joined)
+	if err != nil {
+		return errAlbumCover
+	}
+	st, err := os.Lstat(full)
+	if err != nil || st.IsDir() {
+		return errAlbumCover
+	}
+	k := files.KindOf(filepath.Base(full), false)
+	if k != "image" && k != "video" {
+		return errAlbumCover
+	}
+	return nil
 }
 
 func (s *Server) listVisibleAlbums(u *db.User) ([]albumView, error) {
@@ -175,6 +256,9 @@ func (s *Server) listVisibleAlbums(u *db.User) ([]albumView, error) {
 
 	out := make([]albumView, 0)
 	for _, a := range all {
+		if s.maybeDeleteStaleAlbum(u, a) {
+			continue
+		}
 		views := s.clientViewsForAlbum(u, a, incoming, shareOK)
 		for _, v := range views {
 			if s.albumFolderExists(u, v.Root, v.Path) {
@@ -184,6 +268,55 @@ func (s *Server) listVisibleAlbums(u *db.User) ([]albumView, error) {
 		}
 	}
 	return out, nil
+}
+
+// maybeDeleteStaleAlbum removes an album row when this user can inspect the
+// album's canonical storage root, that root is still accessible, and the
+// folder path is confirmed missing on disk. If the root or share is
+// inaccessible or unmounted, the row is left alone.
+func (s *Server) maybeDeleteStaleAlbum(u *db.User, a db.Album) bool {
+	sc, err := s.canonicalAlbumScope(u, a)
+	if err != nil || sc == nil {
+		return false
+	}
+	st, err := os.Stat(sc.Root)
+	if err != nil || !st.IsDir() {
+		return false
+	}
+	full, err := files.SafeJoin(sc.Root, sc.Rel)
+	if err != nil {
+		return false
+	}
+	st, err = os.Lstat(full)
+	if err == nil {
+		if st.IsDir() {
+			return false
+		}
+		// Path exists but is no longer a folder.
+		_ = s.DB.DeleteAlbum(a.OwnerID, a.RootID, a.Path)
+		return true
+	}
+	if os.IsNotExist(err) {
+		_ = s.DB.DeleteAlbum(a.OwnerID, a.RootID, a.Path)
+		return true
+	}
+	return false
+}
+
+func (s *Server) canonicalAlbumScope(u *db.User, a db.Album) (*scope, error) {
+	if u == nil {
+		return nil, nil
+	}
+	if a.RootID == "home" {
+		if a.OwnerID != u.ID {
+			return nil, nil
+		}
+		return s.resolveScope(u, "home", a.Path)
+	}
+	if strings.HasPrefix(a.RootID, "share:") {
+		return s.resolveScope(u, a.RootID, a.Path)
+	}
+	return nil, nil
 }
 
 func (s *Server) clientViewsForAlbum(u *db.User, a db.Album, incoming []db.ItemShare, shareOK map[string]string) []albumView {
@@ -289,15 +422,48 @@ func (s *Server) albumCoverClientPath(u *db.User, rootID, path string) string {
 	if err != nil || sc == nil {
 		return ""
 	}
-	rel := files.AlbumCoverRel(sc.Root, sc.Rel)
+	pref := ""
+	if ownerID, keyRoot, keyPath, ok := sc.albumKey(); ok {
+		if a, err := s.DB.GetAlbum(ownerID, keyRoot, keyPath); err == nil && a != nil {
+			pref = a.CoverPath
+		}
+	}
+	rel := files.AlbumCoverRel(sc.Root, sc.Rel, pref)
 	if rel == "" {
 		return ""
 	}
-	base := db.NormalizeAlbumPath(path)
+	return clientJoin(db.NormalizeAlbumPath(path), rel)
+}
+
+func clientJoin(base, rel string) string {
+	base = db.NormalizeAlbumPath(base)
+	rel = strings.Trim(strings.ReplaceAll(rel, "\\", "/"), "/")
 	if base == "" {
 		return rel
 	}
+	if rel == "" {
+		return base
+	}
 	return base + "/" + rel
+}
+
+func clientAlbumPath(currentOwner, currentClient, albumOwner string) string {
+	currentOwner = db.NormalizeAlbumPath(currentOwner)
+	currentClient = db.NormalizeAlbumPath(currentClient)
+	albumOwner = db.NormalizeAlbumPath(albumOwner)
+	if currentOwner == albumOwner {
+		return currentClient
+	}
+	if albumOwner != "" && strings.HasPrefix(currentOwner, albumOwner+"/") {
+		rest := strings.TrimPrefix(currentOwner, albumOwner+"/")
+		if strings.HasSuffix(currentClient, "/"+rest) {
+			return strings.TrimSuffix(currentClient, "/"+rest)
+		}
+		if currentClient == rest {
+			return ""
+		}
+	}
+	return currentClient
 }
 
 func (s *Server) markDirAlbums(sc *scope, entries []files.Entry, attachCover bool) []files.Entry {
@@ -319,7 +485,11 @@ func (s *Server) markDirAlbums(sc *scope, entries []files.Entry, attachCover boo
 			entries[i].Album = true
 		}
 		if attachCover {
-			cover := files.AlbumCoverRel(sc.Root, childOwnerPath)
+			pref := ""
+			if a, err := s.DB.GetAlbum(ownerID, rootID, childOwnerPath); err == nil && a != nil {
+				pref = a.CoverPath
+			}
+			cover := files.AlbumCoverRel(sc.Root, childOwnerPath, pref)
 			if cover != "" {
 				base := db.NormalizeAlbumPath(entries[i].Path)
 				if base == "" {

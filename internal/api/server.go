@@ -188,6 +188,7 @@ func (s *Server) serveVersionedHTML(w http.ResponseWriter, r *http.Request, name
 	v := url.QueryEscape(version.Version)
 	b = bytes.ReplaceAll(b, []byte(`href="/style.css"`), []byte(`href="/style.css?v=`+v+`"`))
 	b = bytes.ReplaceAll(b, []byte(`src="/photo-adjust.js"`), []byte(`src="/photo-adjust.js?v=`+v+`"`))
+	b = bytes.ReplaceAll(b, []byte(`src="/photo-exif.js"`), []byte(`src="/photo-exif.js?v=`+v+`"`))
 	b = bytes.ReplaceAll(b, []byte(`src="/app.js"`), []byte(`src="/app.js?v=`+v+`"`))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -796,9 +797,24 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	if rootID == "incoming" {
 		entries = rewriteIncomingListEntries(listPath, entries)
 	}
-	isAlbum, inAlbum := s.folderAlbumFlags(sc)
+	isAlbum, inAlbum, ownerAlbumPath, preferredCover := s.folderAlbumInfo(sc)
 	entries = s.markDirAlbums(sc, entries, isAlbum || inAlbum)
-	writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries, "album": isAlbum, "inAlbum": inAlbum})
+	out := map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries, "album": isAlbum, "inAlbum": inAlbum}
+	if inAlbum {
+		albumClient := ownerAlbumPath
+		if rootID == "incoming" {
+			albumClient = clientAlbumPath(sc.Rel, listPath, ownerAlbumPath)
+		}
+		out["albumPath"] = albumClient
+		coverRel := files.AlbumCoverRel(sc.Root, ownerAlbumPath, preferredCover)
+		if coverRel != "" {
+			out["coverPath"] = clientJoin(albumClient, coverRel)
+		}
+		if preferredCover != "" && coverRel == preferredCover {
+			out["manualCover"] = true
+		}
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {

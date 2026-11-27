@@ -65,6 +65,9 @@ const state = {
   ooEditorOpen: false,
   isAlbum: false,
   inAlbum: false,
+  albumPath: '',
+  coverPath: '',
+  manualCover: false,
   albumNav: false,
   albumOffKey: null,
   albums: [],
@@ -1151,6 +1154,9 @@ async function loadList() {
   state.entries = data.entries || [];
   state.isAlbum = !!data.album;
   state.inAlbum = !!data.inAlbum;
+  state.albumPath = data.albumPath || (data.album ? (data.path || state.path || '') : '');
+  state.coverPath = data.coverPath || '';
+  state.manualCover = !!data.manualCover;
   const folderKey = treeKey(state.root, state.path);
   if (state.isAlbum && state.albumOffKey !== folderKey) {
     state.albumNav = true;
@@ -1611,6 +1617,28 @@ function appendEntryActions(container, e, canWrite, compact) {
     };
     extras.push(alb);
   }
+  if (!e.isDir && (e.kind === 'image' || e.kind === 'video') && (state.isAlbum || state.inAlbum) &&
+      entryCanWrite(e, canWrite) && state.root !== 'trash' && !e.searchRoot) {
+    const coverRel = coverRelForAlbumEntry(e);
+    if (coverRel) {
+      const isCover = state.manualCover && sameAlbumMediaPath(state.coverPath, e.path);
+      const cov = document.createElement('button');
+      cov.type = 'button';
+      cov.className = 'ghost';
+      cov.textContent = isCover ? 'Clear cover' : 'Set as cover';
+      cov.title = cov.textContent;
+      cov.setAttribute('aria-label', cov.textContent);
+      cov.onclick = async (ev) => {
+        ev.stopPropagation();
+        try {
+          await setAlbumCover(isCover ? '' : coverRel);
+        } catch (err) {
+          alert(err.message || String(err));
+        }
+      };
+      extras.push(cov);
+    }
+  }
   const allowRename = entryCanWrite(e, canWrite) && state.root !== 'trash' && !e.searchRoot && !isIncomingShareRoot(e);
   if (allowRename) {
     const ren = document.createElement('button');
@@ -1683,6 +1711,50 @@ function markFolderDropTarget(el, folderPath) {
   el.classList.add('is-folder-drop');
 }
 
+function currentAlbumPath() {
+  if (state.albumPath) return String(state.albumPath);
+  if (state.isAlbum) return state.path || '';
+  return '';
+}
+
+function sameAlbumMediaPath(a, b) {
+  a = String(a || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  b = String(b || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  return !!a && a === b;
+}
+
+function coverRelForAlbumEntry(e) {
+  if (!e || e.isDir) return '';
+  if (e.kind !== 'image' && e.kind !== 'video') return '';
+  const albumPath = currentAlbumPath();
+  const entryPath = String(e.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!entryPath) return '';
+  if (!albumPath) return entryPath;
+  const prefix = albumPath + '/';
+  if (entryPath === albumPath) return '';
+  if (!entryPath.startsWith(prefix)) return '';
+  return entryPath.slice(prefix.length);
+}
+
+async function setAlbumCover(coverRel) {
+  const albumPath = currentAlbumPath();
+  await api('/api/albums', {
+    method: 'POST',
+    body: JSON.stringify({ root: state.root, path: albumPath, cover: coverRel }),
+  });
+  await loadRoots();
+  await loadList();
+}
+
+function appendAlbumCardCheck(card, e) {
+  const checkWrap = document.createElement('label');
+  checkWrap.className = 'card-check';
+  checkWrap.onclick = (ev) => ev.stopPropagation();
+  checkWrap.appendChild(makeCheckbox(e));
+  card.appendChild(checkWrap);
+  if (state.selected.has(e.path)) card.classList.add('selected');
+}
+
 function toggleSelect(path, on) {
   if (on) state.selected.add(path);
   else state.selected.delete(path);
@@ -1729,6 +1801,17 @@ function updateBulkBar() {
     sa.checked = total > 0 && n === total;
     sa.indeterminate = n > 0 && n < total;
   }
+  const asa = $('#album-select-all');
+  if (asa && state.entries) {
+    const visible = albumSelectableEntries(state.entries);
+    const selectedVisible = visible.filter((e) => state.selected.has(e.path)).length;
+    asa.checked = visible.length > 0 && selectedVisible === visible.length;
+    asa.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+  }
+}
+
+function albumSelectableEntries(entries) {
+  return (entries || []).filter((e) => e.isDir || e.kind === 'image' || e.kind === 'video');
 }
 
 function makeCheckbox(e) {
@@ -1755,9 +1838,20 @@ function appendMediaThumb(thumb, e, path) {
   img.alt = e.name || '';
   img.src = thumbUrl(path, e);
   img.onerror = () => {
+    if (!img.dataset.heicTried && looksLikeHeicName(e && e.name ? e.name : path)) {
+      img.dataset.heicTried = '1';
+      resolveHeicObjectURL(state.root, path, e && e.modTime).then((url) => {
+        if (url) img.src = url;
+        else fallbackThumb();
+      }).catch(fallbackThumb);
+      return;
+    }
+    fallbackThumb();
+  };
+  function fallbackThumb() {
     img.remove();
     if (!thumb.querySelector('img')) thumb.textContent = entryIcon(e);
-  };
+  }
   thumb.appendChild(img);
   if (e.kind === 'video') {
     const badge = document.createElement('span');
@@ -1816,6 +1910,28 @@ function renderAlbumView(entries, canWrite) {
     return;
   }
 
+  const selectable = folders.concat(media);
+  if (selectable.length) {
+    const bar = document.createElement('div');
+    bar.className = 'album-select-bar';
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'album-select-all';
+    cb.title = 'Select all';
+    cb.setAttribute('aria-label', 'Select all');
+    cb.onclick = (ev) => ev.stopPropagation();
+    cb.onchange = () => {
+      const on = cb.checked;
+      for (const e of selectable) toggleSelect(e.path, on);
+      renderAlbumView(state.entries || entries, canWrite);
+    };
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(' Select all'));
+    bar.appendChild(lab);
+    box.appendChild(bar);
+  }
+
   if (folders.length) {
     const h = document.createElement('h3');
     h.className = 'album-section-title';
@@ -1828,6 +1944,7 @@ function renderAlbumView(entries, canWrite) {
       tile.className = 'album-tile';
       tile.title = e.name;
       if (e.isDir) markFolderDropTarget(tile, e.path);
+      appendAlbumCardCheck(tile, e);
       const thumb = document.createElement('div');
       thumb.className = 'thumb';
       if (e.coverPath) {
@@ -1868,12 +1985,19 @@ function renderAlbumView(entries, canWrite) {
       const card = document.createElement('div');
       card.className = 'album-media-card' + (state.selected.has(e.path) ? ' selected' : '');
       card.title = e.name;
+      appendAlbumCardCheck(card, e);
       const thumb = document.createElement('div');
       thumb.className = 'thumb';
       appendMediaThumb(thumb, e, e.path);
       const name = document.createElement('div');
       name.className = 'tile-name';
       name.textContent = e.name;
+      if (state.manualCover && sameAlbumMediaPath(state.coverPath, e.path)) {
+        const badge = document.createElement('span');
+        badge.className = 'cover-badge';
+        badge.textContent = 'Cover';
+        name.appendChild(badge);
+      }
       const actions = document.createElement('div');
       actions.className = 'tile-actions';
       actions.onclick = (ev) => ev.stopPropagation();
@@ -1941,21 +2065,7 @@ function renderEntries(entries, canWrite) {
       const thumb = document.createElement('div');
       thumb.className = 'thumb';
       if (!e.isDir && (e.kind === 'image' || e.kind === 'video')) {
-        const img = document.createElement('img');
-        img.loading = 'lazy';
-        img.alt = e.name;
-        img.src = thumbUrl(e.path, e);
-        img.onerror = () => {
-          img.remove();
-          thumb.textContent = entryIcon(e);
-        };
-        thumb.appendChild(img);
-        if (e.kind === 'video') {
-          const badge = document.createElement('span');
-          badge.className = 'play-badge';
-          badge.textContent = '▶';
-          thumb.appendChild(badge);
-        }
+        appendMediaThumb(thumb, e, e.path);
       } else {
         thumb.textContent = entryIcon(e);
       }
@@ -2057,6 +2167,14 @@ function openPreview(e, opts) {
     const img = document.createElement('img');
     img.src = url;
     img.alt = e.name;
+    img.onerror = () => {
+      if (img.dataset.heicTried) return;
+      img.dataset.heicTried = '1';
+      if (!looksLikeHeicName(e.name)) return;
+      resolveHeicObjectURL(state.root, e.path, (opts && opts.cacheBust) || e.modTime).then((u) => {
+        if (u) img.src = u;
+      }).catch(() => { /* leave the broken image */ });
+    };
     body.appendChild(img);
     if (toolbar) toolbar.hidden = false;
     dlg.classList.add('preview-has-edit');
@@ -2177,9 +2295,6 @@ function photoEditBlockReason(name, bytes, type) {
   if (looksLikeSvg(bytes, name, type)) {
     return 'SVG images cannot be edited (the file would be rasterized).';
   }
-  if (isHeicLike(bytes, name, type)) {
-    return 'HEIC/HEIF photos cannot be edited in the browser.';
-  }
   if (isAnimatedGif(bytes)) {
     return 'Animated GIFs cannot be edited without flattening the animation.';
   }
@@ -2191,7 +2306,111 @@ function photoEditorExportSpec(name) {
   if (ext === 'jpg' || ext === 'jpeg') return { mime: 'image/jpeg', quality: 0.92, ext: '.' + ext, converted: false };
   if (ext === 'png') return { mime: 'image/png', quality: undefined, ext: '.png', converted: false };
   if (ext === 'webp') return { mime: 'image/webp', quality: 0.92, ext: '.webp', converted: false };
+  if (ext === 'heic' || ext === 'heif') return { mime: 'image/jpeg', quality: 0.92, ext: '.jpg', converted: true, fromHeic: true };
   return { mime: 'image/png', quality: undefined, ext: '.png', converted: true };
+}
+
+function looksLikeHeicName(name) {
+  const ext = fileExt(name);
+  return ext === 'heic' || ext === 'heif';
+}
+
+let heicToModulePromise = null;
+const heicObjectURLCache = new Map();
+
+function loadHeicTo() {
+  if (!heicToModulePromise) {
+    const v = filehubAssetVersion();
+    const q = v ? ('?v=' + encodeURIComponent(v)) : '';
+    heicToModulePromise = import('/vendor/heic-to/heic-to.min.js' + q).catch((err) => {
+      heicToModulePromise = null;
+      throw err;
+    });
+  }
+  return heicToModulePromise;
+}
+
+async function decodeHeicToJpegBlob(blob) {
+  let mod;
+  try {
+    mod = await loadHeicTo();
+  } catch (err) {
+    throw new Error('Could not load the HEIC decoder. The original file was not changed.');
+  }
+  if (!mod || typeof mod.heicTo !== 'function') {
+    throw new Error('HEIC decoder is not available in this browser. The original file was not changed.');
+  }
+  try {
+    return await mod.heicTo({ blob, type: 'image/jpeg', quality: 0.92 });
+  } catch (err) {
+    throw new Error('Could not decode this HEIC/HEIF photo. The original file was not changed.');
+  }
+}
+
+async function decodePhotoBlob(blob, name, type, bytes) {
+  try {
+    return await decodeImageBlob(blob);
+  } catch (nativeErr) {
+    if (isHeicLike(bytes, name, type)) {
+      const jpeg = await decodeHeicToJpegBlob(blob);
+      return await decodeImageBlob(jpeg);
+    }
+    throw nativeErr;
+  }
+}
+
+async function resolveHeicObjectURL(root, path, bust) {
+  const key = String(root) + '\0' + String(path) + '\0' + String(bust || '');
+  if (heicObjectURLCache.has(key)) return heicObjectURLCache.get(key);
+  const pending = (async () => {
+    const url = `/api/raw?root=${encodeURIComponent(root)}&path=${encodeURIComponent(path)}`;
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Could not load this photo');
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > PHOTO_EDIT_MAX_BYTES) {
+      throw new Error('This photo is too large to decode in the browser (max 80 MiB).');
+    }
+    const blob = new Blob([buf], { type: 'image/heic' });
+    const jpeg = await decodeHeicToJpegBlob(blob);
+    return URL.createObjectURL(jpeg);
+  })();
+  heicObjectURLCache.set(key, pending);
+  try {
+    return await pending;
+  } catch (err) {
+    heicObjectURLCache.delete(key);
+    throw err;
+  }
+}
+
+function syncKeepExifOption() {
+  const cb = $('#photo-editor-keep-exif');
+  const hint = $('#photo-editor-exif-hint');
+  const supported = !!(photoEditor.spec && window.FilehubPhotoExif && FilehubPhotoExif.supports(photoEditor.spec.mime));
+  if (cb) {
+    if (!cb.dataset.bound) {
+      cb.dataset.bound = '1';
+      cb.addEventListener('change', () => { cb.dataset.userSet = '1'; });
+    }
+    cb.disabled = !supported;
+    if (!supported) cb.checked = false;
+    else if (cb.dataset.userSet !== '1') cb.checked = true;
+  }
+  if (hint) {
+    if (!supported) {
+      hint.hidden = false;
+      hint.textContent = 'This format cannot store EXIF, so metadata will not be copied.';
+    } else {
+      hint.hidden = true;
+      hint.textContent = '';
+    }
+  }
+}
+
+function shouldKeepExif() {
+  const cb = $('#photo-editor-keep-exif');
+  if (!cb || !cb.checked || cb.disabled) return false;
+  return !!(photoEditor.spec && window.FilehubPhotoExif && FilehubPhotoExif.supports(photoEditor.spec.mime));
 }
 
 function editedPhotoName(name, exportExt) {
@@ -2199,6 +2418,13 @@ function editedPhotoName(name, exportExt) {
   const dot = base.lastIndexOf('.');
   const stem = dot > 0 ? base.slice(0, dot) : base;
   return stem + '-edited' + exportExt;
+}
+
+function heicJpegName(name) {
+  const base = String(name || 'photo');
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  return stem + '.jpg';
 }
 
 function cloneCanvas(src) {
@@ -2483,6 +2709,8 @@ function finishPhotoEditorClose() {
   photoEditor.original = null;
   photoEditor.working = null;
   photoEditor.spec = null;
+  photoEditor.sourceBytes = null;
+  photoEditor.sourceType = '';
   photoEditor.saving = false;
   photoEditor._reopen = true;
   photoEditor._savedBust = null;
@@ -2510,11 +2738,23 @@ async function exportEditedPhotoBlob() {
     }
     FilehubPhotoAdjust.applyBrightnessContrastToCanvas(out, b, c);
   }
-  const blob = await new Promise((resolve, reject) => {
+  let blob = await new Promise((resolve, reject) => {
     const done = (v) => { if (v) resolve(v); else reject(new Error('Could not encode the edited photo')); };
     if (spec.quality == null) out.toBlob(done, spec.mime);
     else out.toBlob(done, spec.mime, spec.quality);
   });
+  if (shouldKeepExif() && photoEditor.sourceBytes && window.FilehubPhotoExif) {
+    const raw = new Uint8Array(await blob.arrayBuffer());
+    const mixed = FilehubPhotoExif.embed(raw, photoEditor.sourceBytes, {
+      mime: spec.mime,
+      width: out.width,
+      height: out.height,
+      sourceHint: photoEditor.sourceType || (photoEditor.entry && photoEditor.entry.name) || '',
+    });
+    if (mixed && mixed.length) {
+      blob = new Blob([mixed], { type: spec.mime });
+    }
+  }
   return blob;
 }
 
@@ -2527,13 +2767,18 @@ async function saveEditedPhoto(mode) {
     return;
   }
   if (mode === 'overwrite' && !photoEditor.canOverwrite) {
-    setPhotoEditorMessage('error', photoEditor.spec && photoEditor.spec.converted
-      ? 'Overwrite is only available when the photo can be saved in its original format. Use Save as copy to write a PNG.'
-      : 'Overwrite requires delete permission (the original is moved to the Recycle bin).');
+    setPhotoEditorMessage('error', photoEditor.spec && photoEditor.spec.fromHeic
+      ? 'Overwrite requires delete permission (the original HEIC is moved to the Recycle bin and saved as JPEG).'
+      : (photoEditor.spec && photoEditor.spec.converted
+        ? 'Overwrite is only available when the photo can be saved in its original format. Use Save as copy to write a PNG.'
+        : 'Overwrite requires delete permission (the original is moved to the Recycle bin).'));
     return;
   }
   if (mode === 'overwrite') {
-    const ok = confirm('Overwrite the original? The current file will be moved to the Recycle bin.');
+    const msg = photoEditor.spec && photoEditor.spec.fromHeic
+      ? 'Overwrite the original? The HEIC file will be moved to the Recycle bin and saved as JPEG (HEIC cannot be written in the browser).'
+      : 'Overwrite the original? The current file will be moved to the Recycle bin.';
+    const ok = confirm(msg);
     if (!ok) return;
   }
   photoEditor.saving = true;
@@ -2543,11 +2788,24 @@ async function saveEditedPhoto(mode) {
   try {
     const blob = await exportEditedPhotoBlob();
     const folder = dirnamePath(entry.path);
-    const filename = mode === 'overwrite' ? entry.name : editedPhotoName(entry.name, photoEditor.spec.ext);
-    const conflict = mode === 'overwrite' ? 'overwrite' : 'rename';
-    const file = new File([blob], filename, { type: blob.type || photoEditor.spec.mime });
-    const data = await uploadOneFile(file, folder, null, conflict);
-    const savedName = (data && data.name) || filename;
+    let data;
+    if (mode === 'overwrite' && photoEditor.spec && photoEditor.spec.fromHeic) {
+      const jpegName = heicJpegName(entry.name);
+      const exists = (state.entries || []).some((item) => item && !item.isDir && item.name === jpegName);
+      const file = new File([blob], jpegName, { type: 'image/jpeg' });
+      data = await uploadOneFile(file, folder, null, exists ? 'rename' : 'overwrite');
+      try {
+        await api('/api/delete', { method: 'POST', body: JSON.stringify({ root: state.root, path: entry.path }) });
+      } catch (err) {
+        setPhotoEditorMessage('status', 'Saved as JPEG, but the original HEIC could not be moved to the Recycle bin: ' + (err.message || String(err)));
+      }
+    } else {
+      const filename = mode === 'overwrite' ? entry.name : editedPhotoName(entry.name, photoEditor.spec.ext);
+      const conflict = mode === 'overwrite' ? 'overwrite' : 'rename';
+      const file = new File([blob], filename, { type: blob.type || photoEditor.spec.mime });
+      data = await uploadOneFile(file, folder, null, conflict);
+    }
+    const savedName = (data && data.name) || (mode === 'overwrite' && photoEditor.spec.fromHeic ? heicJpegName(entry.name) : (mode === 'overwrite' ? entry.name : editedPhotoName(entry.name, photoEditor.spec.ext)));
     const savedPath = (data && data.path) || (folder ? folder + '/' + savedName : savedName);
     try { await loadList(); } catch { /* ignore */ }
     const next = (state.entries || []).find((item) => item.path === savedPath) || {
@@ -2582,8 +2840,11 @@ async function openPhotoEditor(e) {
   photoEditor._savedBust = null;
   photoEditor.entry = e;
   photoEditor.spec = photoEditorExportSpec(e.name);
+  photoEditor.sourceBytes = null;
+  photoEditor.sourceType = '';
   photoEditor.canWrite = entryCanWrite(e, state.perm === 'write') && state.root !== 'trash';
-  photoEditor.canOverwrite = photoEditor.canWrite && !!state.canDelete && !photoEditor.spec.converted;
+  photoEditor.canOverwrite = photoEditor.canWrite && !!state.canDelete && (!photoEditor.spec.converted || !!photoEditor.spec.fromHeic);
+  syncKeepExifOption();
   const nameEl = $('#photo-editor-filename');
   if (nameEl) nameEl.textContent = e.name;
   const preview = $('#preview');
@@ -2607,7 +2868,9 @@ async function openPhotoEditor(e) {
     const blocked = photoEditBlockReason(e.name, bytes, type);
     if (blocked) throw new Error(blocked);
     const blob = new Blob([buf], { type: type || 'application/octet-stream' });
-    const img = await decodeImageBlob(blob);
+    photoEditor.sourceBytes = bytes;
+    photoEditor.sourceType = type || e.name || '';
+    const img = await decodePhotoBlob(blob, e.name, type, bytes);
     const pixels = (img.naturalWidth || img.width) * (img.naturalHeight || img.height);
     if (pixels > PHOTO_EDIT_MAX_PIXELS) {
       throw new Error('This photo is too large to edit in the browser (max 40 megapixels).');
@@ -2617,12 +2880,15 @@ async function openPhotoEditor(e) {
     photoEditorToolsDisabled(false);
     resetPhotoEditorAdjustments(false);
     let note = '';
+    if (photoEditor.spec && photoEditor.spec.fromHeic) {
+      note = 'This HEIC photo will be saved as JPEG.';
+    }
     if (!photoEditor.canWrite) {
-      note = 'You need write permission to save.';
-    } else if (photoEditor.spec.converted) {
-      note = 'This format will be saved as a PNG copy.';
+      note = (note ? note + ' ' : '') + 'You need write permission to save.';
+    } else if (photoEditor.spec.converted && !photoEditor.spec.fromHeic) {
+      note = (note ? note + ' ' : '') + 'This format will be saved as a PNG copy.';
     } else if (!photoEditor.canOverwrite) {
-      note = 'Overwrite requires delete permission (the original is moved to the Recycle bin). You can still save a copy.';
+      note = (note ? note + ' ' : '') + 'Overwrite requires delete permission (the original is moved to the Recycle bin). You can still save a copy.';
     }
     if (note) setPhotoEditorMessage('status', note);
     else setPhotoEditorMessage('', '');
