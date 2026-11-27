@@ -25,7 +25,19 @@ func (g *Generator) cacheKey(src string) string {
 }
 
 func (g *Generator) PathFor(src string) string {
+	if g == nil {
+		return ""
+	}
 	return filepath.Join(g.CacheDir, g.cacheKey(src))
+}
+
+// Invalidate removes a cached thumbnail for src so the next Get regenerates it.
+// Safe to call when the generator is nil or disabled, or when no cache file exists.
+func (g *Generator) Invalidate(src string) {
+	if g == nil || !g.Enable || src == "" || g.CacheDir == "" {
+		return
+	}
+	_ = os.Remove(g.PathFor(src))
 }
 
 // Get returns path to a JPEG thumbnail, generating if needed.

@@ -11,13 +11,15 @@ import (
 )
 
 type Entry struct {
-	Name    string    `json:"name"`
-	Path    string    `json:"path"` // relative within scope
-	IsDir   bool      `json:"isDir"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"modTime"`
-	Ext     string    `json:"ext"`
-	Kind    string    `json:"kind"` // dir|image|video|pdf|office|other
+	Name      string    `json:"name"`
+	Path      string    `json:"path"` // relative within scope
+	IsDir     bool      `json:"isDir"`
+	Size      int64     `json:"size"`
+	ModTime   time.Time `json:"modTime"`
+	Ext       string    `json:"ext"`
+	Kind      string    `json:"kind"` // dir|image|video|pdf|office|other
+	Album     bool      `json:"album,omitempty"`
+	CoverPath string    `json:"coverPath,omitempty"`
 }
 
 func SafeJoin(root, rel string) (string, error) {
@@ -536,4 +538,71 @@ func copyDir(src, dst string) error {
 // EntrySize returns size of a file, or recursive dir size for quota checks.
 func EntrySize(root, rel string) (int64, error) {
 	return DirSize(root, rel)
+}
+
+// AlbumCoverRel returns the path, relative to rel, of the cover media for a folder.
+// Cover selection: the most recently modified image or video among direct
+// children of the folder (non-recursive). If none are found, the most recently
+// modified image or video one level down in an immediate subfolder is used
+// (returned as "subdir/file"). Empty string if no media is found.
+func AlbumCoverRel(root, rel string) string {
+	full, err := SafeJoin(root, rel)
+	if err != nil {
+		return ""
+	}
+	if name, _, ok := newestMediaInDir(full); ok {
+		return name
+	}
+	entries, err := os.ReadDir(full)
+	if err != nil {
+		return ""
+	}
+	var bestRel string
+	var bestT time.Time
+	found := false
+	for _, e := range entries {
+		if !e.IsDir() || IsInternalDirName(e.Name()) {
+			continue
+		}
+		name, mt, ok := newestMediaInDir(filepath.Join(full, e.Name()))
+		if !ok {
+			continue
+		}
+		if !found || mt.After(bestT) {
+			found = true
+			bestT = mt
+			bestRel = filepath.ToSlash(filepath.Join(e.Name(), name))
+		}
+	}
+	if !found {
+		return ""
+	}
+	return bestRel
+}
+
+func newestMediaInDir(dir string) (name string, mod time.Time, ok bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	for _, e := range entries {
+		if e.IsDir() || IsInternalDirName(e.Name()) {
+			continue
+		}
+		k := KindOf(e.Name(), false)
+		if k != "image" && k != "video" {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		mt := info.ModTime()
+		if !ok || mt.After(mod) {
+			name = e.Name()
+			mod = mt
+			ok = true
+		}
+	}
+	return name, mod, ok
 }

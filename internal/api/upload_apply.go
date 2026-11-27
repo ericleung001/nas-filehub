@@ -178,8 +178,12 @@ func (s *Server) applyUploadedFile(u *db.User, sc *scope, rootID, filename strin
 }
 
 func (s *Server) commitStaging(u *db.User, sc *scope, rootID, origName, chosen string, overwrite bool, stagingID string) error {
+	var overwrittenAbs string
 	if overwrite {
 		existing := joinDest(sc.Rel, origName)
+		if full, err := files.SafeJoin(sc.Root, existing); err == nil {
+			overwrittenAbs = full
+		}
 		if err := s.trashDelete(u, sc, existing, rootID); err != nil {
 			return err
 		}
@@ -198,5 +202,8 @@ func (s *Server) commitStaging(u *db.User, sc *scope, rootID, origName, chosen s
 	}
 	s.removeStaging(stagingID)
 	s.attributeWrite(u, sc, destRel)
+	if overwrittenAbs != "" && s.Thumbs != nil {
+		s.Thumbs.Invalidate(overwrittenAbs)
+	}
 	return nil
 }

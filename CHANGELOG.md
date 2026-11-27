@@ -8,6 +8,20 @@ where version tags are used.
 
 ## [Unreleased]
 
+## [0.4.30] - 2026-11-27
+
+This release adds albums and an in-browser photo editor.
+
+### Added
+- **Albums** — a folder can be marked as an album (Set as album / Remove album from the folder actions or the toolbar). Opening it uses an album view: nested folders appear as cover tiles, and photos and videos in that folder are shown in a thumbnail grid. Subfolders stay in the album view so a folder-in-folder layout can organize pictures. Non-media files are hidden in the album grid but remain available in List and Icons view. The sidebar lists albums you can already access (including Shared with me). Only users who can write the folder can mark or unmark it. Recycle bin folders cannot be marked. Cover image: the most recently modified image or video in the folder itself, or, if none, one level down in an immediate subfolder.
+- **Photo editor** — from the photo preview (album view or the regular preview), Edit opens a simple in-browser editor: rotate 90°, flip horizontal or vertical, crop, and brightness / contrast. Save as copy writes a new file in the same folder (for example `photo-edited.jpg`, with `_1`, `_2`, … if that name is taken). Overwrite moves the original to the Recycle bin first. Only users who can write the folder can save; overwrite also needs delete permission. JPEG, PNG, and WebP stay in format; BMP and still GIFs are saved as a PNG copy. Animated GIFs, HEIC/HEIF, and SVG are refused with a clear message rather than being corrupted. Brightness and contrast are baked into the saved pixels so the preview matches the file, including on iOS Safari.
+
+### Changed
+- **Mobile sidebar** — on a narrow screen, the left Roots pane (including Albums, Storage, and Buy me a coffee) is hidden until you open it with the **Roots** button in the top bar. You can close it with Close, the backdrop, Escape, or by choosing a root or album. The file list stays visible. Desktop layout is unchanged.
+
+### Fixed
+- **Photo editor on iOS Safari** — the editor’s Save as copy, Overwrite, and Cancel row stays above Safari’s bottom toolbar and the home indicator. The dialog is sized to the visible viewport (`svh`/`dvh` and the visual viewport) instead of `100vh`, with a sticky action footer padded by `env(safe-area-inset-bottom)`.
+
 ## [0.4.26] - 2026-11-20
 
 ## [0.4.25] - 2026-11-20
@@ -412,7 +426,8 @@ This release adds an optional ONLYOFFICE Docs editor and Read only / Read/Write 
 - Security defaults: bcrypt, HttpOnly sessions, login rate limit, path traversal guards, non-root container
 - Env-based config (`LISTEN_ADDR`, `DATA_ROOT`, `DB_PATH`, admin seed, thumbs, upload limits)
 
-[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.26...HEAD
+[Unreleased]: https://github.com/ericleung001/nas-filehub/compare/v0.4.30...HEAD
+[0.4.30]: https://github.com/ericleung001/nas-filehub/compare/v0.4.26...v0.4.30
 [0.4.26]: https://github.com/ericleung001/nas-filehub/compare/v0.4.25...v0.4.26
 [0.4.25]: https://github.com/ericleung001/nas-filehub/compare/v0.4.24...v0.4.25
 [0.4.24]: https://github.com/ericleung001/nas-filehub/compare/v0.4.16...v0.4.24

@@ -63,6 +63,11 @@ const state = {
   resetToken: null,
   onlyofficeReady: false,
   ooEditorOpen: false,
+  isAlbum: false,
+  inAlbum: false,
+  albumNav: false,
+  albumOffKey: null,
+  albums: [],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -107,6 +112,7 @@ function show(view) {
   if (reset) reset.hidden = view !== 'reset';
   const pub = $('#public-share-view');
   if (pub) pub.hidden = view !== 'public';
+  if (view !== 'main') closeMobileSidebar();
   if (view !== 'settings' && view !== 'main' && view !== 'public') stopPreviewMedia();
   if (view !== 'public') clearPublicInlinePreview();
   if (view !== 'settings') stopSystemStatusPoll();
@@ -792,6 +798,71 @@ $('#change-password').addEventListener('submit', async (e) => {
   }
 });
 
+const SIDEBAR_MQ = window.matchMedia ? window.matchMedia('(max-width: 800px)') : null;
+
+function syncMainTopbarHeight() {
+  const bar = document.querySelector('#main-view > .topbar');
+  const h = bar ? Math.round(bar.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--main-topbar-height', (h || 56) + 'px');
+}
+
+function isMobileSidebar() {
+  return !!(SIDEBAR_MQ && SIDEBAR_MQ.matches);
+}
+
+function setMobileSidebarOpen(open) {
+  const want = !!(open && isMobileSidebar());
+  document.body.classList.toggle('sidebar-open', want);
+  syncMainTopbarHeight();
+  const btn = $('#btn-sidebar');
+  if (btn) {
+    btn.setAttribute('aria-expanded', want ? 'true' : 'false');
+    btn.title = want ? 'Close roots' : 'Open roots';
+    btn.setAttribute('aria-label', btn.title);
+  }
+}
+
+function closeMobileSidebar() {
+  if (document.body.classList.contains('sidebar-open')) setMobileSidebarOpen(false);
+}
+
+function toggleMobileSidebar() {
+  setMobileSidebarOpen(!document.body.classList.contains('sidebar-open'));
+}
+
+(function setupMobileSidebar() {
+  const btn = $('#btn-sidebar');
+  const closeBtn = $('#btn-sidebar-close');
+  const backdrop = $('#sidebar-backdrop');
+  btn?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    toggleMobileSidebar();
+  });
+  closeBtn?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeMobileSidebar();
+  });
+  backdrop?.addEventListener('click', () => closeMobileSidebar());
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+      ev.preventDefault();
+      closeMobileSidebar();
+    }
+  });
+  const onViewport = () => {
+    syncMainTopbarHeight();
+    if (!isMobileSidebar()) setMobileSidebarOpen(false);
+  };
+  if (SIDEBAR_MQ) {
+    if (SIDEBAR_MQ.addEventListener) SIDEBAR_MQ.addEventListener('change', onViewport);
+    else if (SIDEBAR_MQ.addListener) SIDEBAR_MQ.addListener(onViewport);
+  }
+  window.addEventListener('resize', syncMainTopbarHeight);
+  syncMainTopbarHeight();
+})();
+
 async function loadRoots() {
   const data = await api('/api/roots');
   state.roots = data.roots;
@@ -801,6 +872,52 @@ async function loadRoots() {
   for (const r of data.roots) {
     const suffix = (r.id === 'incoming') ? '' : (r.perm === 'read' ? ' (ro)' : '');
     const li = await renderTreeNode(r, '', r.name + suffix, 0);
+    ul.appendChild(li);
+  }
+  await loadAlbums();
+}
+
+async function loadAlbums() {
+  try {
+    const data = await api('/api/albums');
+    state.albums = data.albums || [];
+  } catch {
+    state.albums = [];
+  }
+  renderAlbumList();
+}
+
+function albumLabel(a) {
+  return (a && (a.name || a.path)) || 'Album';
+}
+
+function renderAlbumList() {
+  const ul = $('#album-list');
+  const empty = $('#album-empty');
+  if (!ul) return;
+  ul.innerHTML = '';
+  const list = state.albums || [];
+  if (empty) empty.hidden = list.length > 0;
+  for (const a of list) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'album-nav-item';
+    b.textContent = albumLabel(a);
+    const root = (state.roots || []).find((r) => r.id === a.root);
+    const rootName = (root && root.name) || a.root || '';
+    b.title = rootName ? (rootName + ' / ' + (a.path || albumLabel(a))) : albumLabel(a);
+    if (state.root === a.root && (state.path || '') === (a.path || '')) b.classList.add('active');
+    b.onclick = async () => {
+      state.root = a.root;
+      state.path = a.path || '';
+      state.albumNav = true;
+      state.albumOffKey = null;
+      closeMobileSidebar();
+      await loadRoots();
+      await loadList();
+    };
+    li.appendChild(b);
     ul.appendChild(li);
   }
 }
@@ -840,6 +957,7 @@ async function renderTreeNode(root, path, label, depth) {
     state.root = root.id;
     state.path = path || '';
     state.treeExpanded.add(key);
+    closeMobileSidebar();
     try { await fetchTreeDirs(root.id, path); } catch { /* ignore */ }
     await loadRoots();
     await loadList();
@@ -1031,6 +1149,17 @@ async function loadList() {
   const trashBar = $('#trash-actions');
   if (trashBar) trashBar.hidden = !inTrash;
   state.entries = data.entries || [];
+  state.isAlbum = !!data.album;
+  state.inAlbum = !!data.inAlbum;
+  const folderKey = treeKey(state.root, state.path);
+  if (state.isAlbum && state.albumOffKey !== folderKey) {
+    state.albumNav = true;
+  }
+  if ((state.isAlbum || state.inAlbum) && state.albumNav && !state.searchQuery) {
+    state.viewMode = 'album';
+  } else if (state.viewMode === 'album') {
+    state.viewMode = (localStorage.getItem('filehub-view') === 'icons' ? 'icons' : 'list');
+  }
   if (state.root === 'incoming' && !(state.path || '')) {
     state.incomingNames = {};
     for (const e of state.entries) {
@@ -1041,6 +1170,7 @@ async function loadList() {
   state.selected.clear();
   applyViewMode();
   applySortControls();
+  updateFolderAlbumButton();
   renderEntries(sortEntries(state.entries), canWrite && !inTrash);
   updateBulkBar();
 }
@@ -1061,7 +1191,13 @@ async function runFileSearch(q, updateInput) {
   }));
   state.perm = 'read';
   state.canDelete = false;
+  state.isAlbum = false;
+  state.inAlbum = false;
+  if (state.viewMode === 'album') {
+    state.viewMode = (localStorage.getItem('filehub-view') === 'icons' ? 'icons' : 'list');
+  }
   setCreateActionsVisible(false);
+  updateFolderAlbumButton();
   renderBreadcrumbs();
   const nav = $('#breadcrumbs');
   if (nav) {
@@ -1081,26 +1217,51 @@ async function runFileSearch(q, updateInput) {
 function applyViewMode() {
   const listBtn = $('#btn-view-list');
   const iconsBtn = $('#btn-view-icons');
+  const albumBtn = $('#btn-view-album');
   const table = $('#files-table');
   const grid = $('#files-grid');
+  const albumView = $('#album-view');
+  const isAlbum = state.viewMode === 'album';
   const isIcons = state.viewMode === 'icons';
-  listBtn.classList.toggle('active', !isIcons);
+  listBtn.classList.toggle('active', !isIcons && !isAlbum);
   iconsBtn.classList.toggle('active', isIcons);
-  listBtn.setAttribute('aria-pressed', !isIcons ? 'true' : 'false');
+  listBtn.setAttribute('aria-pressed', (!isIcons && !isAlbum) ? 'true' : 'false');
   iconsBtn.setAttribute('aria-pressed', isIcons ? 'true' : 'false');
-  table.hidden = isIcons;
-  grid.hidden = !isIcons;
+  if (albumBtn) {
+    const show = !!(state.isAlbum || state.inAlbum) && !state.searchQuery;
+    albumBtn.hidden = !show;
+    albumBtn.classList.toggle('active', isAlbum);
+    albumBtn.setAttribute('aria-pressed', isAlbum ? 'true' : 'false');
+  }
+  table.hidden = isIcons || isAlbum;
+  grid.hidden = !isIcons || isAlbum;
+  if (albumView) albumView.hidden = !isAlbum;
 }
 
 function setViewMode(mode) {
-  state.viewMode = mode === 'icons' ? 'icons' : 'list';
-  try { localStorage.setItem('filehub-view', state.viewMode); } catch { /* ignore */ }
+  if (mode === 'album') {
+    state.albumNav = true;
+    state.albumOffKey = null;
+    state.viewMode = 'album';
+  } else {
+    if (state.isAlbum || state.inAlbum) {
+      state.albumNav = false;
+      state.albumOffKey = treeKey(state.root, state.path);
+    }
+    state.viewMode = mode === 'icons' ? 'icons' : 'list';
+    try { localStorage.setItem('filehub-view', state.viewMode); } catch { /* ignore */ }
+  }
   applyViewMode();
-  loadList().catch((err) => console.error(err));
+  if (state.entries) {
+    renderEntries(sortEntries(state.entries), state.perm === 'write' && state.root !== 'trash');
+  } else {
+    loadList().catch((err) => console.error(err));
+  }
 }
 
 $('#btn-view-list').addEventListener('click', () => setViewMode('list'));
 $('#btn-view-icons').addEventListener('click', () => setViewMode('icons'));
+$('#btn-view-album')?.addEventListener('click', () => setViewMode('album'));
 
 $('#sort-by').addEventListener('change', (ev) => {
   setSort(ev.target.value, state.sortDir);
@@ -1339,6 +1500,10 @@ async function openEntry(e) {
     return;
   }
   if (e.isDir) {
+    if (e.album) {
+      state.albumNav = true;
+      state.albumOffKey = null;
+    }
     state.path = e.path;
     const parts = e.path.split('/');
     let acc = '';
@@ -1421,6 +1586,30 @@ function appendEntryActions(container, e, canWrite, compact) {
       openShareDialog({ path: e.path, isDir: e.isDir, name: e.name });
     };
     extras.push(share);
+  }
+  if (e.isDir && entryCanWrite(e, canWrite) && state.root !== 'trash' && !e.searchRoot) {
+    const alb = document.createElement('button');
+    alb.type = 'button';
+    alb.className = 'ghost';
+    alb.textContent = e.album ? 'Remove album' : 'Set as album';
+    alb.title = alb.textContent;
+    alb.setAttribute('aria-label', alb.textContent);
+    alb.onclick = async (ev) => {
+      ev.stopPropagation();
+      try {
+        await api('/api/albums', { method: 'POST', body: JSON.stringify({ root: itemRoot, path: e.path, album: !e.album }) });
+        if (!e.album) {
+          state.albumNav = true;
+          state.albumOffKey = null;
+        }
+        invalidateTreeCache(state.root);
+        await loadRoots();
+        await loadList();
+      } catch (err) {
+        alert(err.message || String(err));
+      }
+    };
+    extras.push(alb);
   }
   const allowRename = entryCanWrite(e, canWrite) && state.root !== 'trash' && !e.searchRoot && !isIncomingShareRoot(e);
   if (allowRename) {
@@ -1554,11 +1743,173 @@ function makeCheckbox(e) {
   return cb;
 }
 
+function thumbUrl(path, e) {
+  let url = `/api/thumb?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(path)}`;
+  if (e && e.modTime) url += '&t=' + encodeURIComponent(e.modTime);
+  return url;
+}
+
+function appendMediaThumb(thumb, e, path) {
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  img.alt = e.name || '';
+  img.src = thumbUrl(path, e);
+  img.onerror = () => {
+    img.remove();
+    if (!thumb.querySelector('img')) thumb.textContent = entryIcon(e);
+  };
+  thumb.appendChild(img);
+  if (e.kind === 'video') {
+    const badge = document.createElement('span');
+    badge.className = 'play-badge';
+    badge.textContent = '▶';
+    thumb.appendChild(badge);
+  }
+}
+
+function updateFolderAlbumButton() {
+  const btn = $('#btn-folder-album');
+  if (!btn) return;
+  const atIncomingRoot = state.root === 'incoming' && !(state.path || '');
+  const can = state.perm === 'write' && state.root !== 'trash' && !atIncomingRoot && !state.searchQuery;
+  btn.hidden = !can;
+  const setLabel = btn.dataset.setLabel || 'Set as album';
+  const removeLabel = btn.dataset.removeLabel || 'Remove album';
+  btn.textContent = state.isAlbum ? removeLabel : setLabel;
+  btn.title = btn.textContent;
+}
+
+async function toggleCurrentFolderAlbum() {
+  const on = !state.isAlbum;
+  try {
+    await api('/api/albums', { method: 'POST', body: JSON.stringify({ root: state.root, path: state.path || '', album: on }) });
+    if (on) {
+      state.albumNav = true;
+      state.albumOffKey = null;
+    }
+    invalidateTreeCache(state.root);
+    await loadRoots();
+    await loadList();
+  } catch (err) {
+    alert(err.message || String(err));
+  }
+}
+
+$('#btn-folder-album')?.addEventListener('click', () => { toggleCurrentFolderAlbum(); });
+
+function renderAlbumView(entries, canWrite) {
+  const box = $('#album-view');
+  if (!box) return;
+  box.innerHTML = '';
+  const folders = entries.filter((e) => e.isDir);
+  const media = entries.filter((e) => !e.isDir && (e.kind === 'image' || e.kind === 'video'));
+  const hiddenCount = entries.length - folders.length - media.length;
+
+  if (!folders.length && !media.length) {
+    const empty = document.createElement('div');
+    empty.className = 'album-empty muted';
+    empty.textContent = hiddenCount > 0
+      ? 'No photos in this album — switch to List to see other files'
+      : (canWrite ? 'Empty album — add a folder or upload photos' : 'Empty album');
+    box.appendChild(empty);
+    updateBulkBar();
+    return;
+  }
+
+  if (folders.length) {
+    const h = document.createElement('h3');
+    h.className = 'album-section-title';
+    h.textContent = 'Folders';
+    box.appendChild(h);
+    const grid = document.createElement('div');
+    grid.className = 'album-folders';
+    for (const e of folders) {
+      const tile = document.createElement('div');
+      tile.className = 'album-tile';
+      tile.title = e.name;
+      if (e.isDir) markFolderDropTarget(tile, e.path);
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      if (e.coverPath) {
+        appendMediaThumb(thumb, { name: e.name, kind: 'image' }, e.coverPath);
+      } else {
+        thumb.textContent = '📁';
+      }
+      const name = document.createElement('div');
+      name.className = 'tile-name';
+      name.textContent = e.name;
+      if (e.album) {
+        const badge = document.createElement('span');
+        badge.className = 'album-badge';
+        badge.textContent = 'Album';
+        name.appendChild(badge);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'tile-actions';
+      actions.onclick = (ev) => ev.stopPropagation();
+      appendEntryActions(actions, e, canWrite, true);
+      tile.appendChild(thumb);
+      tile.appendChild(name);
+      tile.appendChild(actions);
+      tile.onclick = () => openEntry(e);
+      grid.appendChild(tile);
+    }
+    box.appendChild(grid);
+  }
+
+  if (media.length) {
+    const h = document.createElement('h3');
+    h.className = 'album-section-title';
+    h.textContent = 'Photos';
+    box.appendChild(h);
+    const grid = document.createElement('div');
+    grid.className = 'album-media';
+    for (const e of media) {
+      const card = document.createElement('div');
+      card.className = 'album-media-card' + (state.selected.has(e.path) ? ' selected' : '');
+      card.title = e.name;
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      appendMediaThumb(thumb, e, e.path);
+      const name = document.createElement('div');
+      name.className = 'tile-name';
+      name.textContent = e.name;
+      const actions = document.createElement('div');
+      actions.className = 'tile-actions';
+      actions.onclick = (ev) => ev.stopPropagation();
+      appendEntryActions(actions, e, canWrite, true);
+      card.appendChild(thumb);
+      card.appendChild(name);
+      card.appendChild(actions);
+      card.onclick = () => openEntry(e);
+      grid.appendChild(card);
+    }
+    box.appendChild(grid);
+  }
+
+  if (hiddenCount > 0) {
+    const hint = document.createElement('p');
+    hint.className = 'muted album-hint';
+    hint.textContent = hiddenCount === 1
+      ? '1 other file is hidden — switch to List to see it'
+      : hiddenCount + ' other files are hidden — switch to List to see them';
+    box.appendChild(hint);
+  }
+  updateBulkBar();
+}
+
 function renderEntries(entries, canWrite) {
   const body = $('#file-body');
   const grid = $('#files-grid');
+  const albumView = $('#album-view');
   body.innerHTML = '';
   grid.innerHTML = '';
+  if (albumView && state.viewMode !== 'album') albumView.innerHTML = '';
+
+  if (state.viewMode === 'album') {
+    renderAlbumView(entries, canWrite);
+    return;
+  }
 
   if (!entries.length) {
     if (state.viewMode === 'icons') {
@@ -1593,7 +1944,7 @@ function renderEntries(entries, canWrite) {
         const img = document.createElement('img');
         img.loading = 'lazy';
         img.alt = e.name;
-        img.src = `/api/thumb?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+        img.src = thumbUrl(e.path, e);
         img.onerror = () => {
           img.remove();
           thumb.textContent = entryIcon(e);
@@ -1612,6 +1963,12 @@ function renderEntries(entries, canWrite) {
       const name = document.createElement('div');
       name.className = 'card-name';
       name.textContent = e.sharedBy ? (e.name + '  ·  ' + e.sharedBy) : e.name;
+      if (e.isDir && e.album) {
+        const badge = document.createElement('span');
+        badge.className = 'album-badge';
+        badge.textContent = 'Album';
+        name.appendChild(badge);
+      }
       if (state.root === 'incoming') {
         const badge = document.createElement('div');
         badge.className = 'perm-badge muted';
@@ -1648,13 +2005,19 @@ function renderEntries(entries, canWrite) {
     nameBtn.textContent = e.sharedBy ? (e.name + '  ·  ' + e.sharedBy) : e.name;
     nameBtn.title = e.sharedBy ? (e.name + ' (from ' + e.sharedBy + ')') : e.name;
     nameBtn.onclick = () => openEntry(e);
+    nameWrap.appendChild(nameBtn);
+    if (e.isDir && e.album) {
+      const badge = document.createElement('span');
+      badge.className = 'album-badge';
+      badge.textContent = 'Album';
+      nameWrap.appendChild(badge);
+    }
     if (state.root === 'incoming') {
       const badge = document.createElement('span');
       badge.className = 'perm-badge muted';
       badge.textContent = entryPermLabel(e);
-      tr.querySelector('.name-wrap').appendChild(badge);
+      nameWrap.appendChild(badge);
     }
-    nameWrap.appendChild(nameBtn);
     appendEntryActions(tr.querySelector('.row-actions'), e, canWrite, false);
     body.appendChild(tr);
   }
@@ -1678,33 +2041,714 @@ function stopPreviewMedia() {
   body.innerHTML = '';
 }
 
-function openPreview(e) {
+function openPreview(e, opts) {
   stopPreviewMedia();
   const body = $('#preview-body');
-  const url = `/api/raw?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+  const toolbar = $('#preview-toolbar');
+  const dlg = $('#preview');
+  state.previewEntry = e;
+  const bustBits = [];
+  if (opts && opts.cacheBust) bustBits.push(String(opts.cacheBust));
+  if (e && e.modTime) bustBits.push(String(e.modTime));
+  if (e && e.size != null) bustBits.push(String(e.size));
+  const bust = bustBits.length ? '&t=' + encodeURIComponent(bustBits.join('-')) : '';
+  const url = `/api/raw?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}` + bust;
   if (e.kind === 'image') {
     const img = document.createElement('img');
     img.src = url;
     img.alt = e.name;
     body.appendChild(img);
+    if (toolbar) toolbar.hidden = false;
+    dlg.classList.add('preview-has-edit');
   } else if (e.kind === 'pdf') {
+    if (toolbar) toolbar.hidden = true;
+    dlg.classList.remove('preview-has-edit');
     body.classList.add('pdf-mode');
     appendPdfFrame(body, url, e.name);
   } else {
+    if (toolbar) toolbar.hidden = true;
+    dlg.classList.remove('preview-has-edit');
     const v = document.createElement('video');
     v.controls = true;
     v.autoplay = true;
     v.src = url;
     body.appendChild(v);
   }
-  const dlg = $('#preview');
   if (!dlg.dataset.closeBound) {
     dlg.dataset.closeBound = '1';
-    dlg.addEventListener('close', stopPreviewMedia);
-    dlg.addEventListener('cancel', stopPreviewMedia);
+    const onClose = () => {
+      stopPreviewMedia();
+      if (toolbar) toolbar.hidden = true;
+      dlg.classList.remove('preview-has-edit');
+      state.previewEntry = null;
+    };
+    dlg.addEventListener('close', onClose);
+    dlg.addEventListener('cancel', onClose);
   }
-  dlg.showModal();
+  syncPhotoEditorViewport();
+  if (!dlg.open) dlg.showModal();
 }
+
+const PHOTO_EDIT_MAX_BYTES = 80 * 1024 * 1024;
+const PHOTO_EDIT_MAX_PIXELS = 40 * 1000 * 1000;
+
+const photoEditor = {
+  entry: null,
+  original: null,
+  working: null,
+  brightness: 100,
+  contrast: 100,
+  cropMode: false,
+  cropNorm: null,
+  cropDrag: null,
+  spec: null,
+  canWrite: false,
+  canOverwrite: false,
+  saving: false,
+  _reopen: null,
+  _savedBust: null,
+};
+
+function asciiFrom(bytes, start, len) {
+  let s = '';
+  const end = Math.min(bytes.length, start + len);
+  for (let i = start; i < end; i++) s += String.fromCharCode(bytes[i]);
+  return s;
+}
+
+function isGifHeader(bytes) {
+  const sig = asciiFrom(bytes, 0, 6);
+  return sig === 'GIF87a' || sig === 'GIF89a';
+}
+
+function isAnimatedGif(bytes) {
+  if (!isGifHeader(bytes) || bytes.length < 14) return false;
+  let i = 13;
+  const packed = bytes[10];
+  if (packed & 0x80) i += 3 * (1 << ((packed & 7) + 1));
+  let frames = 0;
+  while (i < bytes.length) {
+    const b = bytes[i];
+    if (b === 0x3B) break;
+    if (b === 0x21) {
+      i += 2;
+      while (i < bytes.length && bytes[i] !== 0) i += 1 + bytes[i];
+      i += 1;
+      continue;
+    }
+    if (b === 0x2C) {
+      frames += 1;
+      if (frames > 1) return true;
+      if (i + 10 >= bytes.length) break;
+      const ipacked = bytes[i + 9];
+      i += 10;
+      if (ipacked & 0x80) i += 3 * (1 << ((ipacked & 7) + 1));
+      i += 1;
+      while (i < bytes.length && bytes[i] !== 0) i += 1 + bytes[i];
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  return frames > 1;
+}
+
+function isHeicLike(bytes, name, type) {
+  const ext = fileExt(name);
+  if (ext === 'heic' || ext === 'heif') return true;
+  const t = String(type || '').toLowerCase();
+  if (t.includes('heic') || t.includes('heif')) return true;
+  if (bytes.length >= 12 && asciiFrom(bytes, 4, 4) === 'ftyp') {
+    const brand = asciiFrom(bytes, 8, 4).toLowerCase();
+    return ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'hevm', 'hevs', 'mif1', 'msf1', 'heif'].includes(brand);
+  }
+  return false;
+}
+
+function looksLikeSvg(bytes, name, type) {
+  const ext = fileExt(name);
+  if (ext === 'svg') return true;
+  if (String(type || '').toLowerCase().includes('svg')) return true;
+  const head = asciiFrom(bytes, 0, Math.min(bytes.length, 256)).trim().toLowerCase();
+  return head.startsWith('<?xml') && head.includes('<svg') || head.startsWith('<svg');
+}
+
+function photoEditBlockReason(name, bytes, type) {
+  if (looksLikeSvg(bytes, name, type)) {
+    return 'SVG images cannot be edited (the file would be rasterized).';
+  }
+  if (isHeicLike(bytes, name, type)) {
+    return 'HEIC/HEIF photos cannot be edited in the browser.';
+  }
+  if (isAnimatedGif(bytes)) {
+    return 'Animated GIFs cannot be edited without flattening the animation.';
+  }
+  return '';
+}
+
+function photoEditorExportSpec(name) {
+  const ext = fileExt(name);
+  if (ext === 'jpg' || ext === 'jpeg') return { mime: 'image/jpeg', quality: 0.92, ext: '.' + ext, converted: false };
+  if (ext === 'png') return { mime: 'image/png', quality: undefined, ext: '.png', converted: false };
+  if (ext === 'webp') return { mime: 'image/webp', quality: 0.92, ext: '.webp', converted: false };
+  return { mime: 'image/png', quality: undefined, ext: '.png', converted: true };
+}
+
+function editedPhotoName(name, exportExt) {
+  const base = String(name || 'photo');
+  const dot = base.lastIndexOf('.');
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  return stem + '-edited' + exportExt;
+}
+
+function cloneCanvas(src) {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
+
+function imageToCanvas(img) {
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width;
+  c.height = img.naturalHeight || img.height;
+  c.getContext('2d').drawImage(img, 0, 0);
+  return c;
+}
+
+function decodeImageBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('This image format cannot be edited in the browser.'));
+    };
+    img.src = url;
+  });
+}
+
+function transformCanvas(src, fn) {
+  const dest = document.createElement('canvas');
+  fn(src, dest);
+  return dest;
+}
+
+function setPhotoEditorMessage(kind, text) {
+  const err = $('#photo-editor-error');
+  const status = $('#photo-editor-status');
+  if (err) {
+    err.hidden = kind !== 'error';
+    err.textContent = kind === 'error' ? (text || '') : '';
+  }
+  if (status) {
+    status.hidden = kind !== 'status';
+    status.textContent = kind === 'status' ? (text || '') : '';
+  }
+}
+
+function syncPhotoEditorSaveButtons() {
+  const copyBtn = $('#photo-editor-save-copy');
+  const overBtn = $('#photo-editor-overwrite');
+  const ready = !photoEditor.saving && !!photoEditor.working;
+  if (copyBtn) copyBtn.disabled = !ready || !photoEditor.canWrite;
+  if (overBtn) {
+    overBtn.disabled = !ready || !photoEditor.canOverwrite;
+    overBtn.hidden = !photoEditor.canWrite && !photoEditor.canOverwrite;
+  }
+}
+
+function photoEditorToolsDisabled(disabled) {
+  ['photo-editor-rotate', 'photo-editor-flip-h', 'photo-editor-flip-v', 'photo-editor-crop-toggle',
+    'photo-editor-crop-apply', 'photo-editor-crop-cancel', 'photo-editor-reset',
+    'photo-editor-brightness', 'photo-editor-contrast'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+}
+
+function canvasDisplayRect() {
+  const canvas = $('#photo-editor-canvas');
+  const stage = $('#photo-editor-stage');
+  if (!canvas || !stage) return null;
+  const cr = canvas.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  if (cr.width < 1 || cr.height < 1) return null;
+  return { left: cr.left - sr.left, top: cr.top - sr.top, width: cr.width, height: cr.height };
+}
+
+function setCropMode(on) {
+  photoEditor.cropMode = !!on;
+  const box = $('#photo-editor-crop');
+  const toggle = $('#photo-editor-crop-toggle');
+  const apply = $('#photo-editor-crop-apply');
+  const cancel = $('#photo-editor-crop-cancel');
+  if (toggle) toggle.hidden = !!on;
+  if (apply) apply.hidden = !on;
+  if (cancel) cancel.hidden = !on;
+  if (!on) {
+    photoEditor.cropNorm = null;
+    photoEditor.cropDrag = null;
+    if (box) box.hidden = true;
+    return;
+  }
+  photoEditor.cropNorm = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+  if (box && !box.dataset.ready) {
+    box.dataset.ready = '1';
+    ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'].forEach((pos) => {
+      const h = document.createElement('div');
+      h.className = 'crop-handle ' + pos;
+      h.dataset.handle = pos;
+      box.appendChild(h);
+    });
+    box.addEventListener('pointerdown', onCropPointerDown);
+  }
+  layoutCropBox();
+}
+
+function layoutCropBox() {
+  const box = $('#photo-editor-crop');
+  const disp = canvasDisplayRect();
+  const n = photoEditor.cropNorm;
+  if (!box || !disp || !n || !photoEditor.cropMode) return;
+  box.style.left = (disp.left + n.x * disp.width) + 'px';
+  box.style.top = (disp.top + n.y * disp.height) + 'px';
+  box.style.width = (n.w * disp.width) + 'px';
+  box.style.height = (n.h * disp.height) + 'px';
+  box.hidden = false;
+}
+
+function clampCropNorm(n, minPx) {
+  const disp = canvasDisplayRect();
+  const minW = disp ? Math.min(0.95, Math.max(0.02, (minPx || 10) / disp.width)) : 0.02;
+  const minH = disp ? Math.min(0.95, Math.max(0.02, (minPx || 10) / disp.height)) : 0.02;
+  n.w = Math.max(minW, Math.min(n.w, 1));
+  n.h = Math.max(minH, Math.min(n.h, 1));
+  n.x = Math.max(0, Math.min(n.x, 1 - n.w));
+  n.y = Math.max(0, Math.min(n.y, 1 - n.h));
+  return n;
+}
+
+function onCropPointerDown(ev) {
+  if (!photoEditor.cropMode || !photoEditor.cropNorm) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const handle = ev.target.dataset && ev.target.dataset.handle ? ev.target.dataset.handle : 'move';
+  const disp = canvasDisplayRect();
+  if (!disp) return;
+  photoEditor.cropDrag = {
+    handle,
+    startX: ev.clientX,
+    startY: ev.clientY,
+    orig: { ...photoEditor.cropNorm },
+    pointerId: ev.pointerId,
+  };
+  ev.currentTarget.setPointerCapture(ev.pointerId);
+  ev.currentTarget.addEventListener('pointermove', onCropPointerMove);
+  ev.currentTarget.addEventListener('pointerup', onCropPointerUp);
+  ev.currentTarget.addEventListener('pointercancel', onCropPointerUp);
+}
+
+function onCropPointerMove(ev) {
+  const drag = photoEditor.cropDrag;
+  const disp = canvasDisplayRect();
+  if (!drag || !disp) return;
+  const dx = (ev.clientX - drag.startX) / disp.width;
+  const dy = (ev.clientY - drag.startY) / disp.height;
+  const o = drag.orig;
+  const n = { x: o.x, y: o.y, w: o.w, h: o.h };
+  const h = drag.handle;
+  if (h === 'move') {
+    n.x = o.x + dx;
+    n.y = o.y + dy;
+  } else {
+    let x2 = o.x + o.w;
+    let y2 = o.y + o.h;
+    if (h.includes('w')) n.x = o.x + dx;
+    if (h.includes('e')) x2 = o.x + o.w + dx;
+    if (h.includes('n')) n.y = o.y + dy;
+    if (h.includes('s')) y2 = o.y + o.h + dy;
+    if (h.includes('w') || h.includes('e')) {
+      n.w = x2 - n.x;
+      if (n.w < 0) { n.x = x2; n.w = -n.w; }
+    }
+    if (h.includes('n') || h.includes('s')) {
+      n.h = y2 - n.y;
+      if (n.h < 0) { n.y = y2; n.h = -n.h; }
+    }
+  }
+  photoEditor.cropNorm = clampCropNorm(n);
+  layoutCropBox();
+}
+
+function onCropPointerUp(ev) {
+  const box = ev.currentTarget;
+  const drag = photoEditor.cropDrag;
+  if (drag && box.hasPointerCapture && box.hasPointerCapture(drag.pointerId)) {
+    try { box.releasePointerCapture(drag.pointerId); } catch { /* ignore */ }
+  }
+  box.removeEventListener('pointermove', onCropPointerMove);
+  box.removeEventListener('pointerup', onCropPointerUp);
+  box.removeEventListener('pointercancel', onCropPointerUp);
+  photoEditor.cropDrag = null;
+}
+
+function applyCrop() {
+  const src = photoEditor.working;
+  const n = photoEditor.cropNorm;
+  if (!src || !n) return;
+  const x = Math.round(n.x * src.width);
+  const y = Math.round(n.y * src.height);
+  const w = Math.max(1, Math.round(n.w * src.width));
+  const h = Math.max(1, Math.round(n.h * src.height));
+  const sx = Math.max(0, Math.min(x, src.width - 1));
+  const sy = Math.max(0, Math.min(y, src.height - 1));
+  const sw = Math.max(1, Math.min(w, src.width - sx));
+  const sh = Math.max(1, Math.min(h, src.height - sy));
+  photoEditor.working = transformCanvas(src, (from, dest) => {
+    dest.width = sw;
+    dest.height = sh;
+    dest.getContext('2d').drawImage(from, sx, sy, sw, sh, 0, 0, sw, sh);
+  });
+  setCropMode(false);
+  renderPhotoEditor();
+}
+
+function renderPhotoEditor() {
+  const canvas = $('#photo-editor-canvas');
+  const src = photoEditor.working;
+  if (!canvas || !src) return;
+  const stage = $('#photo-editor-stage');
+  const maxW = Math.max(100, (stage && stage.clientWidth) || 800);
+  const maxH = Math.max(100, (stage && stage.clientHeight) || 500);
+  const scale = Math.min(maxW / src.width, maxH / src.height, 1);
+  const w = Math.max(1, Math.round(src.width * scale));
+  const h = Math.max(1, Math.round(src.height * scale));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(src, 0, 0, w, h);
+  const b = photoEditor.brightness;
+  const c = photoEditor.contrast;
+  if (b !== 100 || c !== 100) {
+    if (!window.FilehubPhotoAdjust || !FilehubPhotoAdjust.applyBrightnessContrastToCanvas) {
+      throw new Error('Photo adjustment helper is missing');
+    }
+    FilehubPhotoAdjust.applyBrightnessContrastToCanvas(canvas, b, c);
+  }
+  if (photoEditor.cropMode) layoutCropBox();
+}
+
+function resetPhotoEditorAdjustments(full) {
+  photoEditor.brightness = 100;
+  photoEditor.contrast = 100;
+  const br = $('#photo-editor-brightness');
+  const ct = $('#photo-editor-contrast');
+  const brv = $('#photo-editor-brightness-val');
+  const ctv = $('#photo-editor-contrast-val');
+  if (br) br.value = '100';
+  if (ct) ct.value = '100';
+  if (brv) brv.textContent = '100%';
+  if (ctv) ctv.textContent = '100%';
+  if (full && photoEditor.original) {
+    photoEditor.working = cloneCanvas(photoEditor.original);
+  }
+  setCropMode(false);
+  renderPhotoEditor();
+}
+
+function closePhotoEditor(opts) {
+  const dlg = $('#photo-editor');
+  photoEditor.saving = false;
+  photoEditor._reopen = !!(opts && opts.reopen);
+  photoEditor._savedBust = (opts && opts.cacheBust) ? opts.cacheBust : null;
+  if (dlg && dlg.open) {
+    dlg.close();
+    return;
+  }
+  finishPhotoEditorClose();
+}
+
+function finishPhotoEditorClose() {
+  const reopen = photoEditor._reopen !== false && !!state.previewEntry;
+  const entry = state.previewEntry;
+  const bust = photoEditor._savedBust;
+  photoEditor.entry = null;
+  photoEditor.original = null;
+  photoEditor.working = null;
+  photoEditor.spec = null;
+  photoEditor.saving = false;
+  photoEditor._reopen = true;
+  photoEditor._savedBust = null;
+  setCropMode(false);
+  setPhotoEditorMessage('', '');
+  if (reopen && entry && !($('#preview') && $('#preview').open)) {
+    openPreview(entry, bust ? { cacheBust: bust } : undefined);
+  }
+}
+
+async function exportEditedPhotoBlob() {
+  const src = photoEditor.working;
+  const spec = photoEditor.spec;
+  if (!src || !spec) throw new Error('Nothing to save');
+  const out = document.createElement('canvas');
+  out.width = src.width;
+  out.height = src.height;
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0);
+  const b = photoEditor.brightness;
+  const c = photoEditor.contrast;
+  if (b !== 100 || c !== 100) {
+    if (!window.FilehubPhotoAdjust || !FilehubPhotoAdjust.applyBrightnessContrastToCanvas) {
+      throw new Error('Photo adjustment helper is missing');
+    }
+    FilehubPhotoAdjust.applyBrightnessContrastToCanvas(out, b, c);
+  }
+  const blob = await new Promise((resolve, reject) => {
+    const done = (v) => { if (v) resolve(v); else reject(new Error('Could not encode the edited photo')); };
+    if (spec.quality == null) out.toBlob(done, spec.mime);
+    else out.toBlob(done, spec.mime, spec.quality);
+  });
+  return blob;
+}
+
+async function saveEditedPhoto(mode) {
+  if (photoEditor.saving) return;
+  const entry = photoEditor.entry;
+  if (!entry) return;
+  if (!photoEditor.canWrite) {
+    setPhotoEditorMessage('error', 'You need write permission to save.');
+    return;
+  }
+  if (mode === 'overwrite' && !photoEditor.canOverwrite) {
+    setPhotoEditorMessage('error', photoEditor.spec && photoEditor.spec.converted
+      ? 'Overwrite is only available when the photo can be saved in its original format. Use Save as copy to write a PNG.'
+      : 'Overwrite requires delete permission (the original is moved to the Recycle bin).');
+    return;
+  }
+  if (mode === 'overwrite') {
+    const ok = confirm('Overwrite the original? The current file will be moved to the Recycle bin.');
+    if (!ok) return;
+  }
+  photoEditor.saving = true;
+  photoEditorToolsDisabled(true);
+  syncPhotoEditorSaveButtons();
+  setPhotoEditorMessage('status', 'Saving…');
+  try {
+    const blob = await exportEditedPhotoBlob();
+    const folder = dirnamePath(entry.path);
+    const filename = mode === 'overwrite' ? entry.name : editedPhotoName(entry.name, photoEditor.spec.ext);
+    const conflict = mode === 'overwrite' ? 'overwrite' : 'rename';
+    const file = new File([blob], filename, { type: blob.type || photoEditor.spec.mime });
+    const data = await uploadOneFile(file, folder, null, conflict);
+    const savedName = (data && data.name) || filename;
+    const savedPath = (data && data.path) || (folder ? folder + '/' + savedName : savedName);
+    try { await loadList(); } catch { /* ignore */ }
+    const next = (state.entries || []).find((item) => item.path === savedPath) || {
+      ...entry,
+      name: savedName,
+      path: savedPath,
+      size: blob.size,
+      kind: 'image',
+      modTime: new Date().toISOString(),
+    };
+    state.previewEntry = next;
+    const bust = [Date.now(), next.modTime || '', next.size || blob.size].join('-');
+    closePhotoEditor({ reopen: true, cacheBust: bust });
+  } catch (err) {
+    setPhotoEditorMessage('error', err.message || String(err));
+    photoEditor.saving = false;
+    photoEditorToolsDisabled(false);
+    syncPhotoEditorSaveButtons();
+  }
+}
+
+async function openPhotoEditor(e) {
+  const dlg = $('#photo-editor');
+  if (!dlg || !e || e.kind !== 'image') return;
+  if (state.root === 'trash') {
+    alert('Photos in the Recycle bin cannot be edited.');
+    return;
+  }
+  setPhotoEditorMessage('', '');
+  photoEditor.saving = false;
+  photoEditor._reopen = null;
+  photoEditor._savedBust = null;
+  photoEditor.entry = e;
+  photoEditor.spec = photoEditorExportSpec(e.name);
+  photoEditor.canWrite = entryCanWrite(e, state.perm === 'write') && state.root !== 'trash';
+  photoEditor.canOverwrite = photoEditor.canWrite && !!state.canDelete && !photoEditor.spec.converted;
+  const nameEl = $('#photo-editor-filename');
+  if (nameEl) nameEl.textContent = e.name;
+  const preview = $('#preview');
+  if (preview && preview.open) preview.close();
+  state.previewEntry = e;
+  resetPhotoEditorAdjustments(false);
+  photoEditorToolsDisabled(true);
+  syncPhotoEditorSaveButtons();
+  if (!dlg.open) dlg.showModal();
+  setPhotoEditorMessage('status', 'Loading photo…');
+  try {
+    const url = `/api/raw?root=${encodeURIComponent(state.root)}&path=${encodeURIComponent(e.path)}`;
+    const res = await fetch(url, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Could not load this photo');
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > PHOTO_EDIT_MAX_BYTES) {
+      throw new Error('This photo is too large to edit in the browser (max 80 MiB).');
+    }
+    const bytes = new Uint8Array(buf);
+    const type = res.headers.get('content-type') || '';
+    const blocked = photoEditBlockReason(e.name, bytes, type);
+    if (blocked) throw new Error(blocked);
+    const blob = new Blob([buf], { type: type || 'application/octet-stream' });
+    const img = await decodeImageBlob(blob);
+    const pixels = (img.naturalWidth || img.width) * (img.naturalHeight || img.height);
+    if (pixels > PHOTO_EDIT_MAX_PIXELS) {
+      throw new Error('This photo is too large to edit in the browser (max 40 megapixels).');
+    }
+    photoEditor.original = imageToCanvas(img);
+    photoEditor.working = cloneCanvas(photoEditor.original);
+    photoEditorToolsDisabled(false);
+    resetPhotoEditorAdjustments(false);
+    let note = '';
+    if (!photoEditor.canWrite) {
+      note = 'You need write permission to save.';
+    } else if (photoEditor.spec.converted) {
+      note = 'This format will be saved as a PNG copy.';
+    } else if (!photoEditor.canOverwrite) {
+      note = 'Overwrite requires delete permission (the original is moved to the Recycle bin). You can still save a copy.';
+    }
+    if (note) setPhotoEditorMessage('status', note);
+    else setPhotoEditorMessage('', '');
+    syncPhotoEditorSaveButtons();
+    requestAnimationFrame(renderPhotoEditor);
+  } catch (err) {
+    photoEditor.original = null;
+    photoEditor.working = null;
+    photoEditorToolsDisabled(true);
+    const br = $('#photo-editor-brightness');
+    const ct = $('#photo-editor-contrast');
+    if (br) br.disabled = true;
+    if (ct) ct.disabled = true;
+    syncPhotoEditorSaveButtons();
+    setPhotoEditorMessage('error', err.message || String(err));
+  }
+}
+
+$('#btn-preview-edit')?.addEventListener('click', (ev) => {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const e = state.previewEntry;
+  if (e) openPhotoEditor(e);
+});
+
+$('#photo-editor-rotate')?.addEventListener('click', () => {
+  if (!photoEditor.working || photoEditor.saving) return;
+  setCropMode(false);
+  photoEditor.working = transformCanvas(photoEditor.working, (src, dest) => {
+    dest.width = src.height;
+    dest.height = src.width;
+    const ctx = dest.getContext('2d');
+    ctx.translate(dest.width, 0);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(src, 0, 0);
+  });
+  renderPhotoEditor();
+});
+
+$('#photo-editor-flip-h')?.addEventListener('click', () => {
+  if (!photoEditor.working || photoEditor.saving) return;
+  setCropMode(false);
+  photoEditor.working = transformCanvas(photoEditor.working, (src, dest) => {
+    dest.width = src.width;
+    dest.height = src.height;
+    const ctx = dest.getContext('2d');
+    ctx.translate(dest.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(src, 0, 0);
+  });
+  renderPhotoEditor();
+});
+
+$('#photo-editor-flip-v')?.addEventListener('click', () => {
+  if (!photoEditor.working || photoEditor.saving) return;
+  setCropMode(false);
+  photoEditor.working = transformCanvas(photoEditor.working, (src, dest) => {
+    dest.width = src.width;
+    dest.height = src.height;
+    const ctx = dest.getContext('2d');
+    ctx.translate(0, dest.height);
+    ctx.scale(1, -1);
+    ctx.drawImage(src, 0, 0);
+  });
+  renderPhotoEditor();
+});
+
+$('#photo-editor-crop-toggle')?.addEventListener('click', () => {
+  if (!photoEditor.working || photoEditor.saving) return;
+  setCropMode(true);
+});
+$('#photo-editor-crop-apply')?.addEventListener('click', () => {
+  if (!photoEditor.working || photoEditor.saving) return;
+  applyCrop();
+});
+$('#photo-editor-crop-cancel')?.addEventListener('click', () => setCropMode(false));
+$('#photo-editor-reset')?.addEventListener('click', () => {
+  if (photoEditor.saving) return;
+  resetPhotoEditorAdjustments(true);
+});
+$('#photo-editor-brightness')?.addEventListener('input', (ev) => {
+  photoEditor.brightness = Number(ev.target.value) || 0;
+  const el = $('#photo-editor-brightness-val');
+  if (el) el.textContent = photoEditor.brightness + '%';
+  renderPhotoEditor();
+});
+$('#photo-editor-contrast')?.addEventListener('input', (ev) => {
+  photoEditor.contrast = Number(ev.target.value) || 0;
+  const el = $('#photo-editor-contrast-val');
+  if (el) el.textContent = photoEditor.contrast + '%';
+  renderPhotoEditor();
+});
+$('#photo-editor-save-copy')?.addEventListener('click', () => saveEditedPhoto('copy'));
+$('#photo-editor-overwrite')?.addEventListener('click', () => saveEditedPhoto('overwrite'));
+$('#photo-editor-cancel')?.addEventListener('click', () => closePhotoEditor({ reopen: true }));
+
+function syncPhotoEditorViewport() {
+  const vv = window.visualViewport;
+  const h = (vv && vv.height) ? vv.height : window.innerHeight;
+  const top = (vv && typeof vv.offsetTop === 'number') ? vv.offsetTop : 0;
+  const root = document.documentElement;
+  root.style.setProperty('--photo-editor-vp-height', Math.round(h) + 'px');
+  root.style.setProperty('--photo-editor-vp-top', Math.round(top) + 'px');
+}
+
+(function setupPhotoEditorDialog() {
+  const dlg = $('#photo-editor');
+  if (!dlg || dlg.dataset.closeBound) return;
+  dlg.dataset.closeBound = '1';
+  dlg.addEventListener('close', () => {
+    // Default to returning to the photo preview (Escape / close button).
+    if (photoEditor._reopen == null) photoEditor._reopen = true;
+    finishPhotoEditorClose();
+  });
+  const onViewport = () => {
+    syncPhotoEditorViewport();
+    if (dlg.open) renderPhotoEditor();
+  };
+  window.addEventListener('resize', onViewport);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', onViewport);
+    window.visualViewport.addEventListener('scroll', onViewport);
+  }
+  syncPhotoEditorViewport();
+})();
+
 
 $('#btn-mkdir').addEventListener('click', async () => {
   const name = prompt('Folder name');

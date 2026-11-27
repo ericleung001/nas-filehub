@@ -127,6 +127,7 @@ func (s *Server) afterRename(sc *scope, from, to string) {
 	}
 	if rootID := sc.shareRootID(); rootID != "" {
 		_ = s.DB.RelocateItemSharesForPath(rootID, from, to)
+		_ = s.DB.RelocateAlbumsForPath(sc.albumOwnerID(), rootID, from, to)
 	}
 	if sc.Kind == "share" {
 		_ = s.DB.RelocateFileOwnerPrefix(sc.dataRel(from), sc.dataRel(to))
@@ -138,8 +139,10 @@ func (s *Server) afterTransfer(u *db.User, src, dst *scope, srcRel, dstRel strin
 		if rootID := src.shareRootID(); rootID != "" {
 			if dst != nil && src.Root == dst.Root && dst.shareRootID() == rootID {
 				_ = s.DB.RelocateItemSharesForPath(rootID, srcRel, dstRel)
+				_ = s.DB.RelocateAlbumsForPath(src.albumOwnerID(), rootID, srcRel, dstRel)
 			} else {
 				_, _ = s.DB.DeleteItemSharesForPath(rootID, srcRel)
+				_, _ = s.DB.DeleteAlbumsForPath(src.albumOwnerID(), rootID, srcRel)
 			}
 		}
 	}
@@ -193,6 +196,9 @@ func (s *Server) trashDelete(u *db.User, sc *scope, rel, rootID string) error {
 	}
 	_, _ = s.DB.DeleteLinkSharesForPath(rootID, rel)
 	_, _ = s.DB.DeleteItemSharesForPath(rootID, rel)
+	if rid := sc.shareRootID(); rid != "" {
+		_, _ = s.DB.DeleteAlbumsForPath(sc.albumOwnerID(), rid, rel)
+	}
 	return nil
 }
 

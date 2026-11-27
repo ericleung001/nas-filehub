@@ -2,7 +2,7 @@
 <html lang="zh-Hant" data-filehub-version="__FILEHUB_VERSION__">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Filehub</title>
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -55,6 +55,7 @@
 
     <section id="main-view" hidden>
       <header class="topbar">
+        <button type="button" id="btn-sidebar" class="ghost sidebar-toggle" aria-controls="sidebar" aria-expanded="false" title="Open roots">☰ Roots</button>
         <div class="brand">
           <img src="/icon.png" alt="" class="brand-logo" width="32" height="32" />
           Filehub
@@ -66,9 +67,17 @@
       </header>
       <div class="layout">
         <aside id="sidebar">
+          <div class="sidebar-drawer-bar">
+            <button type="button" id="btn-sidebar-close" class="ghost sidebar-close" aria-label="Close roots">✕ Close</button>
+          </div>
           <div class="sidebar-main">
             <h3>Roots</h3>
             <ul id="root-list"></ul>
+            <div id="sidebar-albums" class="sidebar-albums">
+              <h3>Albums</h3>
+              <ul id="album-list"></ul>
+              <p id="album-empty" class="muted sidebar-empty">No albums yet</p>
+            </div>
             <div id="sidebar-quota" class="sidebar-quota" hidden>
               <h3>Storage</h3>
               <div class="meta" id="sidebar-quota-text"></div>
@@ -84,6 +93,7 @@
             </a>
           </div>
         </aside>
+        <button type="button" id="sidebar-backdrop" class="sidebar-backdrop" aria-label="Close roots"></button>
         <main>
           <div class="toolbar">
             <nav id="breadcrumbs"></nav>
@@ -109,7 +119,9 @@
               <div class="view-toggle" role="group" aria-label="View mode">
                 <button type="button" id="btn-view-list" class="ghost view-btn active" title="List view" aria-pressed="true">☰ List</button>
                 <button type="button" id="btn-view-icons" class="ghost view-btn" title="Icon view" aria-pressed="false">▦ Icons</button>
+                <button type="button" id="btn-view-album" class="ghost view-btn" title="Album view" aria-pressed="false" hidden>🖼 Album</button>
               </div>
+              <button type="button" id="btn-folder-album" class="ghost" hidden data-set-label="Set as album" data-remove-label="Remove album">Set as album</button>
               <button id="btn-mkdir" title="New folder">+ Folder</button>
               <div id="oo-new-wrap" class="oo-new-wrap" hidden>
                 <button type="button" id="btn-new-office" class="ghost" title="Create a new Office file" aria-haspopup="menu" aria-expanded="false">+ New ▾</button>
@@ -157,6 +169,7 @@
               <tbody id="file-body"></tbody>
             </table>
             <div id="files-grid" class="files-grid" hidden></div>
+            <div id="album-view" class="album-view" hidden></div>
           </div>
         </main>
       </div>
@@ -746,6 +759,47 @@
   <dialog id="preview">
     <form method="dialog"><button class="close">✕</button></form>
     <div id="preview-body"></div>
+    <div id="preview-toolbar" hidden>
+      <button type="button" id="btn-preview-edit">Edit</button>
+    </div>
+  </dialog>
+
+  <dialog id="photo-editor">
+    <div id="photo-editor-inner">
+      <header class="photo-editor-head">
+        <div class="photo-editor-heading">
+          <h3 id="photo-editor-title">Edit photo</h3>
+          <p id="photo-editor-filename" class="muted"></p>
+        </div>
+        <form method="dialog"><button type="submit" class="dialog-close ghost" id="photo-editor-close" aria-label="Close">✕</button></form>
+      </header>
+      <div id="photo-editor-stage">
+        <canvas id="photo-editor-canvas"></canvas>
+        <div id="photo-editor-crop" hidden></div>
+      </div>
+      <div id="photo-editor-tools">
+        <div class="photo-editor-buttons">
+          <button type="button" id="photo-editor-rotate" class="ghost">Rotate 90°</button>
+          <button type="button" id="photo-editor-flip-h" class="ghost">Flip horizontal</button>
+          <button type="button" id="photo-editor-flip-v" class="ghost">Flip vertical</button>
+          <button type="button" id="photo-editor-crop-toggle" class="ghost">Crop</button>
+          <button type="button" id="photo-editor-crop-apply" class="ghost" hidden>Apply crop</button>
+          <button type="button" id="photo-editor-crop-cancel" class="ghost" hidden>Cancel crop</button>
+          <button type="button" id="photo-editor-reset" class="ghost">Reset</button>
+        </div>
+        <div class="photo-editor-sliders">
+          <label>Brightness <input type="range" id="photo-editor-brightness" min="0" max="200" value="100" /><span id="photo-editor-brightness-val">100%</span></label>
+          <label>Contrast <input type="range" id="photo-editor-contrast" min="0" max="200" value="100" /><span id="photo-editor-contrast-val">100%</span></label>
+        </div>
+      </div>
+      <p id="photo-editor-error" class="error" hidden></p>
+      <p id="photo-editor-status" class="muted" hidden></p>
+      <div id="photo-editor-actions">
+        <button type="button" id="photo-editor-cancel" class="ghost">Cancel</button>
+        <button type="button" id="photo-editor-save-copy">Save as copy</button>
+        <button type="button" id="photo-editor-overwrite" class="ghost">Overwrite</button>
+      </div>
+    </div>
   </dialog>
 
   <section id="public-share-view" class="panel center" hidden>
@@ -838,6 +892,7 @@
     <iframe id="oo-editor-frame" title="Office editor"></iframe>
   </div>
 
+  <script src="/photo-adjust.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

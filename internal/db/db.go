@@ -164,7 +164,10 @@ CREATE INDEX IF NOT EXISTS idx_totp_backup_user ON totp_backup_codes(user_id);
 	if err := d.ensureLoginLockoutTable(); err != nil {
 		return err
 	}
-	return d.ensureOIDCSchema()
+	if err := d.ensureOIDCSchema(); err != nil {
+		return err
+	}
+	return d.ensureAlbumTable()
 }
 
 func (d *DB) ensureUserColumns() error {

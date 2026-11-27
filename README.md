@@ -1,8 +1,10 @@
-# Filehub v0.4.26
+# Filehub v0.4.30
 
 Lightweight multi-user file manager — Go single binary + embedded web UI + SQLite.
 
 Optional **OpenID Connect (SSO)** sign-in is supported (Authentik, Authelia, Pocket ID, and other standard providers). It is off by default; local username and password login stays available. Optional **ONLYOFFICE Docs** editing can be enabled in Settings when you run a Document Server.
+
+This release adds **albums** (mark a folder as an album for a cover-tile and photo-grid view) and an in-browser **photo editor** (rotate, flip, crop, brightness and contrast; save as a copy or overwrite).
 
 **License:** Apache-2.0
 
@@ -94,15 +96,15 @@ To enable SSO, set `PUBLIC_BASE_URL` to your public HTTPS origin in compose or `
 
 ### Pull a published image
 
-Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.26`, not `v0.4.26`).
+Pre-built `linux/amd64` and `linux/arm64` images are published to [Docker Hub](https://hub.docker.com/r/ericleung001/nas-filehub) (`ericleung001/nas-filehub`) and [GHCR](https://github.com/ericleung001/nas-filehub/pkgs/container/nas-filehub) (`ghcr.io/ericleung001/nas-filehub`). The Debian `ffmpeg` package in the image is multi-arch. Version tags omit the `v` prefix (use `0.4.30`, not `v0.4.30`).
 
 ```bash
-docker pull ericleung001/nas-filehub:0.4.26
+docker pull ericleung001/nas-filehub:0.4.30
 # or
-docker pull ghcr.io/ericleung001/nas-filehub:0.4.26
+docker pull ghcr.io/ericleung001/nas-filehub:0.4.30
 ```
 
-`latest` on the default branch tracks the latest build (currently `0.4.26`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.26` or `image: ghcr.io/ericleung001/nas-filehub:0.4.26` on the `filehub` service (and drop `build: .` if you do not want to build locally).
+`latest` on the default branch tracks the latest build (currently `0.4.30`). To run a published image with the same bind and volume layout as this repo's compose file, set `image: ericleung001/nas-filehub:0.4.30` or `image: ghcr.io/ericleung001/nas-filehub:0.4.30` on the `filehub` service (and drop `build: .` if you do not want to build locally).
 
 ### Local development
 

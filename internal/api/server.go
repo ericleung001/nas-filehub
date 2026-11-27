@@ -64,6 +64,7 @@ type scope struct {
 	OriginRootID string // owner's root id for incoming item shares (home or share:N)
 	QuotaUser    *db.User
 	ItemShareID  int64
+	HomeOwnerID  int64 // set for home scopes (including incoming home shares)
 }
 
 func (sc *scope) canWrite() bool  { return sc != nil && sc.Perm == "write" }
@@ -119,6 +120,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/directory", s.requireAuth(s.handleDirectory))
 	mux.HandleFunc("/api/item-shares", s.requireAuth(s.handleItemShares))
 	mux.HandleFunc("/api/item-shares/", s.requireAuth(s.handleItemShareID))
+	mux.HandleFunc("/api/albums", s.requireAuth(s.handleAlbums))
 	mux.HandleFunc("/api/public/links/", s.handlePublicLinks)
 	mux.HandleFunc("/api/admin/users", s.requireAdmin(s.handleAdminUsers))
 	mux.HandleFunc("/api/admin/users/", s.requireAdmin(s.handleAdminUserID))
@@ -185,6 +187,7 @@ func (s *Server) serveVersionedHTML(w http.ResponseWriter, r *http.Request, name
 	b = bytes.ReplaceAll(b, []byte("__FILEHUB_VERSION__"), []byte(html.EscapeString(version.Version)))
 	v := url.QueryEscape(version.Version)
 	b = bytes.ReplaceAll(b, []byte(`href="/style.css"`), []byte(`href="/style.css?v=`+v+`"`))
+	b = bytes.ReplaceAll(b, []byte(`src="/photo-adjust.js"`), []byte(`src="/photo-adjust.js?v=`+v+`"`))
 	b = bytes.ReplaceAll(b, []byte(`src="/app.js"`), []byte(`src="/app.js?v=`+v+`"`))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -656,7 +659,7 @@ func (s *Server) resolveScope(u *db.User, rootID, rel string) (*scope, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &scope{Root: abs, Rel: rel, Perm: "write", CanDelete: true, Kind: "home", BaseRel: u.HomePath}, nil
+		return &scope{Root: abs, Rel: rel, Perm: "write", CanDelete: true, Kind: "home", BaseRel: u.HomePath, HomeOwnerID: u.ID}, nil
 	}
 	if rootID == "trash" {
 		return &scope{Root: trash.Root(s.Cfg.DataRoot), Rel: rel, Perm: "write", CanDelete: true, Kind: "trash", BaseRel: files.TrashDirName}, nil
@@ -756,7 +759,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		writeJSON(w, 200, map[string]any{"path": "", "perm": "read", "canDelete": false, "entries": entries, "kind": "incoming"})
+		writeJSON(w, 200, map[string]any{"path": "", "perm": "read", "canDelete": false, "entries": entries, "kind": "incoming", "album": false, "inAlbum": false})
 		return
 	}
 	if sc.Kind == "trash" {
@@ -765,7 +768,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		writeJSON(w, 200, map[string]any{"path": "", "perm": "write", "canDelete": true, "entries": entries, "kind": "trash"})
+		writeJSON(w, 200, map[string]any{"path": "", "perm": "write", "canDelete": true, "entries": entries, "kind": "trash", "album": false, "inAlbum": false})
 		return
 	}
 	// A shared file listed as incoming/{id} is not a directory.
@@ -780,7 +783,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 					Name: name, Path: listPath, IsDir: false, Size: st.Size(),
 					ModTime: st.ModTime().UTC(), Ext: strings.ToLower(filepath.Ext(name)), Kind: files.KindOf(name, false),
 				}
-				writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": []files.Entry{entry}})
+				writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": []files.Entry{entry}, "album": false, "inAlbum": false})
 				return
 			}
 		}
@@ -793,7 +796,9 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	if rootID == "incoming" {
 		entries = rewriteIncomingListEntries(listPath, entries)
 	}
-	writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries})
+	isAlbum, inAlbum := s.folderAlbumFlags(sc)
+	entries = s.markDirAlbums(sc, entries, isAlbum || inAlbum)
+	writeJSON(w, 200, map[string]any{"path": listPath, "perm": sc.Perm, "canDelete": sc.CanDelete, "entries": entries, "album": isAlbum, "inAlbum": inAlbum})
 }
 
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {

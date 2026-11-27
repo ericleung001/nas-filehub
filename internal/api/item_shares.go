@@ -251,7 +251,7 @@ func (s *Server) listIncomingEntries(u *db.User) ([]map[string]any, error) {
 		if perm != "write" {
 			perm = "read"
 		}
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"name":     name,
 			"path":     itoaLocal(sh.ID),
 			"isDir":    st.IsDir(),
@@ -261,7 +261,21 @@ func (s *Server) listIncomingEntries(u *db.User) ([]map[string]any, error) {
 			"kind":     files.KindOf(name, st.IsDir()),
 			"sharedBy": sh.OwnerName,
 			"perm":     perm,
-		})
+		}
+		if st.IsDir() {
+			ownerID := int64(0)
+			if sc.Kind == "home" {
+				ownerID = owner.ID
+			}
+			if yes, err := s.DB.IsAlbum(ownerID, incomingRootID(&sh), sh.Path); err == nil && yes {
+				item["album"] = true
+			}
+			cover := files.AlbumCoverRel(sc.Root, sc.Rel)
+			if cover != "" {
+				item["coverPath"] = itoaLocal(sh.ID) + "/" + cover
+			}
+		}
+		out = append(out, item)
 	}
 	return out, nil
 }

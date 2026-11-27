@@ -699,8 +699,11 @@ func TestServeVersionedHTMLFromStaticSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(raw)
-	if strings.Contains(source, "/style.css?v=") || strings.Contains(source, "/app.js?v=") {
-		t.Fatalf("index.html source must use unversioned /style.css and /app.js so serveVersionedHTML can inject the current version, got versioned refs")
+	if strings.Contains(source, "/style.css?v=") || strings.Contains(source, "/app.js?v=") || strings.Contains(source, "/photo-adjust.js?v=") {
+		t.Fatalf("index.html source must use unversioned /style.css, /photo-adjust.js and /app.js so serveVersionedHTML can inject the current version, got versioned refs")
+	}
+	if !strings.Contains(source, `src="/photo-adjust.js"`) {
+		t.Fatal("index.html must include unversioned /photo-adjust.js")
 	}
 	if !strings.Contains(source, "Version __FILEHUB_VERSION__") {
 		t.Fatal("index.html About must use Version __FILEHUB_VERSION__ placeholder")
@@ -721,7 +724,7 @@ func TestServeVersionedHTMLFromStaticSource(t *testing.T) {
 	if !strings.Contains(text, "Version "+wantVer) {
 		t.Fatalf("expected served About to show Version %s", wantVer)
 	}
-	if !strings.Contains(text, `/style.css?v=`+wantVer) || !strings.Contains(text, `/app.js?v=`+wantVer) {
+	if !strings.Contains(text, `/style.css?v=`+wantVer) || !strings.Contains(text, `/app.js?v=`+wantVer) || !strings.Contains(text, `/photo-adjust.js?v=`+wantVer) {
 		t.Fatalf("expected served css/js ?v=%s, got snippet around assets missing", wantVer)
 	}
 	if strings.Contains(text, "?v=0.4.24") {
